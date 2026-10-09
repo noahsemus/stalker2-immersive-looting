@@ -12,7 +12,10 @@ harness on 2026-10-09.
 - 2026-10-09: repo created, kit research done, plan written (`PLAN.md`; research in
   `zonekit/research/2026-10-09-pickup-and-left-hand-research.md`). Waiting on the tester: pick `ImmersiveLooting` in
   the editor's toolbar mod selector once (GameFeatureData), the three decisions in PLAN.md, a preview of
-  `MG_fp_ak74_weapon_grab`. Then build 1 (host + reach, no flying item).
+  `MG_fp_ak74_weapon_grab`. Then build 1.
+- 2026-10-09: tester: **build the whole feature first, not in parts** (build 1 = everything; fixes one per cook
+  afterwards). Generators written (`zonekit/tools/setup_assets.py`, `gen_actor_looting.py`, `gen_subsystem_spawn.py`)
+  plus the dev probe `zonekit/tools/probe/ImmLootProbe`. Next: PLAN.md § Making build 1.
 
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,

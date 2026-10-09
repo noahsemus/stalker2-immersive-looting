@@ -1,0 +1,4 @@
+/ImmersiveLooting/ImmersiveLooting
+/ImmersiveLooting/Runtime/BP_ImmLootSubsystem
+/ImmersiveLooting/Runtime/BP_ImmLootActor
+/ImmersiveLooting/Runtime/AM_ImmLoot_Grab
