@@ -9,14 +9,26 @@ Repo `noahsemus/stalker2-immersive-looting`, Zone Kit plugin `ImmersiveLooting` 
 harness on 2026-10-09.
 
 ## Current state (one line per checkpoint / release: date, what changed, what the tester confirmed in game)
-- 2026-10-09: repo created. Next: the tester picks `ImmersiveLooting` in the editor's toolbar mod selector once
-  (GameFeatureData), then kit research for PLAN.md.
+- 2026-10-09: repo created, kit research done, plan written (`PLAN.md`; research in
+  `zonekit/research/2026-10-09-pickup-and-left-hand-research.md`). Waiting on the tester: pick `ImmersiveLooting` in
+  the editor's toolbar mod selector once (GameFeatureData), the three decisions in PLAN.md, a preview of
+  `MG_fp_ak74_weapon_grab`. Then build 1 (host + reach, no flying item).
 
-## Key facts (verified; cite file:line in the kit)
-- _(fill in as research lands)_
+## Key facts (kit research 2026-10-09; details and citations in the research file)
+- Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
+  `CoreVariables.cfg:888-889`), visual in `MeshComponent`; pickup is instant and has no BP-visible "item added" event.
+  `PC.GetInteractionTarget` (`bp_api_dump2.txt:5193`) → owner gives the item under the crosshair each tick.
+- Pickup key `IA_Interact` lives in `IMC_Interactivity` (`InputMappingContextPrototypes.cfg:229-235`).
+- Artifacts and mutant parts are already animated in vanilla; corpses / stashes use the loot window.
+- The reach: unused vanilla `MG_fp_ak74_weapon_grab` (`fp_ar_weapon_grab`, 1.667 s, `LeftHand` slot, left arm only,
+  HandIK off 0.036 s / on 1.179 s, grab 0.569 s, chest 0.92 s). Every weapon layer has the `LeftHand` slot
+  (`left_hand_blend_mask`); left-hand foregrip IK is switched by `AnimNotify_HandIK`, so play a montage asset that
+  carries those notifies, not a dynamic montage of the bare sequence.
+- Item attach point: bone `jnt_l_weapon` (child of `jnt_l_hand`).
 
 ## Assets this mod may override
-- _(none yet; see harness/docs/compatibility.md before adding any)_
+- None planned. Never weapon `AnimCollection_fp_*` (OXA overrides 38), `BP_StaticItemContainer` (looting mods),
+  `AnimBP_Player` (ZST), the pawn (ImmersiveDialogue).
 
 ## Files
 - `PLAN.md` plan and test matrix · `BUILD.md` every edit asset by asset · `zonekit/README.md` engineering log
