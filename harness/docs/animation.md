@@ -139,6 +139,20 @@ location / forward (`PlayerCameraManager`), and scale it by the same `s`. `MPC_F
   a table of segments in one sequence, started with `InTimeToStartMontageAt` and stopped with `Montage_Stop`.
 - The empty-handed spine differs a lot from the rifle stance: the same left-arm locals put the hand ~40 cm higher.
   Solve left-arm poses on the stance's own spine (`fp_bh_idle_stand` matched the in-game rest hand to 1 cm).
+- **With a weapon in hand the whole arm rig follows the view** (the weapon layer pitches `jnt_spine_03` with the
+  look-vertical additive): a hand position relative to `jnt_camera` in a sequence is its position in view axes in
+  game, whatever the view pitch (ImmersiveLooting 2026-10-10, three traces). Measured hand-bone landing for a planned
+  camera-relative point: ahead + 8.4 cm, right x 1.14 + 4.0, up x 1.15 + 2.0 (the sideways scale ~ the arms' FOV
+  squeeze). With **empty hands the arms stay in the body frame** (do not follow the pitch): aim per view pitch there.
+- **Rifles with an underbarrel idle type pin the left hand**: `AnimBP_PlayerWeaponLayer` → `WeaponUnderbarrelIdleLayer`
+  blends the `GripIdle` pose over the left arm with weight `FirearmData.LeftHandCurveValueInverse` = 1 - the montage
+  curve `left_hand_curve`. A `LeftHand` montage without that curve plays (slot active, position advancing) but the hand
+  never leaves the grip. The game's own left-hand gestures (`MG_fp_ar_flashlight`, NVG) carry `left_hand_curve`
+  (0 → 1 in 0.17 s, held, back to 0 ~0.25 s before the end): add it to any mod-made LeftHand sequence
+  (`AnimationLibrary.add_curve` + `add_float_curve_keys`).
+- A 180 s "pose table" sequence (many segments, `InTimeToStartMontageAt`) works in the bh layer; over a rifle the
+  same form never showed (cause not isolated; the curve may have been the whole reason). Many short sequences
+  (one per bin) cook to ~15 KB each and are a safe alternative.
 - With empty hands the left-hand IK still pulls a `LeftHand` montage's hand toward the grip point (`jnt_weapon`, just
   right of centre): a default `AnimNotify_HandIK` (LeftHand, End 0) at the start keeps it off; a "back on" one (End 1)
   makes the hand jump there.
