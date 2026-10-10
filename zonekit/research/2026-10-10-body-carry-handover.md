@@ -1,4 +1,10 @@
-# Body carry broken: handover (2026-10-10, unresolved)
+# Body carry broken: handover (2026-10-10, resolved the same evening: rc-1.0.1)
+
+**Outcome (1.0.1m = rc-1.0.1):** two separate faults. (1) Users: 1.0.0's key capture (every hold became a tap), fixed
+by the no-capture code below. (2) Noah's PC only: every save made after Immersive Looting first ran (2026-10-09
+~21:30) cannot carry, even with the mod removed; his 2026-10-09 17:13 save carries with the same mod list. All 13
+bisect builds ran on such a save, so they measured nothing. Lesson: when "nothing of ours runs" still fails, test an
+older save BEFORE more builds. Cause of the broken saves unknown; 1.0.1m does not repair them.
 
 **Status:** unresolved after ~3 hours and 13 test builds. `main` is back at the v1.0.0 release; all the 1.0.1 work is
 on branch `wip/1.0.1-body-carry` (generator, assets, probe, full log in `zonekit/README.md` from "v0.2 corpse /

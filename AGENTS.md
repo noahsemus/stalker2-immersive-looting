@@ -56,10 +56,18 @@ harness on 2026-10-09.
   and mutant corpses, stashes, take-all / nothing, hold-F drag, walk-away, skips, spam, artifacts, alongside the
   other mods, save/load). Zip in `zonekit/builds/v1.0.0/`, GitHub release v1.0.0. Nexus page: mod 2972.
 
-- 2026-10-10 OPEN BUG, unresolved: carrying bodies (hold F) broken (Nexus report on 1.0.0: the key capture turns
-  every hold into a tap; on Noah's save also the "hold F" prompt stays a dot, even with nothing of ours running).
-  13 builds tried, see `zonekit/research/2026-10-10-body-carry-handover.md` (what was tried, what it showed, what
-  to try next). `main` reset to v1.0.0; all 1.0.1 work on branch `wip/1.0.1-body-carry`. Start there.
+- 2026-10-10 rc-1.0.1 (Noah: "carrying bodies fully works. release candidate"; paks in `zonekit/builds/rc-1.0.1/`):
+  Nexus reports "can't carry bodies" = 1.0.0's key capture (every hold F became a tap). Fix: no key capture (interact
+  keys polled; at a press near a body / stash its tap interaction is switched off, a tap under 0.4 s = touch then
+  injected interact, a longer hold = the game's own carry), once-per-world `ReturnLeftHandOnItemEnded`, the press needs
+  a lootable target, setting `TouchBodies` (for the MCM toggle). Noah's own saves made after 2026-10-09 ~21:30 cannot
+  carry even with the mod removed (his 17:13 save carries; cause unknown, not repaired): test on the 17:13 save.
+  Tested there: carry, and carry after loose items / body tap / stash tap / save+reload; loot window opens sooner.
+  Next: MCM toggle for the body / stash touch (Nexus: looting slower in combat / radiation). Kit = wip branch.
+
+- 2026-10-10 v1.0.1 released (Noah: "with the faster looting window i don't think we need mcm support. let's cut
+  the release"): the rc-1.0.1 paks unchanged; MCM toggle dropped (`TouchBodies` stays, default on, unused). Zip in
+  `zonekit/builds/v1.0.1/`, GitHub release v1.0.1, `main` = the former wip branch.
 
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
@@ -84,4 +92,4 @@ harness on 2026-10-09.
 - `CLAUDE.md` / `GEMINI.md` only import `harness/AGENTS.md` and this file, for tools that don't read `AGENTS.md`.
 
 ## Release (only when the tester says "cut a release")
-Follow `harness/docs/pipeline.md` § Release. Nexus page: _(record the mod id here once it exists)_.
+Follow `harness/docs/pipeline.md` § Release. Nexus page: mod 2972, https://www.nexusmods.com/stalker2heartofchornobyl/mods/2972.

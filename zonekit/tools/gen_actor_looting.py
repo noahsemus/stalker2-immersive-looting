@@ -351,17 +351,10 @@ def load_imc(x, y, name, prev_then, comment):
 
 
 def looked_at(x, y):
-    """The actor under the crosshair: PC.GetInteractedActor, else the owner of PC.GetInteractionTarget (build 1
-    read only the latter and never saw a loose item)."""
-    ia = member_pure(PC, "GetInteractedActor", x, y, as_pc, [("ReturnValue", "object", dict(sub=ACTOR, out=True))])["ReturnValue"]
-    it = member_pure(PC, "GetInteractionTarget", x, y + 100, as_pc, [("ReturnValue", "object", dict(sub=ICOMP, out=True))])["ReturnValue"]
-    ow = member_pure(ACOMP, "GetOwner", x + 200, y + 100, it, [("ReturnValue", "object", dict(sub=ACTOR, out=True))])["ReturnValue"]
-    sel = kml("SelectObject", x + 400, y, [("A", "object", dict(sub=OBJ)), ("B", "object", dict(sub=OBJ)),
-                                           B("bSelectA"), ("ReturnValue", "object", dict(sub=OBJ, out=True))])
-    g.link(ia, sel["A"])
-    g.link(ow, sel["B"])
-    g.link(is_valid(x + 200, y - 100, ia), sel["bSelectA"])
-    return sel["ReturnValue"]
+    """The actor under the crosshair: our own sphere trace from the camera (LookActor, set every tick before the
+    steps). Until 1.0.1d this was PC.GetInteractedActor / the owner of PC.GetInteractionTarget: the last calls into
+    the game's interaction system, suspected of costing the body's "hold F" carry (its prompt stayed a dot)."""
+    return self_get("LookActor", "object", x, y, sub=ACTOR)
 
 
 def grab_active(x, y):
@@ -422,7 +415,7 @@ def comp_of(x, y, actor_pin, comp_cls):
 # =====================================================================
 # Tick
 # =====================================================================
-g.box("EdGraphNode_Comment_900", -80, -160, 1500, 760, "Tick: player, mesh, anim instance")
+g.box("EdGraphNode_Comment_900", -80, -160, 2600, 1500, "Tick: player, mesh, anim instance, what the crosshair is on")
 tick = Node(g, BG + "K2Node_Event", nm("K2Node_Event"), 0, 0, "",
             [f"EventReference=(MemberParent={ACTOR},MemberName=\"ReceiveTick\")", "bOverrideFunction=True"])
 tick.pin("OutputDelegate", "delegate", out=True)
@@ -446,7 +439,54 @@ spl = set_from("Player", "object", 500, 0, cast["AsPC"], "remember the player", 
 g.link(cast["then"], spl["execute"])
 as_pc = self_get("Player", "object", 650, 300, sub=PC)
 sq = sequence(700, 0, "tick steps", 7)
-g.link(spl["then"], sq["execute"])
+# 1.0.1e: what the crosshair is on, by our own sphere trace from the camera (10 cm, 3.5 m, visibility, the player
+# ignored); LookActor / LookComp replace PC.GetInteractedActor / GetInteractionTarget / GetInteractedComponent
+_cmt = lib_pure(GS, "GameplayStatics", "GetPlayerCameraManager", 300, 900,
+                [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)),
+                 ("PlayerIndex", "int", dict(extra='DefaultValue="0",')), ("ReturnValue", "object", dict(sub=PCM, out=True))])["ReturnValue"]
+_clt = member_pure(PCM, "GetCameraLocation", 500, 900, _cmt, [("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+_crt = member_pure(PCM, "GetCameraRotation", 500, 1000, _cmt, [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"]
+_cft = kml("GetForwardVector", 700, 1000, [("InRot", "struct", dict(sub=ROT)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_crt, _cft["InRot"])
+_cfr = kml("Multiply_VectorFloat", 900, 1000, [("A", "struct", dict(sub=VEC)), ("B", "real", dict(subcat="double", extra='DefaultValue="350.0",')),
+                                               ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_cft["ReturnValue"], _cfr["A"])
+_cen = kml("Add_VectorVector", 1100, 950, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_clt, _cen["A"])
+g.link(_cfr["ReturnValue"], _cen["B"])
+_mka = Node(g, BG + "K2Node_MakeArray", nm("K2Node_MakeArray"), 900, 1200, "", ["NumInputs=1"])
+_mka.pin("[0]", "object", sub=ACTOR)
+_mka.pin("Array", "object", sub=ACTOR, out=True)
+_mka.pins["Array"].container = "Array"
+g.link(as_pc, _mka["[0]"])
+trc = lib_call(KSL, "SphereTraceSingle", 1300, 800, "what the crosshair is on (our own trace: no calls into the game's interaction system)", [
+    ("WorldContextObject", "object", dict(sub=OBJ, hidden=True)),
+    ("Start", "struct", dict(sub=VEC)), ("End", "struct", dict(sub=VEC)),
+    ("Radius", "real", dict(subcat="float", extra='DefaultValue="10.000000",')),
+    ("TraceChannel", "byte", dict(sub=EN("/Script/Engine.ETraceTypeQuery"), extra='DefaultValue="TraceTypeQuery1",')),
+    ("bTraceComplex", "bool", dict(extra='DefaultValue="false",')),
+    ("ActorsToIgnore", "object", dict(sub=ACTOR)),
+    ("DrawDebugType", "byte", dict(sub=EN("/Script/Engine.EDrawDebugTrace"), extra='DefaultValue="None",')),
+    ("OutHit", "struct", dict(sub=HIT, out=True)),
+    ("bIgnoreSelf", "bool", dict(extra='DefaultValue="true",')),
+    ("ReturnValue", "bool", dict(out=True))], "/Script/Engine.Default__KismetSystemLibrary")
+trc.pins["ActorsToIgnore"].container = "Array"
+trc.pins["ActorsToIgnore"].ref = True
+trc.pins["ActorsToIgnore"].const = True
+g.link(_clt, trc["Start"])
+g.link(_cen["ReturnValue"], trc["End"])
+g.link(_mka["Array"], trc["ActorsToIgnore"])
+bhr = lib_pure(GS, "GameplayStatics", "BreakHitResult", 1700, 1000, [("Hit", "struct", dict(sub=HIT)),
+                                                                     ("HitActor", "object", dict(sub=ACTOR, out=True)),
+                                                                     ("HitComponent", "object", dict(sub=PRIM, out=True))])
+bhr.pins["Hit"].ref = True
+bhr.pins["Hit"].const = True
+g.link(trc["OutHit"], bhr["Hit"])
+sla = set_from("LookActor", "object", 1900, 800, bhr["HitActor"], "under the crosshair", sub=ACTOR)
+slk = set_from("LookComp", "object", 2200, 800, bhr["HitComponent"], "", sub=PRIM)
+g.link(spl["then"], trc["execute"])
+chain(trc, sla, slk)
+g.link(slk["then"], sq["execute"])
 mesh = other_get(CHAR, "Mesh", "object", 700, 300, as_pc, sub=SKC)
 anim = member_pure(SKC, "GetAnimInstance", 950, 300, mesh, [("ReturnValue", "object", dict(sub=ANIMI, out=True))])["ReturnValue"]
 
@@ -462,7 +502,14 @@ stg = self_call("SetTickGroup", X0 + 300, Y0, "tick after anim update", [
 si0 = self_set("Init", "bool", X0 + 650, Y0, "", default="true")
 g.link(br0["then"], stg["execute"])
 g.link(stg["then"], si0["execute"])
-imc_c = load_imc(X0 + 950, Y0, "IMC_Inventory", si0["then"], "inventory / loot input context (game path)")
+# 1.0.1i: an early touch build (2026-10-10, patch_touch3) called PC.RemoveLeftHandFromItemEnded at every touch and
+# never the matching ReturnLeftHandOnItemEnded: the player's "left hand off the item" state stayed set, and
+# IsLeftHandBusy has read true at rest ever since (probe). The body carry is a left-hand action: its prompt stayed a
+# dot through every build, even with this actor not ticking. Once per world: tell the game the left hand is back.
+rlh = member_call(PC, "ReturnLeftHandOnItemEnded", X0 + 650, Y0 + 250, as_pc, "left hand back on the item (clears a state an early build left set)")
+g.link(si0["then"], rlh["execute"])
+# 1.0.1k added PC.EnableInteractions after it: the carry died again (1.0.1i, the reset alone, carried): removed.
+imc_c = load_imc(X0 + 950, Y0, "IMC_Inventory", rlh["then"], "inventory / loot input context (game path)")
 sim0 = set_from("InvIMC", "object", X0 + 1700, Y0, imc_c["AsInput Mapping Context"], "remember it", sub=IMC_CLS)
 g.link(imc_c["then"], sim0["execute"])
 
@@ -787,7 +834,7 @@ b50 = branch(X5 + 300, Y5 - 200, "window closed (and not opening this tick)?", b
 g.link(sq5["then_0"], b50["execute"])
 slt = set_from("LootObj", "object", X5 + 600, Y5 - 200, looked_at(X5 + 100, Y5 - 100), "what we look at", sub=OBJ)
 slc = set_from("LootComp", "object", X5 + 900, Y5 - 200,
-               member_pure(PC, "GetInteractedComponent", X5 + 700, Y5 - 50, as_pc, [("ReturnValue", "object", dict(sub=PRIM, out=True))])["ReturnValue"],
+               self_get("LookComp", "object", X5 + 700, Y5 - 50, sub=PRIM),
                "the part we look at", sub=PRIM)
 g.link(b50["then"], slt["execute"])
 g.link(slt["then"], slc["execute"])
@@ -997,17 +1044,20 @@ g.link(brv["else"], self_set("LootReach", "bool", X5 + 1800, Y5 + 4200, "nothing
 # v0.2 corpse / stash touch (tester: "the touch should happen before the window opens; when it closes the hand returns")
 # The game freezes the world while the loot window is open (probe: 0 ticks/s), so the reach must play before it opens:
 #   - looking at a corpse (an Obj that is not alive and has a DeadBody component) or a stash (an item container that is
-#     not a loose item): our input context IMC_ImmLoot (priority 1000) maps the player's interact keys to our
-#     IA_ImmLootInteract (consumes them), so the game's interact does not fire;
-#   - our action pressed: the hand reaches toward the corpse / stash (PendingReach, LootReach); at the touch frame the
-#     montage pauses (touch steps), our context is removed and IA_Interact is injected: the game opens the window as if
-#     the key had just been pressed (a still-held key reaches the game directly, so holding to carry a body still works);
-#   - window closed: the hand plays back to the start (after-closing steps) and, with a weapon, returns to the grip.
-# TouchState: 0 idle, 2 reaching, 3 window requested / open.
+#     not a loose item): remember its TAP interaction component (DeadBody / ItemContainerInteractionComponent);
+#   - the player's interact keys (QueryKeysMappedToAction) are POLLED every tick (WasInputKeyJustPressed / Released):
+#     no input mapping context and no input on this actor. 1.0.1a-c: any mapping of the key, consuming or not, hid the
+#     game's "hold F" prompt and its carry (native HoldIPU); the game keeps its key untouched now;
+#   - pressed: the tap component is switched off (SetInteractionActive false) so the game's own tap does nothing;
+#     released within HoldToDrag = a tap: the hand reaches (PendingReach, LootReach), pauses at the touch frame, the
+#     component is switched back on and IA_Interact injected: the window opens; held longer = the game's hold (carry a
+#     body): nothing of ours, the idle step switches the component back on;
+#   - window closed: the hand plays on / back (after-closing steps) and, with a weapon, returns to the grip.
+# TouchState: 0 idle, 1 pressed (tap or hold?), 2 reaching, 3 window requested / open.
 # =====================================================================
 XT, YT = 1200, 16500
-g.box("EdGraphNode_Comment_907", XT - 300, YT - 400, 7200, 3400, "Corpse / stash: catch the interact key, reach out, then open the loot window")
-g.box("EdGraphNode_Comment_908", XT - 400, YT + 3500, 7200, 1600, "Our interact key pressed on a corpse / stash: start the reach (or pass the press on)")
+g.box("EdGraphNode_Comment_907", XT - 300, YT - 1200, 7200, 4200, "Corpse / stash: catch the interact key, reach out, then open the loot window")
+g.box("EdGraphNode_Comment_908", XT - 400, YT + 3500, 7200, 3200, "Our interact key pressed on a corpse / stash: start the reach (or pass the press on)")
 gpc_t = lib_pure(GS, "GameplayStatics", "GetPlayerController", XT - 900, YT + 1500,
                  [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)),
                   ("PlayerIndex", "int", dict(extra='DefaultValue="0",')),
@@ -1066,13 +1116,32 @@ def inject_interact(x, y, comment):
     return inj
 
 
-sqt = sequence(XT, YT, "touch steps", 5)
+def tap_active(x, y, on, comment):
+    """TapComp.SetInteractionActive(on) if TapComp is valid; returns (entry exec pin, [exit exec pins])."""
+    b = branch(x, y, comment, is_valid(x - 150, y + 200, self_get("TapComp", "object", x - 350, y + 200, sub=ICOMP)))
+    c = member_call(ICOMP, "SetInteractionActive", x + 300, y, self_get("TapComp", "object", x + 100, y + 200, sub=ICOMP), "",
+                    [("bActive", "bool", dict(extra='DefaultValue="%s",' % ("true" if on else "false")))])
+    g.link(b["then"], c["execute"])
+    return b["execute"], [c["then"], b["else"]]
+
+
+sqt = sequence(XT, YT, "touch steps", 7)
 g.link(sq5["then_4"], sqt["execute"])
 
 #   T0: idle and window closed: is what we look at a corpse / stash? (re-evaluated every tick)
 bt0 = branch(XT + 300, YT - 200, "idle, window closed?", b_and(XT + 150, YT, int_eq(XT, YT, tstate(XT - 200, YT), 0),
                                                               b_not(XT, YT + 100, self_get("InvOpen", "bool", XT - 200, YT + 100))))
 g.link(sqt["then_0"], bt0["execute"])
+sq0 = sequence(XT + 450, YT - 200, "idle steps", 2)
+g.link(bt0["then"], sq0["execute"])
+#     a) the tap interaction we switched off at a press: back on (every exit of a touch ends here)
+boff = branch(XT + 700, YT - 1000, "a tap interaction switched off? back on", self_get("TapOff", "bool", XT + 500, YT - 800))
+g.link(sq0["then_0"], boff["execute"])
+_e0, _x0 = tap_active(XT + 1000, YT - 1000, True, "")
+g.link(boff["then"], _e0)
+_so = self_set("TapOff", "bool", XT + 1700, YT - 1000, "", default="false")
+for q_ in _x0:
+    g.link(q_, _so["execute"])
 lo = lambda x, y: self_get("LootObj", "object", x, y, sub=OBJ)
 cob = exec_pins(Node(g, BG + "K2Node_DynamicCast", nm("K2Node_DynamicCast"), XT + 600, YT - 200, "a character?", ["TargetType=" + OBJC]))
 cob.pin("CastFailed", "exec", out=True)
@@ -1080,14 +1149,27 @@ cob.pin("Object", "object", sub=OBJ)
 cob.pin("AsObj", "object", sub=OBJC, out=True)
 cob.pin("bSuccess", "bool", out=True)
 g.link(lo(XT + 400, YT), cob["Object"])
-g.link(bt0["then"], cob["execute"])
+# 1.0.1f bisect (tester: no more probe-only runs; the hold on a loose item works, the body carry's prompt stays a dot):
+# CORPSE_TOUCH False skips the corpse branch (IsAlive, GetComponentByClass DeadBody, TapComp, pelvis): bodies are
+# "something else" = plain vanilla; stashes keep the touch. If the carry returns, the cause is in that branch.
+CORPSE_TOUCH = True   # 1.0.1f/g: off made no difference (nor did the whole tick off): the corpse branch is innocent
+if CORPSE_TOUCH:
+    g.link(sq0["then_1"], cob["execute"])
 alive = obj_q("IsAlive", XT + 800, YT + 100, cob["AsObj"])
 dbc = member_pure(ACTOR, "GetComponentByClass", XT + 800, YT + 200, cob["AsObj"], [
     ("ComponentClass", "class", dict(sub=ACOMP, extra='DefaultObject="/Script/Stalker2.DeadBody",')),
     ("ReturnValue", "object", dict(sub=ACOMP, out=True))])["ReturnValue"]
-corpse = b_and(XT + 1050, YT + 100, b_not(XT + 950, YT + 50, alive), is_valid(XT + 1000, YT + 200, dbc))
+corpse = b_and(XT + 1050, YT + 100, b_not(XT + 950, YT + 50, alive), is_valid(XT + 1000, YT + 200, dbc),
+               self_get("TouchBodies", "bool", XT + 850, YT + 280))   # setting (MCM): off = bodies stay vanilla
 sl_c = set_from("Lootable", "bool", XT + 1100, YT - 300, corpse, "a corpse?")
 g.link(cob["then"], sl_c["execute"])
+#     its tap interaction (DeadBody = "search"; the carry is a separate DeadBodyHoldComponent we never touch)
+stc = set_from("TapComp", "object", XT + 1400, YT - 300, member_pure(ACTOR, "GetComponentByClass", XT + 1200, YT - 100, cob["AsObj"], [
+    ("ComponentClass", "class", dict(sub=ACOMP, extra='DefaultObject="/Script/Stalker2.DeadBody",')),
+    ("ReturnValue", "object", dict(sub=ICOMP, out=True))])["ReturnValue"], "its search interaction", sub=ICOMP)
+g.link(sl_c["then"], stc["execute"])
+#     1.0.1l's per-body ReturnLeftHandOnItemEnded removed in 1.0.1m (carry still dead with it; back to 1.0.1i, which
+#     carried: the reset once per world only)
 cic = exec_pins(Node(g, BG + "K2Node_DynamicCast", nm("K2Node_DynamicCast"), XT + 900, YT + 400, "an item container?",
                      [f"TargetType=\"/Script/CoreUObject.Class'{IIC}'\""]))
 cic.pin("CastFailed", "exec", out=True)
@@ -1096,6 +1178,8 @@ cic.pin("AsInteractable Item Container", "object", sub=cls(IIC), out=True)
 cic.pin("bSuccess", "bool", out=True)
 g.link(lo(XT + 700, YT + 600), cic["Object"])
 g.link(cob["CastFailed"], cic["execute"])
+if not CORPSE_TOUCH:
+    g.link(sq0["then_1"], cic["execute"])
 # the instance name starts with its class name (BP_StaticItemContainer_C_...); a class pin cannot feed GetObjectName
 _cn = lib_pure(KSL, "KismetSystemLibrary", "GetObjectName", XT + 1300, YT + 650, [("Object", "object", dict(sub=OBJ)), ("ReturnValue", "string", dict(out=True))])
 g.link(cic["AsInteractable Item Container"], _cn["Object"])
@@ -1109,60 +1193,20 @@ def str_starts(x, y, a, lit):
     return n["ReturnValue"]
 
 
-stash = b_not(XT + 1700, YT + 700, b_or(XT + 1600, YT + 700, str_starts(XT + 1500, YT + 650, _cn["ReturnValue"], "BP_StaticItemContainer_C"),
-                                        str_starts(XT + 1500, YT + 750, _cn["ReturnValue"], "BP_SkeletalItemContainer_C")))
+stash = b_and(XT + 1850, YT + 700, b_not(XT + 1700, YT + 700, b_or(XT + 1600, YT + 700, str_starts(XT + 1500, YT + 650, _cn["ReturnValue"], "BP_StaticItemContainer_C"),
+                                        str_starts(XT + 1500, YT + 750, _cn["ReturnValue"], "BP_SkeletalItemContainer_C"))),
+               self_get("TouchBodies", "bool", XT + 1700, YT + 820))   # setting (MCM): off = stashes stay vanilla
 sl_s = set_from("Lootable", "bool", XT + 1300, YT + 400, stash, "a stash (not a loose item)?")
 g.link(cic["then"], sl_s["execute"])
+sts = set_from("TapComp", "object", XT + 1600, YT + 400, member_pure(ACTOR, "GetComponentByClass", XT + 1400, YT + 600, cic["AsInteractable Item Container"], [
+    ("ComponentClass", "class", dict(sub=ACOMP, extra='DefaultObject="/Script/Stalker2.ItemContainerInteractionComponent",')),
+    ("ReturnValue", "object", dict(sub=ICOMP, out=True))])["ReturnValue"], "its open interaction", sub=ICOMP)
+g.link(sl_s["then"], sts["execute"])
 sl_n = self_set("Lootable", "bool", XT + 1300, YT + 900, "something else", default="false")
 g.link(cic["CastFailed"], sl_n["execute"])
-#     add / remove our context to match
-sqa = sequence(XT + 2000, YT - 200, "context steps", 2)
-for n_ in (sl_c, sl_s, sl_n):
-    g.link(n_["then"], sqa["execute"])
+stn = self_set("TapComp", "object", XT + 1600, YT + 900, "none", sub=ICOMP)
+g.link(sl_n["then"], stn["execute"])
 lootable = lambda x, y: self_get("Lootable", "bool", x, y)
-badd = branch(XT + 2300, YT - 300, "corpse / stash in sight, our keys not on yet?", b_and(XT + 2200, YT - 100, lootable(XT + 2000, YT - 100),
-                                                                                       b_not(XT + 2000, YT, tadded(XT + 1800, YT))))
-g.link(sqa["then_0"], badd["execute"])
-#       once per world: copy the player's interact keys (rebinds, gamepad) into our context
-bks = branch(XT + 2600, YT - 300, "player's interact keys not copied yet?", b_not(XT + 2500, YT - 100, self_get("KeysSynced", "bool", XT + 2300, YT - 100)))
-g.link(badd["then"], bks["execute"])
-qk = member_pure(EISI, "QueryKeysMappedToAction", XT + 2600, YT + 200, subt["ReturnValue"], [
-    ("Action", "object", dict(sub=IA_CLS, extra=f'DefaultObject="{IA_INTERACT}",')), ("ReturnValue", "struct", dict(sub=KEY, out=True))])
-qk.pins["self"].cat = "interface"
-qk.pins["Action"].const = True
-qk.pins["ReturnValue"].container = "Array"
-fek = Node(g, BG + "K2Node_MacroInstance", nm("K2Node_MacroInstance"), XT + 2900, YT - 300, "each interact key",
-           [FOREACH, f"ResolvedWildcardType=(PinCategory=\"struct\",PinSubCategoryObject={KEY})"])
-fek.pin("Exec", "exec")
-fek.pin("Array", "struct", sub=KEY)
-fek.pins["Array"].container = "Array"
-fek.pin("LoopBody", "exec", out=True)
-fek.pin("Array Element", "struct", sub=KEY, out=True)
-fek.pin("Array Index", "int", out=True)
-fek.pin("Completed", "exec", out=True)
-g.link(qk["ReturnValue"], fek["Array"])
-g.link(bks["then"], fek["Exec"])
-mk = exec_pins(Node(g, BG + "K2Node_CallFunction", nm("K2Node_CallFunction"), XT + 3200, YT - 300, "map it to our action",
-                    [f"FunctionReference=(MemberParent={IMC_CLS},MemberName=\"MapKey\")"]))
-mk.pin("self", "object", sub=IMC_CLS, extra=f'{TGT}DefaultObject="{IMC_TOUCH}",')
-mk.pin("Action", "object", sub=IA_CLS, extra=f'DefaultObject="{IA_TOUCH}",')
-mk.pin("ToKey", "struct", sub=KEY)
-mk.pin("ReturnValue", "struct", sub=EAKM, out=True)
-mk.pins["ReturnValue"].ref = True
-g.link(fek["Array Element"], mk["ToKey"])
-g.link(fek["LoopBody"], mk["execute"])
-kss = self_set("KeysSynced", "bool", XT + 3200, YT, "keys copied", default="true")
-g.link(fek["Completed"], kss["execute"])
-addc = ctx_call(XT + 3600, YT - 200, "AddMappingContext", "our keys on (they swallow the game's interact)", True)
-g.link(kss["then"], addc["execute"])
-g.link(bks["else"], addc["execute"])
-g.link(addc["then"], self_set("TouchAdded", "bool", XT + 3950, YT - 200, "", default="true")["execute"])
-brm = branch(XT + 2300, YT + 1100, "nothing lootable in sight, our keys on? take them off",
-             b_and(XT + 2200, YT + 1300, b_not(XT + 2000, YT + 1300, lootable(XT + 1800, YT + 1300)), tadded(XT + 2000, YT + 1400)))
-g.link(sqa["then_1"], brm["execute"])
-rmc = ctx_call(XT + 2600, YT + 1100, "RemoveMappingContext", "our keys off", False)
-g.link(brm["then"], rmc["execute"])
-g.link(rmc["then"], self_set("TouchAdded", "bool", XT + 2950, YT + 1100, "", default="false")["execute"])
 
 #   T1: reaching: at the touch frame (montage paused there) or after 0.8 s: give the key back and open the window
 tp = lambda x, y: self_get("TouchPressAt", "real", x, y, subcat="double")
@@ -1172,18 +1216,25 @@ held = b_and(XT + 200, YT + 2350, self_get("LootPaused", "bool", XT, YT + 2300),
              d_op("GreaterEqual_DoubleDouble", XT + 200, YT + 2450,
                   d_op("Subtract_DoubleDouble", XT, YT + 2450, now(XT - 200, YT + 2450), self_get("PausedAt", "real", XT - 200, YT + 2550, subcat="double")),
                   self_get("TouchHoldBeforeOpen", "real", XT, YT + 2600, subcat="double"), ret=RB))
-bt1 = branch(XT + 400, YT + 1800, "reached (or 0.8 s)? open the window now",
+bt1 = branch(XT + 400, YT + 1800, "reached (or 2 s) after a tap? open the window now",
              b_and(XT + 300, YT + 2100, int_eq(XT + 100, YT + 2200, tstate(XT - 100, YT + 2200), 2),
+                   b_not(XT + 100, YT + 2280, self_get("InvOpen", "bool", XT - 100, YT + 2280)),
                    b_or(XT + 300, YT + 2300, held, late)))
 g.link(sqt["then_1"], bt1["execute"])
-rmc2 = ctx_call(XT + 700, YT + 1800, "RemoveMappingContext", "our keys off", False)
-ta2 = self_set("TouchAdded", "bool", XT + 1050, YT + 1800, "", default="false")
+bt1o = branch(XT + 400, YT + 1500, "reaching and the window opened by itself (a stash that opens on the press)?",
+              b_and(XT + 300, YT + 1650, int_eq(XT + 100, YT + 1650, tstate(XT - 100, YT + 1650), 2), self_get("InvOpen", "bool", XT + 100, YT + 1730)))
+g.link(bt1["else"], bt1o["execute"])
+_e1, _x1 = tap_active(XT + 1200, YT + 1800, True, "its tap interaction back on")
+_s1 = self_set("TapOff", "bool", XT + 1300, YT + 2100, "", default="false")
+for q_ in _x1:
+    g.link(q_, _s1["execute"])
 inj = inject_interact(XT + 1400, YT + 1800, "press the game's interact: opens the loot window")
 ts3 = self_set("TouchState", "int", XT + 1750, YT + 1800, "window requested", default="3")
 toa = set_from("TouchOpenAt", "real", XT + 2050, YT + 1800, now(XT + 1900, YT + 2000), "", subcat="double")
 nto = inc("NTouch", XT + 2350, YT + 1800, "count touches")
-chain(rmc2, ta2, inj, ts3, toa, nto)
-g.link(bt1["then"], rmc2["execute"])
+g.link(bt1["then"], _e1)
+chain(_s1, inj, ts3, toa, nto)
+g.link(bt1o["then"], ts3["execute"])
 
 #   T2: window requested but never opened (e.g. the game started carrying the body): bring the hand back anyway
 bt2 = branch(XT + 400, YT + 2700, "no window 1 s after the press? hand back",
@@ -1222,19 +1273,12 @@ chain(mresf2, self_set("LootPaused", "bool", XT + 1450, YT + 2450, "", default="
       self_set("TouchState", "int", XT + 2050, YT + 2450, "idle", default="0"))
 g.link(bt2b["else"], ts4["execute"])
 
-#   our interact action pressed (only arrives while our context is on = looking at a corpse / stash)
-ev = Node(g, "/Script/InputBlueprintNodes.K2Node_EnhancedInputAction", nm("K2Node_EnhancedInputAction"), XT - 200, YT + 3700, "",
-          [f"InputAction=\"/Script/EnhancedInput.InputAction'{IA_TOUCH}'\""])
-for e in ("Triggered", "Started", "Ongoing", "Canceled", "Completed"):
-    ev.pin(e, "exec", out=True)
-ev.pin("ActionValue", "bool", out=True)
-ev.pin("ElapsedSeconds", "real", subcat="double", out=True, adv=True)
-ev.pin("TriggeredSeconds", "real", subcat="double", out=True, adv=True)
-ev.pin("InputAction", "object", sub=IA_CLS, out=True)
+#   the interact key pressed (polled, T6 below) on a corpse / stash
 lcomp = lambda x, y: self_get("LootComp", "object", x, y, sub=PRIM)
-bpress = branch(XT + 200, YT + 3700, "idle and the corpse / stash part known? reach for it",
-                b_and(XT + 100, YT + 3900, int_eq(XT - 100, YT + 3900, tstate(XT - 300, YT + 3900), 0), is_valid(XT - 100, YT + 4000, lcomp(XT - 300, YT + 4000))))
-g.link(ev["Started"], bpress["execute"])
+bpress = branch(XT + 200, YT + 3700, "idle, a corpse / stash in sight, its part known? its tap interaction off until we know tap or hold",
+                b_and(XT + 100, YT + 3900, int_eq(XT - 100, YT + 3900, tstate(XT - 300, YT + 3900), 0),
+                      lootable(XT - 100, YT + 3960),   # 1.0.1f: LootComp is whatever the crosshair ray hits (a wall too)
+                      is_valid(XT - 100, YT + 4040, lcomp(XT - 300, YT + 4040))))
 _tgb = lib_pure(KSL, "KismetSystemLibrary", "GetComponentBounds", XT + 300, YT + 4200,
                 [("Component", "object", dict(sub=SC_)), ("Origin", "struct", dict(sub=VEC, out=True)),
                  ("BoxExtent", "struct", dict(sub=VEC, out=True)), ("SphereRadius", "real", dict(subcat="float", out=True))])
@@ -1246,10 +1290,15 @@ tr = [set_from("ItemCenter", "struct", XT + 500, YT + 3700, _tgb["Origin"], "rea
       self_set("LootReach", "bool", XT + 1400, YT + 3700, "touch: hold at the touch frame", default="true"),
       self_set("LootPaused", "bool", XT + 1700, YT + 3700, "", default="false"),
       self_set("LootReverse", "bool", XT + 2000, YT + 3700, "", default="false"),
-      set_from("TouchPressAt", "real", XT + 2300, YT + 3700, now(XT + 2150, YT + 3900), "pressed", subcat="double"),
       self_set("TouchState", "int", XT + 2600, YT + 3700, "reaching", default="2")]
 chain(*tr)
-g.link(bpress["then"], tr[0]["execute"])
+_ep, _xp = tap_active(XT + 500, YT + 3300, False, "its tap interaction off (the game would open the window at the release)")
+g.link(bpress["then"], _ep)
+_sp = self_set("TapOff", "bool", XT + 1200, YT + 3300, "", default="true")
+for q_ in _xp:
+    g.link(q_, _sp["execute"])
+chain(_sp, set_from("TouchPressAt", "real", XT + 1500, YT + 3300, now(XT + 1350, YT + 3500), "pressed", subcat="double"),
+      self_set("TouchState", "int", XT + 1800, YT + 3300, "pressed: tap or hold?", default="1"))
 #     a body: its pelvis bone (the mesh component's bounds stay at the standing height: build e aimed 21 deg UP at a
 #     corpse), else (stash, mutant without that bone) the bounds centre set above
 for q_ in list(tr[0]["then"].links):
@@ -1318,14 +1367,65 @@ for k in range(25):
         g.link(bk["else"], sa["execute"])
     prev = bk
 
-#     not idle or nothing to reach for: just pass the press on to the game
-rmc3 = ctx_call(XT + 500, YT + 4500, "RemoveMappingContext", "our keys off", False)
-ta3 = self_set("TouchAdded", "bool", XT + 850, YT + 4500, "", default="false")
-inj3 = inject_interact(XT + 1200, YT + 4500, "pass the press on")
-chain(rmc3, ta3, inj3)
-bpass = branch(XT + 250, YT + 4400, "idle? (else ignore: a touch is running)", int_eq(XT + 100, YT + 4600, tstate(XT - 100, YT + 4600), 0))
-g.link(bpress["else"], bpass["execute"])
-g.link(bpass["then"], rmc3["execute"])
+#     released: a tap (shorter than HoldToDrag) starts the touch; a longer press was the game's hold (carry a body,
+#     vanilla: we never touch it): idle again
+brel = branch(XT + 200, YT + 5000, "released after our press?", int_eq(XT, YT + 5200, tstate(XT - 200, YT + 5200), 1))
+btap = branch(XT + 500, YT + 5000, "a tap (shorter than HoldToDrag)? reach for it",
+              d_op("Less_DoubleDouble", XT + 400, YT + 5250, d_op("Subtract_DoubleDouble", XT + 200, YT + 5250, now(XT, YT + 5250), tp(XT, YT + 5350)),
+                   self_get("HoldToDrag", "real", XT + 200, YT + 5400, subcat="double"), ret=RB))
+g.link(brel["then"], btap["execute"])
+g.link(btap["then"], tr[0]["execute"])
+g.link(btap["else"], self_set("TouchState", "int", XT + 800, YT + 5100, "idle (vanilla handled the hold)", default="0")["execute"])
+
+#   T6: the player's interact keys polled: pressed / released this tick (no mapping context, no input on this actor)
+PCC = cls("/Script/Engine.PlayerController")
+kd0 = self_set("KeyDown", "bool", XT + 400, YT + 5800, "this tick", default="false")
+ku0 = self_set("KeyUp", "bool", XT + 700, YT + 5800, "", default="false")
+chain(kd0, ku0)
+g.link(sqt["then_6"], kd0["execute"])
+qk = member_pure(EISI, "QueryKeysMappedToAction", XT + 700, YT + 6100, subt["ReturnValue"], [
+    ("Action", "object", dict(sub=IA_CLS, extra=f'DefaultObject="{IA_INTERACT}",')), ("ReturnValue", "struct", dict(sub=KEY, out=True))])
+qk.pins["self"].cat = "interface"
+qk.pins["Action"].const = True
+qk.pins["ReturnValue"].container = "Array"
+fek = Node(g, BG + "K2Node_MacroInstance", nm("K2Node_MacroInstance"), XT + 1000, YT + 5800, "each of the player's interact keys",
+           [FOREACH, f"ResolvedWildcardType=(PinCategory=\"struct\",PinSubCategoryObject={KEY})"])
+fek.pin("Exec", "exec")
+fek.pin("Array", "struct", sub=KEY)
+fek.pins["Array"].container = "Array"
+fek.pin("LoopBody", "exec", out=True)
+fek.pin("Array Element", "struct", sub=KEY, out=True)
+fek.pin("Array Index", "int", out=True)
+fek.pin("Completed", "exec", out=True)
+g.link(qk["ReturnValue"], fek["Array"])
+g.link(ku0["then"], fek["Exec"])
+_jp = member_pure(PCC, "WasInputKeyJustPressed", XT + 1200, YT + 6100, gpc_t["ReturnValue"], [("Key", "struct", dict(sub=KEY)), RB])
+g.link(fek["Array Element"], _jp["Key"])
+bjp = branch(XT + 1400, YT + 5800, "just pressed?", _jp["ReturnValue"])
+g.link(fek["LoopBody"], bjp["execute"])
+g.link(bjp["then"], self_set("KeyDown", "bool", XT + 1700, YT + 5800, "", default="true")["execute"])
+_jr = member_pure(PCC, "WasInputKeyJustReleased", XT + 1200, YT + 6300, gpc_t["ReturnValue"], [("Key", "struct", dict(sub=KEY)), RB])
+g.link(fek["Array Element"], _jr["Key"])
+bjr = branch(XT + 1400, YT + 6100, "just released?", _jr["ReturnValue"])
+g.link(bjp["else"], bjr["execute"])
+g.link(bjr["then"], self_set("KeyUp", "bool", XT + 1700, YT + 6100, "", default="true")["execute"])
+bkd = branch(XT + 2000, YT + 5800, "pressed this tick?", self_get("KeyDown", "bool", XT + 1800, YT + 6000))
+g.link(fek["Completed"], bkd["execute"])
+g.link(bkd["then"], bpress["execute"])
+bku = branch(XT + 2300, YT + 5800, "released this tick?", self_get("KeyUp", "bool", XT + 2100, YT + 6000))
+g.link(bkd["else"], bku["execute"])
+g.link(bku["then"], brel["execute"])
+
+#   T5: still held HoldToDrag s after the press, no release = the game's hold interaction (drag a body): our context
+#   off so the held key reaches IA_Interact (plus one injected press so the game sees it at once), hand back (T2's chain)
+bt5 = branch(XT + 400, YT + 3300, "key still held HoldToDrag after the press? the game's hold (carry a body): vanilla, nothing of ours",
+             b_and(XT + 300, YT + 3500, int_eq(XT + 100, YT + 3500, tstate(XT - 100, YT + 3500), 1),
+                   d_op("GreaterEqual_DoubleDouble", XT + 200, YT + 3650,
+                        d_op("Subtract_DoubleDouble", XT, YT + 3650, now(XT - 200, YT + 3650), tp(XT - 200, YT + 3750)),
+                        self_get("HoldToDrag", "real", XT, YT + 3800, subcat="double"), ret=RB)))
+g.link(sqt["then_5"], bt5["execute"])
+ts5 = self_set("TouchState", "int", XT + 700, YT + 3300, "idle (the idle step switches its tap interaction back on)", default="0")
+g.link(bt5["then"], ts5["execute"])
 
 #   T3: the grip report after the "hand back on the item" animation (armed)
 bgp = branch(XT + 4400, YT + 1800, "report: left hand back on the weapon",
