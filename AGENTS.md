@@ -57,6 +57,15 @@ harness on 2026-10-09.
   other mods, save/load). Zip in `zonekit/builds/v1.0.0/`, GitHub release v1.0.0. Nexus page still to be created
   (`mod.json` nexus_id null).
 
+- 2026-10-10 rc-1.0.1 (Noah: "carrying bodies fully works. release candidate"; paks in `zonekit/builds/rc-1.0.1/`):
+  Nexus reports "can't carry bodies" = 1.0.0's key capture (every hold F became a tap). Fix: no key capture (interact
+  keys polled; at a press near a body / stash its tap interaction is switched off, a tap under 0.4 s = touch then
+  injected interact, a longer hold = the game's own carry), once-per-world `ReturnLeftHandOnItemEnded`, the press needs
+  a lootable target, setting `TouchBodies` (for the MCM toggle). Noah's own saves made after 2026-10-09 ~21:30 cannot
+  carry even with the mod removed (his 17:13 save carries; cause unknown, not repaired): test on the 17:13 save.
+  Tested there: carry, and carry after loose items / body tap / stash tap / save+reload; loot window opens sooner.
+  Next: MCM toggle for the body / stash touch (Nexus: looting slower in combat / radiation). Kit = wip branch.
+
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
   `CoreVariables.cfg:888-889`), visual in `MeshComponent`; pickup is instant and has no BP-visible "item added" event.
