@@ -30,6 +30,18 @@ generators in the mod's `zonekit/tools/gen_*.py`; lift reusable node builders in
   References" and the compile fails ("In use pin no longer exists"). Drive the follow-up from the tick (a flag or a
   timestamp checked each tick) instead.
 
+- **ForEachLoop paste**: `K2Node_MacroInstance` with `MacroGraphReference=(MacroGraph="/Script/Engine.EdGraph'/Engine/
+  EditorBlueprintResources/StandardMacros.StandardMacros:ForEachLoop'",GraphBlueprint=...StandardMacros'",
+  GraphGuid=99DBFD5540A796041F72A5A9DA655026)` (GUID read from the kit's `Engine/Content/EditorBlueprintResources/
+  StandardMacros.uasset`), `ResolvedWildcardType=(PinCategory="object",PinSubCategoryObject=<class>)`, pins `Exec`,
+  `Array` (container Array), `LoopBody`, `Array Element`, `Array Index`, `Completed`.
+- Function purity after a paste comes from the UFunction (`bDefaultsToPureFunc`), not the pasted `bIsPureFunc`:
+  write `const` getters (BlueprintCallable const = pure) without exec pins and static library calls with them, or the
+  reconstructed node drops the exec links.
+- `UUserWidget::GetWidgetFromName` is not Blueprint-callable in 5.5; native widget members bound with BindWidget are
+  usually not BP-visible either. Find a child widget by `GetAllWidgetsOfClass(<its class>, TopLevelOnly=false)` +
+  `GetPathName` contains `<Parent>.WidgetTree.<Child>` (once, on an edge).
+
 Blueprint "Float" variables are doubles. `BlueprintEditorLibrary.add_member_variable` adds variables from Python;
 `reparent_blueprint` reparents; Blueprint graphs themselves cannot be authored from Python (only pasted).
 
