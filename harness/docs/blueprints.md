@@ -43,10 +43,17 @@ generators in the mod's `zonekit/tools/gen_*.py`; lift reusable node builders in
   (`alpha * alpha` + `VLerp`). After every paste, export the graph and compare node and link counts with the
   generated text (match by function + comment, not node name: the editor renames nodes that collide with deleted,
   not yet garbage-collected ones).
+- Static library functions are impure unless declared BlueprintPure: e.g. `KismetMaterialLibrary.GetScalarParameterValue`
+  pasted without exec pins compiles with "was pruned because its Exec pin is not connected" and reads 0. Put such calls
+  in the exec chain and keep their results in variables.
 - **Cast output pin names use the class display name with spaces**: `AsInput Mapping Context`,
   `AsInteractable Item Container`, `AsDead Body` (a misspelled pin silently drops its links).
 - From Git Bash, `ue_exec.py --arg ASSET=/Mod/...` gets its path rewritten to `C:/Program Files/Git/Mod/...` (MSYS
   path conversion): run it from PowerShell or with `MSYS_NO_PATHCONV=1`.
+- `ue_exec.py`: UE's remote execution treats a command as a FILE path when its text contains `<something>.py`
+  early (e.g. a docstring saying "run with ue_exec.py ..."): "Could not load Python file". Keep `.py` names out of
+  the first lines of scripts sent with it. A script that raises leaves its previous output file in place: delete the
+  output before the run, or you read stale results.
 - `UUserWidget::GetWidgetFromName` is not Blueprint-callable in 5.5; native widget members bound with BindWidget are
   usually not BP-visible either. Find a child widget by `GetAllWidgetsOfClass(<its class>, TopLevelOnly=false)` +
   `GetPathName` contains `<Parent>.WidgetTree.<Child>` (once, on an edge).

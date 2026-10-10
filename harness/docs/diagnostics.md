@@ -43,6 +43,9 @@
 - If UE4SS.log shows repeated `AOB scan` failures then `Fatal Error`, nothing of ours loaded: a game update needs new
   UE4SS signatures, or AV interference, or a corrupt install. Not a mod bug.
 
+- A mod actor's tick counter reads 0/s while a loading screen is up (the world is not ticking yet); judge "the
+  actor stopped ticking" only from samples after the player is in control (Looting build 2: a false alarm).
+
 ## Property-diff probe (what changed between two moments)
 Snapshot every reflected property (`ForEachPropertyInChain`, bools as 0/1, object refs by name, arrays by count, the
 rest as raw bytes) of the pawn, its controller, their subobject components, plus any manager or world actor you

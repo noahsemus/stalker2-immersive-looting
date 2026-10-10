@@ -103,6 +103,17 @@ Mostly from ImmersiveDialogue 2.0-2.1 (walk in dialogue, arms, gestures) and Imm
 - A dynamic pose-table montage starts at frame 0 unless `InTimeToStartMontageAt` is set: blend it in from the right
   frame or the first frames blend a wrong pose.
 
+## First-person arms are drawn squeezed toward the view axis (Looting build 4, kit materials)
+The arm / hand materials (`M_MasterHands` → `MF_ForegroundWithShadowSwitch` → `MF_Foreground`) move every vertex in
+the vertex shader: `MF_Foreground_FOVCorrection` scales the sideways part (perpendicular to the camera forward) of the
+camera-relative position by `s = tan(view hFOV / 2) / MPC_FOV.TanFOV` (`View.ClipToView[0][0]` / the arms' tangent),
+then `MF_Foreground_AntiDepthClipping` scales the whole camera-relative position by `MPC_FOV.DepthScale` (0.225;
+screen position unchanged). Bones and sockets are NOT moved: a normal world mesh placed at a hand bone shows up further
+out than the hand (off screen at the edges). To place a world object where a bone is SEEN:
+`C + F*dot(F, P) + (P - F*dot(F, P)) * lerp(1, s, MPC_FOV.IsFOVEnabled)` with `P = bone - C`, `C` / `F` the camera
+location / forward (`PlayerCameraManager`), and scale it by the same `s`. `MPC_FOV` =
+`/Game/_Stalker_2/Materials/MPC/MPC_FOV` (TanFOV, DepthScale, IsFOVEnabled, CurrentFOV, DisplayFOV).
+
 ## Left-hand actions over any weapon (Looting research 2026-10-09, headless read of the layer AnimBPs)
 - Every weapon layer has a `LeftHand` slot behind `left_hand_blend_mask` (jnt_l_shoulder to the fingers, local-space
   rotation), after MainActionSlot / UpperBody, chained RightHand → LeftHand → CameraSlot → DefaultSlot:
