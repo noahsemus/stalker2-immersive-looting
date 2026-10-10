@@ -89,3 +89,97 @@ mod go to `harness/docs/` instead (promote them).
   the curve (the earlier "fine with a rifle" was another rifle). Fix: `left_hand_curve` on `AS_ImmLoot_Grab` (1 from
   0.17 s to 1.15 s, 0 at 1.4 s), no Blueprint change. The same explains the AR table (its curve version was never
   tested).
+- 2026-10-10 v1.0.0 report (Nexus, discotizer: "grabbing dead bodies don't work anymore"; Noah: "the prompt to hold F
+  to pick up the body doesn't even appear"): our `IMC_ImmLoot` consumes the interact key while a corpse is in sight
+  and the press is passed on as a one-frame injected `IA_Interact` = always a tap; the game's hold interaction (carry
+  the body, native `HoldTime` / `HoldPreventFromDefaultInteractionPercent`) never sees the key held. Fix (build
+  1.0.1a): the window opens only after the key was RELEASED while reaching (`TouchReleased`, set on our action's
+  Completed); still held `HoldToDrag` (0.4 s) after the press = the game's hold: TouchState 0, our context removed
+  (the physically held key now reaches `IA_Interact`), one injected press, hand back through T2's chain.
+- 1.0.1a (context off + one injected press at 0.4 s): Noah: hold F = hand out and back, THEN the loot window; the
+  carry never starts; the hold prompt stays a dot. Kit: `IA_Interact` has no action-level triggers; `IMC_Interactivity`
+  maps F / gamepad face-left with `InputTriggerDown` (actuation 0.5): the native code (`HoldIPU`, `HoldComponent`)
+  gets Triggered every tick while held and times the hold itself; a one-frame injected press is a tap (the default
+  interaction = the window). 1.0.1b: in drag mode keep our context, `Dragging` (new bool) = true, and on every
+  Triggered tick of our action inject `IA_Interact` (= Down each tick): the game sees a continuous hold from 0.4 s;
+  any release clears `Dragging`. Still open: the "hold F" prompt (dot) while our context is on.
+- 1.0.1b (inject IA_Interact every tick in drag mode): Noah: hold F = hand out and back, no window, no carry, prompt
+  still a dot. Injection does not drive the native hold. Noah: the vanilla "hold F" prompt MUST show and the carry
+  must be pure vanilla (no touch). Kit: a body has `DeadBody` (SingleClickComponent: the search / tap) and
+  `DeadBodyHoldComponent` (HoldComponent: the carry); a stash `ItemContainerInteractionComponent` +
+  `ItemContainerHoldComponent`; both derive from `InteractionComponent`, which has `SetInteractionActive(bActive)`
+  (pin name from BP_Bed's own call). The game's interact widgets (`W_InteractView`, `W_InteractViewDots`, the hint
+  controller) have empty graphs: native. 1.0.1c: `IA_ImmLootInteract` no longer consumes the key (the game's
+  `IA_Interact` and its hold work natively, prompt included); at our press the target's TAP interaction component
+  (`TapComp`, remembered each idle tick) is switched off so the game's own tap does nothing; released within
+  `HoldToDrag` (0.4 s) = a tap: the touch plays, then the component is switched back on and `IA_Interact` injected
+  (window); held longer = the game's hold (carry), nothing of ours; every exit back to idle switches the component on
+  again (`TapOff`). TouchState 1 = pressed, tap or hold unknown.
+- 1.0.1c (no consume, tap component off at the press): Noah: still no "hold F" prompt, hold does nothing. So the
+  consumption was not it: any mapping of the key (or input on our actor) hides the game's hold. 1.0.1d: NO input
+  mapping context and NO input on the actor (`auto_receive_input` DISABLED): the player's interact keys
+  (`QueryKeysMappedToAction`) are polled every tick with `PlayerController.WasInputKeyJustPressed / Released`
+  (`KeyDown` / `KeyUp` set in a ForEach over the keys); the press / release handlers are unchanged. `IMC_ImmLoot` /
+  `IA_ImmLootInteract` are no longer referenced (delete before the release). The context add / remove steps are gone.
+- 1.0.1d (keys polled, no input context, no input on the actor): Noah: "no change". The probe shows the new logic
+  ran (TouchState 1 on the press, 3 for the window), the game was started after the cook, only the test pak was
+  deployed: the build loads, so input is NOT the cause. Noah refuses runs without the mod ("we know it works in
+  vanilla"). Every call the actor makes is pure except our montage / copy / SetInteractionActive ones (none near
+  a body before a press); the only calls into the game's interaction system left were `PC.GetInteractedActor`,
+  `GetInteractionTarget`, `GetInteractedComponent` every tick (the probe called them once a second too). 1.0.1e:
+  they are gone: our own `SphereTraceSingle` (10 cm, 3.5 m, visibility, player ignored) from the camera sets
+  `LookActor` / `LookComp` each tick before the steps; the probe dumps every plain property of the body's `DeadBody`
+  and `DeadBodyHoldComponent` once a second while looking at a body (and no longer calls the PC getters).
+- 1.0.1e (own sphere trace, no PC interaction getters): Noah: "no change" (prompt a dot, hold does nothing; tap
+  touch + window and loose items fine: TouchState 1 / 2 / 3 seen). So none of our calls is the cause: every call the
+  actor makes near a body before a press is pure, and the input path is untouched since 1.0.1d. Remaining suspects:
+  the base mod's existence (subsystem + ticking actor; 0.1.0 never had the carry tested) or something outside the
+  mod. The probe's component dump printed nothing: `ForEachProperty` lists a struct's own properties only; it now
+  walks the class chain and also dumps `PlayerInteractionComponent`.
+- Noah (2026-10-10): no more probe-only runs, every run carries a change. Fact: a LOOSE item's hold prompt ("hold F
+  to use") shows and works with the release build (our reach plays, then the item's use animation): the game's hold
+  system is fine with the mod; only the body's carry is dead. UE4SS Lua here has no class property enumeration
+  (ForEachProperty nil); the UE4SS GUI (header dump) was declined; settings restored. 1.0.1f: bisect by change:
+  `CORPSE_TOUCH = False` in the generator skips the corpse branch of T0 (IsAlive, GetComponentByClass DeadBody,
+  TapComp, pelvis target): bodies are plain vanilla, stashes keep the touch.
+- 1.0.1f (corpse branch off): Noah: "no change; when I loot a body the hand still comes out too". The hand: the press
+  handler only checks `IsValid(LootComp)`, and since the trace LootComp is whatever the crosshair hits (the body's
+  mesh, a wall): BUG, the press path must also require `Lootable`. The carry: dead with no corpse reads at all. So
+  the body carry is killed by the mod's presence, while a loose item's hold works. 1.0.1g (no paste): the actor's
+  `PrimaryActorTick.bStartWithTickEnabled` = false on the CDO: the subsystem still spawns it, nothing of ours runs.
+  Carry back = the cause is in the tick (then bisect the steps); still dead = subsystem / actor existence / pak.
+- 1.0.1g (actor never ticks): Noah: carry still dead, prompt a dot (and no touch, as expected). So nothing the actor
+  DOES is the cause; the loose item's hold works. Left: the mod's content / registration. GFD actions:
+  AddToContentPackAction, AddConfigsPathGameFeatureAction, GameFeatureAction_AddWPContent (kit defaults). 1.0.1h: the
+  unused `IA_ImmLootInteract` / `IMC_ImmLoot` deleted (an InputMappingContext asset in the pak is the one thing of
+  ours that touches input even unused, if the game scans contexts), the tick back on, the corpse branch back on, the
+  press requires `Lootable` (the wall / body press bug).
+- 1.0.1h (input assets deleted) and the dev probe removed: Noah: still a dot. Noah: "before Immersive Looting this
+  worked", not other mods. Everything executed and every asset is excluded, so the remaining suspect is STATE the mod
+  left behind: the first touch builds (patch_touch3, 2026-10-10 ~10:50) called `PC.RemoveLeftHandFromItemEnded` at
+  every touch and never `ReturnLeftHandOnItemEnded` (its grip report never fired); `IsLeftHandBusy` has read true at
+  rest in every log since; the carry is a left-hand action; a player state can be in the save. 1.0.1i: once per
+  world the actor calls `ReturnLeftHandOnItemEnded`.
+- 1.0.1i: Noah: "finally. holding F picks up a body" (the carry is back); only the "hold F" legend is still a dot.
+  CAUSE of the dead carry: a dev build's `RemoveLeftHandFromItemEnded` without the matching `ReturnLeftHandOnItemEnded`
+  left the player's left-hand state set (persisted in the save); nothing in the shipped mod, nothing in the probe.
+  The once-per-world `ReturnLeftHandOnItemEnded` stays in as a safety. The missing legend: the carry prompt is a
+  contextual hint; ImmersiveCampfires overrides `HUDContextualLegend` with LegendText collapsed (guitar hint), which
+  would hide every contextual hint, the carry's included (loose-item hold prompts come from the interact view, not
+  the legend: they show).
+- Noah: the carry hint is attached to the body (world-space, like the loot hint), not the bottom-centre legend: the
+  Campfires override is NOT it (retracted). Every bisect step before 1.0.1i ran under the poisoned left-hand state,
+  which alone kills the carry, so they say nothing about the hint. Redo from the clean state: 1.0.1j = the actor's
+  tick off again (no paste).
+- RELEASE REQUIREMENT (Noah): the Nexus update must repair users' saves so they can carry bodies: keep the
+  once-per-world `PC.ReturnLeftHandOnItemEnded` in the shipped Blueprint (1.0.0 never made the poisoning call, so
+  users' saves should be clean, but the reset covers it either way) and say so in the changelog.
+- 1.0.1j (tick off, clean state): Noah: carry dead again, dot, no touch. The reset lives in the tick, so it did not
+  run: the state is re-read from the save at every load; the reset must run every load (it does when the actor
+  ticks). 1.0.1k: tick on, and `PC.EnableInteractions()` once after the reset (the HUD's hold hints may be switched
+  off together with the left-hand state).
+- 1.0.1k (reset + `EnableInteractions`, layout fixed): Noah: carry dead, dot. The only logic difference to 1.0.1i
+  (which carried) is `EnableInteractions` and the timing of the once-per-world reset. 1.0.1l: `EnableInteractions`
+  removed; the reset also runs each time a new body comes into sight (`ResetFor` != its search component), never
+  during an interaction or a LeftHand animation. Layout bug found and fixed in the harness (`layout_tree`: two boxes
+  linking both ways lost every root, nothing was laid out, 818 of 1777 nodes outside the boxes; since 1.0.1e).

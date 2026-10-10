@@ -125,7 +125,7 @@ ACTOR_VARS = [
     ("NPickups", "int", None), ("NReaches", "int", None), ("NSkips", "int", None), ("NRecover", "int", None),
     ("NFly", "int", None), ("SkipBits", "int", None), ("NLootOpen", "int", None), ("NLootTook", "int", None),
     ("NTicks", "int", None), ("GrabFwd", "real", None), ("GrabRight", "real", None), ("GrabUp", "real", None),
-    ("FovS", "real", None), ("TanFOVv", "real", None), ("FovOn", "real", None), ("CamOff", "real", None), ("TraceX", "real", None), ("TraceY", "real", None), ("TraceZ", "real", None), ("GrabBH", "bool", None), ("SegStart", "real", None), ("ItemCenter", "vector", None), ("ItemElev", "real", None), ("ItemDist", "real", None), ("ItemAzim", "real", None), ("LootComp", unreal.PrimitiveComponent.static_class(), None), ("LootReach", "bool", None), ("LootPaused", "bool", None), ("LootReverse", "bool", None), ("TouchState", "int", None), ("TouchAdded", "bool", None), ("Lootable", "bool", None), ("KeysSynced", "bool", None), ("TouchPressAt", "real", None), ("TouchOpenAt", "real", None), ("NTouch", "int", None), ("GripAt", "real", None), ("GripPending", "bool", None), ("TrBusy", "bool", None), ("TrLH", "bool", None), ("TrPos", "real", None), ("TouchHX", "real", None), ("TouchHY", "real", None), ("TouchHZ", "real", None), ("PausedAt", "real", None), ("TouchHoldBeforeOpen", "real", 0.25), ("TouchAsset", unreal.AnimSequenceBase.static_class(), None), ("TouchBin", "int", None), ("WeapX", "real", None), ("WeapY", "real", None), ("WeapZ", "real", None), ("CamPitch", "real", None), ("SpX", "real", None), ("SpY", "real", None), ("SpZ", "real", None), ("ShX", "real", None), ("ShY", "real", None), ("ShZ", "real", None), ("ElX", "real", None), ("ElY", "real", None), ("ElZ", "real", None), 
+    ("FovS", "real", None), ("TanFOVv", "real", None), ("FovOn", "real", None), ("CamOff", "real", None), ("TraceX", "real", None), ("TraceY", "real", None), ("TraceZ", "real", None), ("GrabBH", "bool", None), ("SegStart", "real", None), ("ItemCenter", "vector", None), ("ItemElev", "real", None), ("ItemDist", "real", None), ("ItemAzim", "real", None), ("LootComp", unreal.PrimitiveComponent.static_class(), None), ("LootReach", "bool", None), ("LootPaused", "bool", None), ("LootReverse", "bool", None), ("TouchState", "int", None), ("TouchAdded", "bool", None), ("Lootable", "bool", None), ("KeysSynced", "bool", None), ("TouchPressAt", "real", None), ("TouchOpenAt", "real", None), ("NTouch", "int", None), ("GripAt", "real", None), ("GripPending", "bool", None), ("TrBusy", "bool", None), ("TrLH", "bool", None), ("TrPos", "real", None), ("TouchHX", "real", None), ("TouchHY", "real", None), ("TouchHZ", "real", None), ("PausedAt", "real", None), ("TouchHoldBeforeOpen", "real", 0.25), ("TouchAsset", unreal.AnimSequenceBase.static_class(), None), ("TouchBin", "int", None), ("TouchReleased", "bool", None), ("HoldToDrag", "real", 0.4), ("Dragging", "bool", None), ("TapComp", unreal.InteractionComponent.static_class(), None), ("TapOff", "bool", None), ("KeyDown", "bool", None), ("KeyUp", "bool", None), ("LookActor", unreal.Actor.static_class(), None), ("LookComp", unreal.PrimitiveComponent.static_class(), None), ("ResetFor", unreal.InteractionComponent.static_class(), None), ("WeapX", "real", None), ("WeapY", "real", None), ("WeapZ", "real", None), ("CamPitch", "real", None), ("SpX", "real", None), ("SpY", "real", None), ("SpZ", "real", None), ("ShX", "real", None), ("ShY", "real", None), ("ShZ", "real", None), ("ElX", "real", None), ("ElY", "real", None), ("ElZ", "real", None), 
 ]
 
 def make_input():
@@ -137,7 +137,7 @@ def make_input():
         tools.create_asset("IA_ImmLootInteract", f"{MOD_ROOT}/Input", unreal.InputAction, unreal.InputAction_Factory())
     ia = unreal.load_asset(ia_path)
     ia.set_editor_property("value_type", unreal.InputActionValueType.BOOLEAN)
-    ia.set_editor_property("consume_input", True)
+    ia.set_editor_property("consume_input", False)   # 1.0.1c: the game must keep its key (hold = carry a body, its prompt)
     log(f"IA: {ia} consume={ia.get_editor_property('consume_input')} saved={EAL.save_asset(ia_path, only_if_is_dirty=False)}")
     if not EAL.does_asset_exist(imc_path):
         tools.create_asset("IMC_ImmLoot", f"{MOD_ROOT}/Input", unreal.InputMappingContext, unreal.InputMappingContext_Factory())
@@ -152,12 +152,12 @@ def make_input():
 
 try:
     log(f"mod mounted: {mount_mod()}")
-    make_input()
+    # make_input()  # IA_ImmLootInteract / IMC_ImmLoot deleted 1.0.1h (unused since 1.0.1d; bisect: their presence vs the body carry)
     # make_grab()  # AM_ImmLoot_Grab (builds 1-3) deleted for v1.0.0: the sequences play as dynamic montages
     actor = make_bp(ACTOR, unreal.Actor)
     add_vars(actor, ACTOR, ACTOR_VARS)
     cdo = unreal.get_default_object(BEL.generated_class(actor))
-    cdo.set_editor_property("auto_receive_input", unreal.AutoReceiveInput.PLAYER0)
+    cdo.set_editor_property("auto_receive_input", unreal.AutoReceiveInput.DISABLED)   # 1.0.1d: the key is polled, the actor takes no input
     log(f"actor auto_receive_input = {cdo.get_editor_property('auto_receive_input')} saved={EAL.save_asset(ACTOR, only_if_is_dirty=False)}")
     sub = make_bp(SUBSYS, unreal.ModWorldSubsystem)
     add_vars(sub, SUBSYS, [("LootActor", BEL.generated_class(actor), None), ("SpawnAttempts", "int", None)])

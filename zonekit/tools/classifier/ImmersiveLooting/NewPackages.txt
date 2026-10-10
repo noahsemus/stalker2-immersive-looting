@@ -28,5 +28,3 @@
 /ImmersiveLooting/Runtime/AS_ImmLoot_Touch22
 /ImmersiveLooting/Runtime/AS_ImmLoot_Touch23
 /ImmersiveLooting/Runtime/AS_ImmLoot_Touch24
-/ImmersiveLooting/Input/IA_ImmLootInteract
-/ImmersiveLooting/Input/IMC_ImmLoot
