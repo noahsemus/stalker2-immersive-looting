@@ -103,7 +103,7 @@ def add_vars(bp, path, vars_):
 
 W_TEXT = unreal.load_class(None, "/Game/GameLite/FPS_Game/UIRemaster/CommonWidgets/W_Text.W_Text_C")
 ACTOR_VARS = [
-    ("Init", "bool", None), ("Enabled", "bool", True), ("TouchBodies", "bool", True), ("Player", unreal.PC.static_class(), None),
+    ("Init", "bool", None), ("Enabled", "bool", True), ("TouchBodies", "bool", True), ("IsCorpse", "bool", None), ("BoundAnim", unreal.AnimInstance.static_class(), None), ("GameMontage", unreal.AnimMontage.static_class(), None), ("GameMontageAt", "real", -100.0), ("HeldUse", unreal.AnimMontage.static_class(), None), ("UseHeld", "bool", None), ("NUseHolds", "int", None), ("Player", unreal.PC.static_class(), None),
     ("Item", unreal.Actor.static_class(), None), ("ItemComp", unreal.SceneComponent.static_class(), None),
     ("ItemMesh", unreal.StaticMesh.static_class(), None), ("ItemSkel", unreal.SkeletalMesh.static_class(), None),
     ("ItemSeen", "real", -100.0), ("ItemArmed", "bool", None), ("ItemXf", "transform", None),
@@ -137,7 +137,7 @@ def make_input():
         tools.create_asset("IA_ImmLootInteract", f"{MOD_ROOT}/Input", unreal.InputAction, unreal.InputAction_Factory())
     ia = unreal.load_asset(ia_path)
     ia.set_editor_property("value_type", unreal.InputActionValueType.BOOLEAN)
-    ia.set_editor_property("consume_input", False)   # 1.0.1c: the game must keep its key (hold = carry a body, its prompt)
+    ia.set_editor_property("consume_input", True)   # 1.0.2: as 1.0.0 (stashes only; corpses never get our context)
     log(f"IA: {ia} consume={ia.get_editor_property('consume_input')} saved={EAL.save_asset(ia_path, only_if_is_dirty=False)}")
     if not EAL.does_asset_exist(imc_path):
         tools.create_asset("IMC_ImmLoot", f"{MOD_ROOT}/Input", unreal.InputMappingContext, unreal.InputMappingContext_Factory())
@@ -152,12 +152,12 @@ def make_input():
 
 try:
     log(f"mod mounted: {mount_mod()}")
-    # make_input()  # IA_ImmLootInteract / IMC_ImmLoot deleted 1.0.1h (unused since 1.0.1d; bisect: their presence vs the body carry)
+    make_input()  # 1.0.2: back (stashes use the 1.0.0 system); deleted 1.0.1h (unused since 1.0.1d; bisect: their presence vs the body carry)
     # make_grab()  # AM_ImmLoot_Grab (builds 1-3) deleted for v1.0.0: the sequences play as dynamic montages
     actor = make_bp(ACTOR, unreal.Actor)
     add_vars(actor, ACTOR, ACTOR_VARS)
     cdo = unreal.get_default_object(BEL.generated_class(actor))
-    cdo.set_editor_property("auto_receive_input", unreal.AutoReceiveInput.DISABLED)   # 1.0.1d: the key is polled, the actor takes no input
+    cdo.set_editor_property("auto_receive_input", unreal.AutoReceiveInput.PLAYER0)   # 1.0.2: as 1.0.0 (our action for stashes); corpses: keys polled
     log(f"actor auto_receive_input = {cdo.get_editor_property('auto_receive_input')} saved={EAL.save_asset(ACTOR, only_if_is_dirty=False)}")
     sub = make_bp(SUBSYS, unreal.ModWorldSubsystem)
     add_vars(sub, SUBSYS, [("LootActor", BEL.generated_class(actor), None), ("SpawnAttempts", "int", None)])

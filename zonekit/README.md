@@ -196,3 +196,10 @@ mod go to `harness/docs/` instead (promote them).
   window on a body also opens sooner than in 1.0.0 with the touch still looking right (no timing value changed; 1.0.0
   removed its input context and the input map was rebuilt before the injected press counted). = rc-1.0.1
   (`zonekit/builds/rc-1.0.1/`).
+- 2026-10-10 after v1.0.1, "hold F to use" a loose item (Noah: 1.0.0 played the reach first, then the use animation;
+  1.0.1 plays no reach, the use at once). Tried, each tested on the 2026-10-09 17:13 save, all "no change": (a) look-at
+  back to PC.GetInteractedActor / GetInteractionTarget (the reach now fires, but together with the use animation);
+  (b) pause the game's use montage (OnMontageStarted, MainActionSlot: food / medkit / pills / water ... are
+  ActionGroup, antirad is LeftHand) until our grab frame; (c) no once-per-world ReturnLeftHandOnItemEnded; (d) stashes
+  back on the 1.0.0 key capture (IMC_ImmLoot, actor input Player0), corpses on the 1.0.1 polling. Unresolved; Noah
+  stopped here. Not verified that 1.0.0 really sequenced it (no probe was run on 1.0.0). Kit = experiment (d).

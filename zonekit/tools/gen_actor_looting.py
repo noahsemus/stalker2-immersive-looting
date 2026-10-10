@@ -439,53 +439,36 @@ spl = set_from("Player", "object", 500, 0, cast["AsPC"], "remember the player", 
 g.link(cast["then"], spl["execute"])
 as_pc = self_get("Player", "object", 650, 300, sub=PC)
 sq = sequence(700, 0, "tick steps", 7)
-# 1.0.1e: what the crosshair is on, by our own sphere trace from the camera (10 cm, 3.5 m, visibility, the player
-# ignored); LookActor / LookComp replace PC.GetInteractedActor / GetInteractionTarget / GetInteractedComponent
-_cmt = lib_pure(GS, "GameplayStatics", "GetPlayerCameraManager", 300, 900,
-                [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)),
-                 ("PlayerIndex", "int", dict(extra='DefaultValue="0",')), ("ReturnValue", "object", dict(sub=PCM, out=True))])["ReturnValue"]
-_clt = member_pure(PCM, "GetCameraLocation", 500, 900, _cmt, [("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
-_crt = member_pure(PCM, "GetCameraRotation", 500, 1000, _cmt, [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"]
-_cft = kml("GetForwardVector", 700, 1000, [("InRot", "struct", dict(sub=ROT)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
-g.link(_crt, _cft["InRot"])
-_cfr = kml("Multiply_VectorFloat", 900, 1000, [("A", "struct", dict(sub=VEC)), ("B", "real", dict(subcat="double", extra='DefaultValue="350.0",')),
-                                               ("ReturnValue", "struct", dict(sub=VEC, out=True))])
-g.link(_cft["ReturnValue"], _cfr["A"])
-_cen = kml("Add_VectorVector", 1100, 950, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
-g.link(_clt, _cen["A"])
-g.link(_cfr["ReturnValue"], _cen["B"])
-_mka = Node(g, BG + "K2Node_MakeArray", nm("K2Node_MakeArray"), 900, 1200, "", ["NumInputs=1"])
-_mka.pin("[0]", "object", sub=ACTOR)
-_mka.pin("Array", "object", sub=ACTOR, out=True)
-_mka.pins["Array"].container = "Array"
-g.link(as_pc, _mka["[0]"])
-trc = lib_call(KSL, "SphereTraceSingle", 1300, 800, "what the crosshair is on (our own trace: no calls into the game's interaction system)", [
-    ("WorldContextObject", "object", dict(sub=OBJ, hidden=True)),
-    ("Start", "struct", dict(sub=VEC)), ("End", "struct", dict(sub=VEC)),
-    ("Radius", "real", dict(subcat="float", extra='DefaultValue="10.000000",')),
-    ("TraceChannel", "byte", dict(sub=EN("/Script/Engine.ETraceTypeQuery"), extra='DefaultValue="TraceTypeQuery1",')),
-    ("bTraceComplex", "bool", dict(extra='DefaultValue="false",')),
-    ("ActorsToIgnore", "object", dict(sub=ACTOR)),
-    ("DrawDebugType", "byte", dict(sub=EN("/Script/Engine.EDrawDebugTrace"), extra='DefaultValue="None",')),
-    ("OutHit", "struct", dict(sub=HIT, out=True)),
-    ("bIgnoreSelf", "bool", dict(extra='DefaultValue="true",')),
-    ("ReturnValue", "bool", dict(out=True))], "/Script/Engine.Default__KismetSystemLibrary")
-trc.pins["ActorsToIgnore"].container = "Array"
-trc.pins["ActorsToIgnore"].ref = True
-trc.pins["ActorsToIgnore"].const = True
-g.link(_clt, trc["Start"])
-g.link(_cen["ReturnValue"], trc["End"])
-g.link(_mka["Array"], trc["ActorsToIgnore"])
-bhr = lib_pure(GS, "GameplayStatics", "BreakHitResult", 1700, 1000, [("Hit", "struct", dict(sub=HIT)),
-                                                                     ("HitActor", "object", dict(sub=ACTOR, out=True)),
-                                                                     ("HitComponent", "object", dict(sub=PRIM, out=True))])
-bhr.pins["Hit"].ref = True
-bhr.pins["Hit"].const = True
-g.link(trc["OutHit"], bhr["Hit"])
-sla = set_from("LookActor", "object", 1900, 800, bhr["HitActor"], "under the crosshair", sub=ACTOR)
-slk = set_from("LookComp", "object", 2200, 800, bhr["HitComponent"], "", sub=PRIM)
-g.link(spl["then"], trc["execute"])
-chain(trc, sla, slk)
+# 1.0.2: what the crosshair is on = the game's own interaction target again (PC.GetInteractedActor, else the owner of
+# PC.GetInteractionTarget; PC.GetInteractedComponent), as in 1.0.0. 1.0.1e-1.0.1 used our own sphere trace (10 cm,
+# visibility) while hunting the carry bug (the cause was a broken save, not these getters); the trace lost loose items
+# during "hold F to use" (tester: the reach no longer played before the use animation).
+_ia = member_pure(PC, "GetInteractedActor", 900, 800, as_pc, [("ReturnValue", "object", dict(sub=ACTOR, out=True))])["ReturnValue"]
+_it = member_pure(PC, "GetInteractionTarget", 900, 900, as_pc, [("ReturnValue", "object", dict(sub=ICOMP, out=True))])["ReturnValue"]
+_ow = member_pure(ACOMP, "GetOwner", 1100, 900, _it, [("ReturnValue", "object", dict(sub=ACTOR, out=True))])["ReturnValue"]
+_sel = kml("SelectObject", 1300, 800, [("A", "object", dict(sub=OBJ)), ("B", "object", dict(sub=OBJ)),
+                                       B("bSelectA"), ("ReturnValue", "object", dict(sub=OBJ, out=True))])
+g.link(_ia, _sel["A"])
+g.link(_ow, _sel["B"])
+g.link(is_valid(1100, 700, _ia), _sel["bSelectA"])
+_cla = Node(g, BG + "K2Node_DynamicCast", nm("K2Node_DynamicCast"), 1500, 800, "", ["TargetType=" + ACTOR])
+_cla.pin("execute", "exec")
+_cla.pin("then", "exec", out=True)
+_cla.pin("CastFailed", "exec", out=True)
+_cla.pin("Object", "object", sub=OBJ)
+_cla.pin("AsActor", "object", sub=ACTOR, out=True)
+_cla.pin("bSuccess", "bool", out=True)
+g.link(_sel["ReturnValue"], _cla["Object"])
+sla = set_from("LookActor", "object", 1900, 800, _cla["AsActor"], "under the crosshair (the game's interaction target)", sub=ACTOR)
+sln = self_set("LookActor", "object", 1900, 1000, "nothing", sub=ACTOR)
+slk = set_from("LookComp", "object", 2200, 800,
+               member_pure(PC, "GetInteractedComponent", 2000, 1000, as_pc, [("ReturnValue", "object", dict(sub=PRIM, out=True))])["ReturnValue"],
+               "", sub=PRIM)
+g.link(spl["then"], _cla["execute"])
+g.link(_cla["then"], sla["execute"])
+g.link(_cla["CastFailed"], sln["execute"])
+g.link(sla["then"], slk["execute"])
+g.link(sln["then"], slk["execute"])
 g.link(slk["then"], sq["execute"])
 mesh = other_get(CHAR, "Mesh", "object", 700, 300, as_pc, sub=SKC)
 anim = member_pure(SKC, "GetAnimInstance", 950, 300, mesh, [("ReturnValue", "object", dict(sub=ANIMI, out=True))])["ReturnValue"]
@@ -506,10 +489,10 @@ g.link(stg["then"], si0["execute"])
 # never the matching ReturnLeftHandOnItemEnded: the player's "left hand off the item" state stayed set, and
 # IsLeftHandBusy has read true at rest ever since (probe). The body carry is a left-hand action: its prompt stayed a
 # dot through every build, even with this actor not ticking. Once per world: tell the game the left hand is back.
-rlh = member_call(PC, "ReturnLeftHandOnItemEnded", X0 + 650, Y0 + 250, as_pc, "left hand back on the item (clears a state an early build left set)")
-g.link(si0["then"], rlh["execute"])
+# 1.0.2: the once-per-world PC.ReturnLeftHandOnItemEnded (1.0.1) removed: back to 1.0.0 for loose items (tester:
+# "hold F to use" was right in 1.0.0; in 1.0.1 the use animation started while the hand was still reaching)
 # 1.0.1k added PC.EnableInteractions after it: the carry died again (1.0.1i, the reset alone, carried): removed.
-imc_c = load_imc(X0 + 950, Y0, "IMC_Inventory", rlh["then"], "inventory / loot input context (game path)")
+imc_c = load_imc(X0 + 950, Y0, "IMC_Inventory", si0["then"], "inventory / loot input context (game path)")
 sim0 = set_from("InvIMC", "object", X0 + 1700, Y0, imc_c["AsInput Mapping Context"], "remember it", sub=IMC_CLS)
 g.link(imc_c["then"], sim0["execute"])
 
@@ -1207,6 +1190,59 @@ g.link(cic["CastFailed"], sl_n["execute"])
 stn = self_set("TapComp", "object", XT + 1600, YT + 900, "none", sub=ICOMP)
 g.link(sl_n["then"], stn["execute"])
 lootable = lambda x, y: self_get("Lootable", "bool", x, y)
+# 1.0.2 (tester: "it was literally perfect in 1.0.0 -- can we not have both systems for each use case?"): corpses use the
+# 1.0.1 system (keys polled, nothing swallowed: hold = the game's carry); everything else that is lootable (stashes and
+# whatever the stash test classes as one) uses the 1.0.0 system again: our IMC_ImmLoot swallows the interact key while
+# it is in sight, our action's press reaches, then the context is removed and the game's interact injected.
+isc = lambda x, y: self_get("IsCorpse", "bool", x, y)
+sqa = sequence(XT + 2000, YT - 200, "context steps (1.0.0 system, not for corpses)", 2)
+for _src, _v, _yy in ((stc, "true", -300), (sts, "false", 400), (stn, "false", 900)):
+    _ic = self_set("IsCorpse", "bool", XT + 1850, YT + _yy, "", default=_v)
+    g.link(_src["then"], _ic["execute"])
+    g.link(_ic["then"], sqa["execute"])
+_cap = lambda x, y: b_and(x, y, lootable(x - 200, y), b_not(x - 200, y + 70, isc(x - 400, y + 70)))
+badd = branch(XT + 2300, YT - 300, "stash in sight (not a corpse), our keys not on yet?",
+              b_and(XT + 2200, YT - 100, _cap(XT + 2000, YT - 100), b_not(XT + 2000, YT + 20, tadded(XT + 1800, YT + 20))))
+g.link(sqa["then_0"], badd["execute"])
+bks = branch(XT + 2600, YT - 300, "player's interact keys not copied yet?", b_not(XT + 2500, YT - 100, self_get("KeysSynced", "bool", XT + 2300, YT - 100)))
+g.link(badd["then"], bks["execute"])
+qk0 = member_pure(EISI, "QueryKeysMappedToAction", XT + 2600, YT + 200, subt["ReturnValue"], [
+    ("Action", "object", dict(sub=IA_CLS, extra=f'DefaultObject="{IA_INTERACT}",')), ("ReturnValue", "struct", dict(sub=KEY, out=True))])
+qk0.pins["self"].cat = "interface"
+qk0.pins["Action"].const = True
+qk0.pins["ReturnValue"].container = "Array"
+fek0 = Node(g, BG + "K2Node_MacroInstance", nm("K2Node_MacroInstance"), XT + 2900, YT - 300, "each interact key",
+            [FOREACH, f"ResolvedWildcardType=(PinCategory=\"struct\",PinSubCategoryObject={KEY})"])
+fek0.pin("Exec", "exec")
+fek0.pin("Array", "struct", sub=KEY)
+fek0.pins["Array"].container = "Array"
+fek0.pin("LoopBody", "exec", out=True)
+fek0.pin("Array Element", "struct", sub=KEY, out=True)
+fek0.pin("Array Index", "int", out=True)
+fek0.pin("Completed", "exec", out=True)
+g.link(qk0["ReturnValue"], fek0["Array"])
+g.link(bks["then"], fek0["Exec"])
+mk0 = exec_pins(Node(g, BG + "K2Node_CallFunction", nm("K2Node_CallFunction"), XT + 3200, YT - 300, "map it to our action",
+                     [f"FunctionReference=(MemberParent={IMC_CLS},MemberName=\"MapKey\")"]))
+mk0.pin("self", "object", sub=IMC_CLS, extra=f'{TGT}DefaultObject="{IMC_TOUCH}",')
+mk0.pin("Action", "object", sub=IA_CLS, extra=f'DefaultObject="{IA_TOUCH}",')
+mk0.pin("ToKey", "struct", sub=KEY)
+mk0.pin("ReturnValue", "struct", sub=EAKM, out=True)
+mk0.pins["ReturnValue"].ref = True
+g.link(fek0["Array Element"], mk0["ToKey"])
+g.link(fek0["LoopBody"], mk0["execute"])
+kss = self_set("KeysSynced", "bool", XT + 3200, YT, "keys copied", default="true")
+g.link(fek0["Completed"], kss["execute"])
+addc = ctx_call(XT + 3600, YT - 200, "AddMappingContext", "our keys on (they swallow the game's interact)", True)
+g.link(kss["then"], addc["execute"])
+g.link(bks["else"], addc["execute"])
+g.link(addc["then"], self_set("TouchAdded", "bool", XT + 3950, YT - 200, "", default="true")["execute"])
+brm = branch(XT + 2300, YT + 1100, "no stash in sight (or a corpse), our keys on? take them off",
+             b_and(XT + 2200, YT + 1300, b_not(XT + 2000, YT + 1300, _cap(XT + 1800, YT + 1300)), tadded(XT + 2000, YT + 1400)))
+g.link(sqa["then_1"], brm["execute"])
+rmc = ctx_call(XT + 2600, YT + 1100, "RemoveMappingContext", "our keys off", False)
+g.link(brm["then"], rmc["execute"])
+g.link(rmc["then"], self_set("TouchAdded", "bool", XT + 2950, YT + 1100, "", default="false")["execute"])
 
 #   T1: reaching: at the touch frame (montage paused there) or after 0.8 s: give the key back and open the window
 tp = lambda x, y: self_get("TouchPressAt", "real", x, y, subcat="double")
@@ -1232,7 +1268,14 @@ inj = inject_interact(XT + 1400, YT + 1800, "press the game's interact: opens th
 ts3 = self_set("TouchState", "int", XT + 1750, YT + 1800, "window requested", default="3")
 toa = set_from("TouchOpenAt", "real", XT + 2050, YT + 1800, now(XT + 1900, YT + 2000), "", subcat="double")
 nto = inc("NTouch", XT + 2350, YT + 1800, "count touches")
-g.link(bt1["then"], _e1)
+_bta = branch(XT + 700, YT + 1800, "our keys on (1.0.0 system)? take them off first", tadded(XT + 500, YT + 2000))
+g.link(bt1["then"], _bta["execute"])
+rmc2 = ctx_call(XT + 900, YT + 1600, "RemoveMappingContext", "our keys off", False)
+g.link(_bta["then"], rmc2["execute"])
+_ta2 = self_set("TouchAdded", "bool", XT + 1100, YT + 1600, "", default="false")
+g.link(rmc2["then"], _ta2["execute"])
+g.link(_ta2["then"], _e1)
+g.link(_bta["else"], _e1)
 chain(_s1, inj, ts3, toa, nto)
 g.link(bt1o["then"], ts3["execute"])
 
@@ -1278,6 +1321,7 @@ lcomp = lambda x, y: self_get("LootComp", "object", x, y, sub=PRIM)
 bpress = branch(XT + 200, YT + 3700, "idle, a corpse / stash in sight, its part known? its tap interaction off until we know tap or hold",
                 b_and(XT + 100, YT + 3900, int_eq(XT - 100, YT + 3900, tstate(XT - 300, YT + 3900), 0),
                       lootable(XT - 100, YT + 3960),   # 1.0.1f: LootComp is whatever the crosshair ray hits (a wall too)
+                      isc(XT - 100, YT + 3990),        # 1.0.2: corpses only (stashes: our action, 1.0.0 system)
                       is_valid(XT - 100, YT + 4040, lcomp(XT - 300, YT + 4040))))
 _tgb = lib_pure(KSL, "KismetSystemLibrary", "GetComponentBounds", XT + 300, YT + 4200,
                 [("Component", "object", dict(sub=SC_)), ("Origin", "struct", dict(sub=VEC, out=True)),
@@ -1294,6 +1338,18 @@ tr = [set_from("ItemCenter", "struct", XT + 500, YT + 3700, _tgb["Origin"], "rea
 chain(*tr)
 _ep, _xp = tap_active(XT + 500, YT + 3300, False, "its tap interaction off (the game would open the window at the release)")
 g.link(bpress["then"], _ep)
+ev = Node(g, "/Script/InputBlueprintNodes.K2Node_EnhancedInputAction", nm("K2Node_EnhancedInputAction"), XT - 200, YT + 4600, "",
+          [f"InputAction=\"/Script/EnhancedInput.InputAction'{IA_TOUCH}'\""])
+for e in ("Triggered", "Started", "Ongoing", "Canceled", "Completed"):
+    ev.pin(e, "exec", out=True)
+ev.pin("ActionValue", "bool", out=True)
+ev.pin("ElapsedSeconds", "real", subcat="double", out=True, adv=True)
+ev.pin("TriggeredSeconds", "real", subcat="double", out=True, adv=True)
+ev.pin("InputAction", "object", sub=IA_CLS, out=True)
+bpress0 = branch(XT + 200, YT + 4600, "our action pressed (stash, 1.0.0 system), idle, its part known? reach for it",
+                 b_and(XT + 100, YT + 4800, int_eq(XT - 100, YT + 4800, tstate(XT - 300, YT + 4800), 0), is_valid(XT - 100, YT + 4900, lcomp(XT - 300, YT + 4900))))
+g.link(ev["Started"], bpress0["execute"])
+g.link(bpress0["then"], tr[0]["execute"])
 _sp = self_set("TapOff", "bool", XT + 1200, YT + 3300, "", default="true")
 for q_ in _xp:
     g.link(q_, _sp["execute"])
