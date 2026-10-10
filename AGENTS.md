@@ -16,6 +16,9 @@ harness on 2026-10-09.
 - 2026-10-09: tester: **build the whole feature first, not in parts** (build 1 = everything; fixes one per cook
   afterwards). Generators written (`zonekit/tools/setup_assets.py`, `gen_actor_looting.py`, `gen_subsystem_spawn.py`)
   plus the dev probe `zonekit/tools/probe/ImmLootProbe`. Next: PLAN.md § Making build 1.
+- 2026-10-09: tester: corpses and stashes too: one grab after the loot window closes if something was taken.
+  Added to the build-1 generator (loot window from `IMC_Inventory`, "taken" from the window's weight texts and
+  money; `zonekit/research/2026-10-09-loot-window-research.md`).
 
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,

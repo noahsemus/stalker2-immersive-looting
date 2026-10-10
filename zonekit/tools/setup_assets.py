@@ -102,6 +102,7 @@ def add_vars(bp, path, vars_):
     log(f"{path} saved: {EAL.save_asset(path, only_if_is_dirty=False)}")
 
 
+W_TEXT = unreal.load_class(None, "/Game/GameLite/FPS_Game/UIRemaster/CommonWidgets/W_Text.W_Text_C")
 ACTOR_VARS = [
     ("Init", "bool", None), ("Enabled", "bool", True),
     ("Item", unreal.Actor.static_class(), None), ("ItemComp", unreal.SceneComponent.static_class(), None),
@@ -113,9 +114,17 @@ ACTOR_VARS = [
     # settings (montage seconds; real seconds = montage seconds / PlayRate)
     ("PlayRate", "real", 1.4), ("GrabTime", "real", 0.569), ("PocketTime", "real", 0.80),
     ("IKOnTime", "real", 1.179), ("SeenWindow", "real", 0.3),
+    ("PendingReach", "bool", None), ("PendingCopy", "bool", None),
+    # loot window (corpse / stash)
+    ("InvIMC", unreal.InputMappingContext.static_class(), None), ("InvOpen", "bool", None), ("OpenAt", "real", None),
+    ("InvGoneAt", "real", -1.0), ("LootTarget", unreal.InteractionComponent.static_class(), None),
+    ("LootKind", "int", None), ("Took", "bool", None),
+    ("PWText", W_TEXT, None), ("LWText", W_TEXT, None), ("InvView", unreal.UserWidget.static_class(), None),
+    ("StartPW", "real", None), ("StartLW", "real", None), ("StartMoney", "real", None),
+    ("CurPW", "real", None), ("CurLW", "real", None), ("CurMoney", "real", None),
     # counters for the dev probe
     ("NPickups", "int", None), ("NReaches", "int", None), ("NSkips", "int", None), ("NRecover", "int", None),
-    ("NFly", "int", None), ("SkipBits", "int", None),
+    ("NFly", "int", None), ("SkipBits", "int", None), ("NLootOpen", "int", None), ("NLootTook", "int", None),
 ]
 
 try:

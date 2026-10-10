@@ -1,11 +1,14 @@
 -- ImmLootProbe: dev-box only (never shipped). Logs BP_ImmLootActor's counters and state to UE4SS.log whenever
 -- they change, so one test run shows: was each pickup detected, did the reach play or why it was skipped
--- (SkipBits, see gen_actor_looting.py), was a copy spawned, was the hand recovered.
+-- (SkipBits, see gen_actor_looting.py), was a copy spawned, was the hand recovered, and for loot windows:
+-- open / kind (1 corpse, 2 stash) / weights and money read from the window / taken / reach after closing.
 -- Install: <game>\Stalker2\Binaries\Win64\ue4ss\Mods\ImmLootProbe\scripts\main.lua + "ImmLootProbe : 1" in
 -- mods.txt before UObjectCacheMod (ASCII, no BOM).
 
 local TAG = "[ImmLootProbe] "
-local FIELDS = { "NPickups", "NReaches", "NSkips", "SkipBits", "NFly", "NRecover", "Reaching", "ItemArmed" }
+local FIELDS = { "NPickups", "NReaches", "NSkips", "SkipBits", "NFly", "NRecover", "Reaching", "ItemArmed",
+                 "InvOpen", "LootKind", "Took", "NLootOpen", "NLootTook", "StartPW", "CurPW", "StartLW", "CurLW",
+                 "StartMoney", "CurMoney" }
 local actor = nil
 local last = {}
 local ticks = 0
@@ -46,7 +49,7 @@ LoopAsync(200, function()
             if last[f] ~= v then changed = true; last[f] = v end
             parts[#parts + 1] = f .. "=" .. v
         end
-        for _, f in ipairs({ "Item", "ItemMesh", "ItemSkel", "Fly" }) do
+        for _, f in ipairs({ "Item", "ItemMesh", "ItemSkel", "Fly", "LootTarget", "PWText", "LWText", "InvView", "InvIMC" }) do
             local v = obj_name(actor[f])
             if last[f] ~= v then changed = true; last[f] = v end
             parts[#parts + 1] = f .. "=" .. v

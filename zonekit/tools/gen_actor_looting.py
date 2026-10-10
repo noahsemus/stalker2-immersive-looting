@@ -2,19 +2,26 @@
 
 What it does (PLAN.md):
   Event Tick -> player -> Sequence
-    0 Once: tick after the animation update (TG_PostUpdateWork), so the left-hand bone is this frame's.
-    1 Picked up?  The loose item we were looking at (cached by step 2, seen < SeenWindow s ago) is gone:
-                  destroyed, its mesh hidden, or moved away. -> NPickups += 1, then
-                  skip (sprint, aim, MainActionSlot action, another left-hand montage, dialogue, cutscene,
+    0 Once: tick after the animation update (TG_PostUpdateWork), so the left-hand bone is this frame's;
+            load IMC_Inventory (game path).
+    1 Picked up?  The loose item we were looking at (cached by step 4, seen < SeenWindow s ago) is gone:
+                  destroyed, its mesh hidden, or moved away. -> NPickups += 1, PendingReach + PendingCopy.
+    2 Loot window (corpse / stash; the backpack, corpses and stashes share W_Inventory and IMC_Inventory):
+                  opened (IMC_Inventory applied) -> classify the target cached the tick before (DeadBody = corpse,
+                  InteractableItemContainer owner = stash), find the two CurrentWeightText widgets and the view;
+                  while open, the first 0.3 s set the baseline, then "took" = player weight up, loot weight down
+                  or more money; closed (context gone 0.25 s and the view hidden, or 3 s) and took -> PendingReach
+                  without a copy.
+    3 Pending reach: skip (sprint, aim, MainActionSlot action, another left-hand montage, dialogue, cutscene,
                   detector or binoculars in hand, Enabled off) -> NSkips += 1, SkipBits = why
-                  else -> reach: the grab montage (AM_ImmLoot_Grab, LeftHand slot) unless one is already
-                  before its pocketing frame, and a copy of the item (StaticMeshActor / SkeletalMeshActor)
+                  else -> the grab montage (AM_ImmLoot_Grab, LeftHand slot) unless one is already before its
+                  pocketing frame, and (PendingCopy) a copy of the item (StaticMeshActor / SkeletalMeshActor)
                   spawned where the item was.
-    2 Track:      PC.GetInteractionTarget -> owner -> InteractableItemContainer: remember the actor, its
+    4 Track:      PC.GetInteractionTarget -> owner -> InteractableItemContainer: remember the actor, its
                   mesh component and mesh asset (when the target changes) and its world transform (every tick).
-    3 Fly:        the copy eases to the left-hand bone jnt_l_weapon, arriving at the grab frame; then it is
+    5 Fly:        the copy eases to the left-hand bone jnt_l_weapon, arriving at the grab frame; then it is
                   attached to the hand and destroyed at the pocketing frame.
-    4 Recover:    our montage stopped before its "hand back on the grip" notify (interrupted) while a weapon
+    6 Recover:    our montage stopped before its "hand back on the grip" notify (interrupted) while a weapon
                   is held and no other left-hand montage runs -> play MG_fp_return_left_hand_on_item.
 Montage times are in montage seconds (GrabTime, PocketTime, IKOnTime); real time = montage time / PlayRate.
 Variables: see VARS in setup_assets.py (added from Python before the paste).
@@ -59,6 +66,23 @@ GRAB = "/ImmersiveLooting/Runtime/AM_ImmLoot_Grab.AM_ImmLoot_Grab"
 RETURN = ("/Game/_STALKER2/Animations/Player/AnimSequences/ar/common/showhide/lefthand/"
           "MG_fp_return_left_hand_on_item.MG_fp_return_left_hand_on_item")
 HAND = "jnt_l_weapon"
+IMC_CLS = cls("/Script/EnhancedInput.InputMappingContext")
+EILPS = cls("/Script/EnhancedInput.EnhancedInputLocalPlayerSubsystem")
+EISI = cls("/Script/EnhancedInput.EnhancedInputSubsystemInterface")
+SOP = "\"/Script/CoreUObject.ScriptStruct'/Script/CoreUObject.SoftObjectPath'\""
+IMC_DIR = "/Game/_Stalker_2/data/input/InputMappingContexts/"
+UW = cls("/Script/UMG.UserWidget")
+WBL = cls("/Script/UMG.WidgetBlueprintLibrary")
+TEXTW = cls("/Script/Stalker2.TextWidget")
+KTXT = cls("/Script/Engine.KismetTextLibrary")
+KSTR = cls("/Script/Engine.KismetStringLibrary")
+WTEXT_PATH = "/Game/GameLite/FPS_Game/UIRemaster/CommonWidgets/W_Text.W_Text_C"
+WINV_PATH = "/Game/GameLite/FPS_Game/UIRemaster/Inventory/W_Inventory.W_Inventory_C"
+WTEXT = "\"/Script/UMG.WidgetBlueprintGeneratedClass'%s'\"" % WTEXT_PATH
+WINV = "\"/Script/UMG.WidgetBlueprintGeneratedClass'%s'\"" % WINV_PATH
+FOREACH = ("MacroGraphReference=(MacroGraph=\"/Script/Engine.EdGraph'/Engine/EditorBlueprintResources/StandardMacros."
+           "StandardMacros:ForEachLoop'\",GraphBlueprint=\"/Script/Engine.Blueprint'/Engine/EditorBlueprintResources/"
+           "StandardMacros.StandardMacros'\",GraphGuid=99DBFD5540A796041F72A5A9DA655026)")
 GET_TIP = 'PinToolTip="Retrieves the value of the variable, can use instead of a separate Get node",'
 
 g = Graph()
@@ -266,6 +290,59 @@ def slot_active(x, y, anim_pin, slot):
                        [("SlotNodeName", "name", dict(extra=f'DefaultValue="{slot}",')), RB])["ReturnValue"]
 
 
+def lib_call(lib, member, x, y, comment, pins, default_obj):
+    n = exec_pins(Node(g, BG + "K2Node_CallFunction", nm("K2Node_CallFunction"), x, y, comment,
+                       [f"FunctionReference=(MemberParent={lib},MemberName=\"{member}\")"]))
+    n.pin("self", "object", sub=lib, hidden=True, extra=f'DefaultObject="{default_obj}",')
+    return add_pins(n, pins)
+
+
+def for_each(x, y, comment, elem_cls):
+    """StandardMacros ForEachLoop (GraphGuid read from the kit's Engine/Content/EditorBlueprintResources/StandardMacros)."""
+    n = Node(g, BG + "K2Node_MacroInstance", nm("K2Node_MacroInstance"), x, y, comment,
+             [FOREACH, f"ResolvedWildcardType=(PinCategory=\"object\",PinSubCategoryObject={elem_cls})"])
+    n.pin("Exec", "exec")
+    n.pin("Array", "object", sub=elem_cls)
+    n.pins["Array"].container = "Array"
+    n.pin("LoopBody", "exec", out=True)
+    n.pin("Array Element", "object", sub=elem_cls, out=True)
+    n.pin("Array Index", "int", out=True)
+    n.pin("Completed", "exec", out=True)
+    return n
+
+
+def kml_int_gt(x, y, a, b_const):
+    n = kml("Greater_IntInt", x, y, [("A", "int", dict(extra='DefaultValue="0",')),
+                                     ("B", "int", dict(extra=f'DefaultValue="{b_const}",')), RB])
+    g.link(a, n["A"])
+    return n["ReturnValue"]
+
+
+def load_imc(x, y, name, prev_then, comment):
+    mk = lib_pure(KSL, "KismetSystemLibrary", "MakeSoftObjectPath", x, y + 250,
+                  [("PathString", "string", dict(extra=f'DefaultValue="{IMC_DIR}{name}.{name}",')),
+                   ("ReturnValue", "struct", dict(sub=SOP, out=True))])
+    cv = lib_pure(KSL, "KismetSystemLibrary", "Conv_SoftObjPathToSoftObjRef", x + 250, y + 250,
+                  [("SoftObjectPath", "struct", dict(sub=SOP)), ("ReturnValue", "softobject", dict(sub=OBJ, out=True))])
+    cv.pins["SoftObjectPath"].ref = True
+    cv.pins["SoftObjectPath"].const = True
+    g.link(mk["ReturnValue"], cv["SoftObjectPath"])
+    ld = lib_call(KSL, "LoadAsset_Blocking", x + 150, y, comment, [("Asset", "softobject", dict(sub=OBJ)),
+                                                                  ("ReturnValue", "object", dict(sub=OBJ, out=True))],
+                  "/Script/Engine.Default__KismetSystemLibrary")
+    g.link(cv["ReturnValue"], ld["Asset"])
+    g.link(prev_then, ld["execute"])
+    c = exec_pins(Node(g, BG + "K2Node_DynamicCast", nm("K2Node_DynamicCast"), x + 450, y, f"{name} loaded",
+                       [f"TargetType={IMC_CLS}"]))
+    c.pin("CastFailed", "exec", out=True)
+    c.pin("Object", "object", sub=OBJ)
+    c.pin("AsInputMappingContext", "object", sub=IMC_CLS, out=True)
+    c.pin("bSuccess", "bool", out=True)
+    g.link(ld["ReturnValue"], c["Object"])
+    g.link(ld["then"], c["execute"])
+    return c
+
+
 def obj_q(member, x, y, target, owner=OBJC):
     return member_pure(owner, member, x, y, target, [RB])["ReturnValue"]
 
@@ -299,7 +376,7 @@ cast.pin("bSuccess", "bool", out=True)
 g.link(gp["ReturnValue"], cast["Object"])
 g.link(tick["then"], cast["execute"])
 as_pc = cast["AsPC"]
-sq = sequence(700, 0, "tick steps", 5)
+sq = sequence(700, 0, "tick steps", 7)
 g.link(cast["then"], sq["execute"])
 mesh = other_get(CHAR, "Mesh", "object", 700, 300, as_pc, sub=SKC)
 anim = member_pure(SKC, "GetAnimInstance", 950, 300, mesh, [("ReturnValue", "object", dict(sub=ANIMI, out=True))])["ReturnValue"]
@@ -314,10 +391,13 @@ stg = self_call("SetTickGroup", X0 + 300, Y0, "tick after anim update", [
 si0 = self_set("Init", "bool", X0 + 650, Y0, "", default="true")
 g.link(br0["then"], stg["execute"])
 g.link(stg["then"], si0["execute"])
+imc_c = load_imc(X0 + 950, Y0, "IMC_Inventory", si0["then"], "inventory / loot input context (game path)")
+sim0 = set_from("InvIMC", "object", X0 + 1700, Y0, imc_c["AsInputMappingContext"], "remember it", sub=IMC_CLS)
+g.link(imc_c["then"], sim0["execute"])
 
-# ---- 1: picked up? -> reach (or skip) ----
+# ---- 1: picked up? -> pending reach with a copy ----
 X1, Y1 = 1200, 1000
-g.box("EdGraphNode_Comment_902", X1 - 80, Y1 - 200, 6200, 2600, "Picked up? Then reach with the left hand and fly a copy of the item into it")
+g.box("EdGraphNode_Comment_902", X1 - 80, Y1 - 200, 6200, 2600, "Picked up? (marks a pending reach; step 3 runs it: skip, or left-hand grab + a copy of the item flying into the hand)")
 item = lambda x, y: self_get("Item", "object", x, y, sub=ACTOR)
 icomp = lambda x, y: self_get("ItemComp", "object", x, y, sub=SC_)
 recent = d_op("Less_DoubleDouble", X1 - 100, Y1 + 600,
@@ -347,6 +427,16 @@ dis1 = self_set("ItemArmed", "bool", X1 + 300, Y1, "handled", default="false")
 np1 = inc("NPickups", X1 + 600, Y1, "count pickups")
 g.link(br1["then"], dis1["execute"])
 g.link(dis1["then"], np1["execute"])
+sp1 = self_set("PendingReach", "bool", X1 + 900, Y1 - 300, "reach pending", default="true")
+sc1 = self_set("PendingCopy", "bool", X1 + 1200, Y1 - 300, "with a flying copy", default="true")
+chain(np1, sp1, sc1)
+
+# ---- 3: run a pending reach (from a pickup or a closed loot window): skip, or montage (+ flying copy) ----
+X3R, Y3R = X1 + 300, Y1 + 2700
+br3 = branch(X3R, Y3R, "a reach is pending?", self_get("PendingReach", "bool", X3R - 200, Y3R + 150))
+g.link(sq["then_3"], br3["execute"])
+spr = self_set("PendingReach", "bool", X3R + 300, Y3R, "taken", default="false")
+g.link(br3["then"], spr["execute"])
 
 # skip conditions (each also a bit in SkipBits for the probe)
 SX, SY = X1 + 400, Y1 + 600
@@ -381,7 +471,7 @@ for k, (_, c) in enumerate(conds + [("lefthandbusy", obj_q("IsLeftHandBusy", SX,
         bits = add["ReturnValue"]
 sbits = set_from("SkipBits", "int", X1 + 900, Y1, bits, "why (probe): 1 sprint 2 aim 4 action 8 left-hand montage "
                  "16 dialog 32 cutscene 64 detector 128 binoculars 256 disabled 512 IsLeftHandBusy (info)")
-g.link(np1["then"], sbits["execute"])
+g.link(spr["then"], sbits["execute"])
 brs = branch(X1 + 1250, Y1, "skip? (vanilla pickup, no reach)", skip)
 g.link(sbits["then"], brs["execute"])
 ns = inc("NSkips", X1 + 1550, Y1 - 300, "count skips")
@@ -412,7 +502,9 @@ chain(mp, srs, srg, nr)
 #   c) the flying copy
 FX, FY = X1 + 1850, Y1 + 900
 sfs = set_from("FlyStart", "real", FX, FY, now(FX - 150, FY + 200), "flight starts", subcat="double")
-g.link(sqr["then_2"], sfs["execute"])
+bpc = branch(FX - 300, FY, "with a flying copy? (not after a loot window)", self_get("PendingCopy", "bool", FX - 450, FY + 150))
+g.link(sqr["then_2"], bpc["execute"])
+g.link(bpc["then"], sfs["execute"])
 grab_real = d_op("Divide_DoubleDouble", FX + 100, FY + 350, self_get("GrabTime", "real", FX - 100, FY + 350, subcat="double"),
                  self_get("PlayRate", "real", FX - 100, FY + 430, subcat="double"))
 arrive = d_op("Add_DoubleDouble", FX + 280, FY + 350, self_get("ReachStart", "real", FX + 100, FY + 270, subcat="double"), grab_real)
@@ -470,12 +562,217 @@ g.link(bsm["else"], bsk["execute"])
 sp_sk = spawn_copy(FX + 1800, FY + 500, SKA, "SkeletalMeshComponent", "copy of a skeletal-mesh item")
 g.link(bsk["then"], sp_sk["execute"])
 
-# ---- 2: track the loose item under the crosshair ----
+# =====================================================================
+# 2: corpse / stash loot window: after it closes, if something was taken, a reach (no copy)
+#    open  = IMC_Inventory applied (backpack, corpse and stash share the W_Inventory view; traders use IMC_Trade)
+#    taken = player weight text up, loot weight text down, or more money, compared with the first 0.3 s
+# =====================================================================
+X5, Y5 = 1200, 11000
+g.box("EdGraphNode_Comment_906", X5 - 80, Y5 - 300, 7000, 4700,
+      "Loot window (corpse / stash): opened? sample weights and money; closed after taking something? -> reach")
+gpc = lib_pure(GS, "GameplayStatics", "GetPlayerController", X5 - 900, Y5 + 300,
+               [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)),
+                ("PlayerIndex", "int", dict(extra='DefaultValue="0",')),
+                ("ReturnValue", "object", dict(sub=cls("/Script/Engine.PlayerController"), out=True))])
+subn = Node(g, BG + "K2Node_GetSubsystemFromPC", nm("K2Node_GetSubsystemFromPC"), X5 - 650, Y5 + 300, "", [f"CustomClass={EILPS}"])
+subn.pin("PlayerController", "object", sub=cls("/Script/Engine.PlayerController"))
+subn.pin("ReturnValue", "object", sub=EILPS, out=True)
+g.link(gpc["ReturnValue"], subn["PlayerController"])
+hmc = member_pure(EISI, "HasMappingContext", X5 - 400, Y5 + 300, subn["ReturnValue"],
+                  [("MappingContext", "object", dict(sub=IMC_CLS)), ("OutFoundPriority", "int", dict(out=True)), RB])
+hmc.pins["self"].cat = "interface"
+hmc.pins["MappingContext"].const = True
+g.link(self_get("InvIMC", "object", X5 - 600, Y5 + 420, sub=IMC_CLS), hmc["MappingContext"])
+inv = b_and(X5 - 150, Y5 + 300, is_valid(X5 - 400, Y5 + 450, self_get("InvIMC", "object", X5 - 600, Y5 + 500, sub=IMC_CLS)),
+            hmc["ReturnValue"])
+inv_open = lambda x, y: self_get("InvOpen", "bool", x, y)
+sq5 = sequence(X5, Y5, "loot window steps", 4)
+g.link(sq["then_2"], sq5["execute"])
+
+#   L0: while closed, remember what we look at (the corpse / stash the window will open for)
+b50 = branch(X5 + 300, Y5 - 200, "window closed (and not opening this tick)?", b_and(X5 + 200, Y5 - 50, b_not(X5 + 50, Y5 - 50, inv_open(X5 - 100, Y5 - 50)), b_not(X5 + 50, Y5 + 50, inv)))
+g.link(sq5["then_0"], b50["execute"])
+slt = set_from("LootTarget", "object", X5 + 600, Y5 - 200,
+               member_pure(PC, "GetInteractionTarget", X5 + 400, Y5 - 50, as_pc, [("ReturnValue", "object", dict(sub=ICOMP, out=True))])["ReturnValue"],
+               "what we look at", sub=ICOMP)
+g.link(b50["then"], slt["execute"])
+
+#   L1: opened -> classify (corpse 1, stash / container 2, else 0), find the weight texts and the view
+b51 = branch(X5 + 300, Y5 + 300, "window just opened?", b_and(X5 + 150, Y5 + 450, inv, b_not(X5, Y5 + 500, inv_open(X5 - 150, Y5 + 500))))
+g.link(sq5["then_1"], b51["execute"])
+o1 = self_set("InvOpen", "bool", X5 + 600, Y5 + 300, "open", default="true")
+o2 = set_from("OpenAt", "real", X5 + 900, Y5 + 300, now(X5 + 750, Y5 + 500), "when", subcat="double")
+o3 = self_set("Took", "bool", X5 + 1200, Y5 + 300, "nothing taken yet", default="false")
+o4 = self_set("LootKind", "int", X5 + 1500, Y5 + 300, "unknown", default="0")
+o5 = self_set("PWText", "object", X5 + 1800, Y5 + 300, "forget old widgets", sub=WTEXT)
+o6 = self_set("LWText", "object", X5 + 2100, Y5 + 300, "", sub=WTEXT)
+o7 = self_set("InvView", "object", X5 + 2400, Y5 + 300, "", sub=UW)
+o8 = inc("NLootOpen", X5 + 2700, Y5 + 300, "count windows")
+chain(o1, o2, o3, o4, o5, o6, o7, o8)
+g.link(b51["then"], o1["execute"])
+lt = self_get("LootTarget", "object", X5 + 2800, Y5 + 700, sub=ICOMP)
+cdb = exec_pins(Node(g, BG + "K2Node_DynamicCast", nm("K2Node_DynamicCast"), X5 + 3000, Y5 + 300, "a corpse?",
+                     ["TargetType=" + cls("/Script/Stalker2.DeadBody")]))
+cdb.pin("CastFailed", "exec", out=True)
+cdb.pin("Object", "object", sub=OBJ)
+cdb.pin("AsDead Body", "object", sub=cls("/Script/Stalker2.DeadBody"), out=True)
+cdb.pin("bSuccess", "bool", out=True)
+g.link(lt, cdb["Object"])
+g.link(o8["then"], cdb["execute"])
+k1 = self_set("LootKind", "int", X5 + 3350, Y5 + 200, "corpse", default="1")
+g.link(cdb["then"], k1["execute"])
+cst = exec_pins(Node(g, BG + "K2Node_DynamicCast", nm("K2Node_DynamicCast"), X5 + 3350, Y5 + 500, "a stash / container?",
+                     [f"TargetType=\"/Script/CoreUObject.Class'{IIC}'\""]))
+cst.pin("CastFailed", "exec", out=True)
+cst.pin("Object", "object", sub=OBJ)
+cst.pin("AsInteractable Item Container", "object", sub=cls(IIC), out=True)
+cst.pin("bSuccess", "bool", out=True)
+g.link(member_pure(ACOMP, "GetOwner", X5 + 3100, Y5 + 700, lt, [("ReturnValue", "object", dict(sub=ACTOR, out=True))])["ReturnValue"], cst["Object"])
+g.link(cdb["CastFailed"], cst["execute"])
+k2 = self_set("LootKind", "int", X5 + 3700, Y5 + 500, "stash / container", default="2")
+g.link(cst["then"], k2["execute"])
+#     the weight texts: every W_Text widget once, keep the two "CurrentWeightText" of this view
+gaw = lib_call(WBL, "GetAllWidgetsOfClass", X5 + 4000, Y5 + 300, "all text widgets (once per window)", [
+    ("WorldContextObject", "object", dict(sub=OBJ, hidden=True)),
+    ("FoundWidgets", "object", dict(sub=WTEXT, out=True)),
+    ("WidgetClass", "class", dict(sub=UW, extra=f'DefaultObject="{WTEXT_PATH}",')),
+    B("TopLevelOnly", "false")], "/Script/UMG.Default__WidgetBlueprintLibrary")
+gaw.pins["FoundWidgets"].container = "Array"
+g.link(k1["then"], gaw["execute"])
+g.link(k2["then"], gaw["execute"])
+fe = for_each(X5 + 4400, Y5 + 300, "each text widget", WTEXT)
+g.link(gaw["then"], fe["Exec"])
+g.link(gaw["FoundWidgets"], fe["Array"])
+pathn = lib_pure(KSL, "KismetSystemLibrary", "GetPathName", X5 + 4600, Y5 + 700,
+                 [("Object", "object", dict(sub=OBJ)), ("ReturnValue", "string", dict(out=True))])
+g.link(fe["Array Element"], pathn["Object"])
+path = pathn["ReturnValue"]
+
+
+def has(x, y, sub_):
+    n = lib_pure(KSTR, "KismetStringLibrary", "Contains", x, y,
+                 [("SearchIn", "string"), ("Substring", "string", dict(extra=f'DefaultValue="{sub_}",')),
+                  B("bUseCase"), B("bSearchFromEnd"), RB])
+    g.link(path, n["SearchIn"])
+    return n["ReturnValue"]
+
+
+is_cw = b_and(X5 + 5000, Y5 + 800, has(X5 + 4800, Y5 + 800, "W_Inventory_C"), has(X5 + 4800, Y5 + 900, "WeightBar.WidgetTree.CurrentWeightText"))
+sqe = sequence(X5 + 4800, Y5 + 300, "per text widget", 2)
+g.link(fe["LoopBody"], sqe["execute"])
+bpw = branch(X5 + 5100, Y5 + 200, "the player's weight?", b_and(X5 + 5000, Y5 + 1000, is_cw, has(X5 + 4800, Y5 + 1000, "InventoryWidget")))
+g.link(sqe["then_0"], bpw["execute"])
+g.link(bpw["then"], set_from("PWText", "object", X5 + 5400, Y5 + 200, fe["Array Element"], "player weight text", sub=WTEXT)["execute"])
+blw = branch(X5 + 5100, Y5 + 500, "the corpse / stash weight?", b_and(X5 + 5000, Y5 + 1100, is_cw, has(X5 + 4800, Y5 + 1100, "LootGridWidget")))
+g.link(sqe["then_1"], blw["execute"])
+g.link(blw["then"], set_from("LWText", "object", X5 + 5400, Y5 + 500, fe["Array Element"], "loot weight text", sub=WTEXT)["execute"])
+#     the view itself (to tell a real close from a popup)
+gav = lib_call(WBL, "GetAllWidgetsOfClass", X5 + 4400, Y5 + 1400, "the inventory view", [
+    ("WorldContextObject", "object", dict(sub=OBJ, hidden=True)),
+    ("FoundWidgets", "object", dict(sub=WINV, out=True)),
+    ("WidgetClass", "class", dict(sub=UW, extra=f'DefaultObject="{WINV_PATH}",')),
+    B("TopLevelOnly", "true")], "/Script/UMG.Default__WidgetBlueprintLibrary")
+gav.pins["FoundWidgets"].container = "Array"
+g.link(fe["Completed"], gav["execute"])
+fe2 = for_each(X5 + 4800, Y5 + 1400, "each view (one expected)", WINV)
+g.link(gav["then"], fe2["Exec"])
+g.link(gav["FoundWidgets"], fe2["Array"])
+g.link(fe2["LoopBody"], set_from("InvView", "object", X5 + 5200, Y5 + 1400, fe2["Array Element"], "the view", sub=UW)["execute"])
+
+
+def weight(x, y, var):
+    t = member_pure(TEXTW, "GetText", x, y, self_get(var, "object", x - 200, y, sub=WTEXT), [("ReturnValue", "text", dict(out=True))])
+    s_ = lib_pure(KTXT, "KismetTextLibrary", "Conv_TextToString", x + 200, y, [("InText", "text"), ("ReturnValue", "string", dict(out=True))])
+    g.link(t["ReturnValue"], s_["InText"])
+    r = lib_pure(KSTR, "KismetStringLibrary", "Replace", x + 400, y,
+                 [("SourceString", "string"), ("From", "string", dict(extra='DefaultValue=",",')),
+                  ("To", "string", dict(extra='DefaultValue=".",')),
+                  ("SearchCase", "byte", dict(sub=EN("/Script/CoreUObject.ESearchCase"), extra='DefaultValue="IgnoreCase",')),
+                  ("ReturnValue", "string", dict(out=True))])
+    g.link(s_["ReturnValue"], r["SourceString"])
+    d = lib_pure(KSTR, "KismetStringLibrary", "Conv_StringToDouble", x + 600, y, [("InString", "string"), RD])
+    g.link(r["ReturnValue"], d["InString"])
+    return d["ReturnValue"]
+
+
+#   L2: open: sample (the first 0.3 s set the baseline)
+b52 = branch(X5 + 300, Y5 + 1900, "window open?", b_and(X5 + 150, Y5 + 2050, inv, inv_open(X5, Y5 + 2100)))
+g.link(sq5["then_2"], b52["execute"])
+sg = self_set("InvGoneAt", "real", X5 + 600, Y5 + 1900, "not gone", default="-1.0", subcat="double")
+g.link(b52["then"], sg["execute"])
+b52k = branch(X5 + 900, Y5 + 1900, "a corpse / stash?", kml_int_gt(X5 + 750, Y5 + 2100, self_get("LootKind", "int", X5 + 550, Y5 + 2100), 0))
+g.link(sg["then"], b52k["execute"])
+sq52 = sequence(X5 + 1200, Y5 + 1900, "sample steps", 2)
+g.link(b52k["then"], sq52["execute"])
+cpw = set_from("CurPW", "real", X5 + 1500, Y5 + 1800, weight(X5 + 1300, Y5 + 2300, "PWText"), "player weight", subcat="double")
+clw = set_from("CurLW", "real", X5 + 1800, Y5 + 1800, weight(X5 + 1300, Y5 + 2400, "LWText"), "loot weight", subcat="double")
+cmo = set_from("CurMoney", "real", X5 + 2100, Y5 + 1800,
+               member_pure(OBJC, "GetMoney", X5 + 1900, Y5 + 2300, as_pc, [("ReturnValue", "real", dict(subcat="float", out=True))])["ReturnValue"],
+               "money", subcat="double")
+chain(cpw, clw, cmo)
+g.link(sq52["then_0"], cpw["execute"])
+since_open = d_op("Subtract_DoubleDouble", X5 + 2200, Y5 + 2100, now(X5 + 2000, Y5 + 2100), self_get("OpenAt", "real", X5 + 2000, Y5 + 2200, subcat="double"))
+bb = branch(X5 + 2400, Y5 + 1800, "settling (first 0.3 s)? then it is the baseline",
+            d_op("Less_DoubleDouble", X5 + 2400, Y5 + 2100, since_open, b_const="0.3", ret=RB))
+g.link(cmo["then"], bb["execute"])
+b1_ = set_from("StartPW", "real", X5 + 2700, Y5 + 1700, self_get("CurPW", "real", X5 + 2550, Y5 + 1600, subcat="double"), "baseline", subcat="double")
+b2_ = set_from("StartLW", "real", X5 + 3000, Y5 + 1700, self_get("CurLW", "real", X5 + 2850, Y5 + 1600, subcat="double"), "", subcat="double")
+b3_ = set_from("StartMoney", "real", X5 + 3300, Y5 + 1700, self_get("CurMoney", "real", X5 + 3150, Y5 + 1600, subcat="double"), "", subcat="double")
+chain(b1_, b2_, b3_)
+g.link(bb["then"], b1_["execute"])
+cur = lambda v, x, y: self_get(v, "real", x, y, subcat="double")
+pw_up = b_and(X5 + 3000, Y5 + 2200, is_valid(X5 + 2800, Y5 + 2150, self_get("PWText", "object", X5 + 2600, Y5 + 2150, sub=WTEXT)),
+              d_op("Greater_DoubleDouble", X5 + 2800, Y5 + 2250, cur("CurPW", X5 + 2600, Y5 + 2250),
+                   d_op("Add_DoubleDouble", X5 + 2600, Y5 + 2350, cur("StartPW", X5 + 2400, Y5 + 2350), b_const="0.04"), ret=RB))
+lw_dn = b_and(X5 + 3000, Y5 + 2450, is_valid(X5 + 2800, Y5 + 2400, self_get("LWText", "object", X5 + 2600, Y5 + 2400, sub=WTEXT)),
+              d_op("Less_DoubleDouble", X5 + 2800, Y5 + 2500, cur("CurLW", X5 + 2600, Y5 + 2500),
+                   d_op("Subtract_DoubleDouble", X5 + 2600, Y5 + 2600, cur("StartLW", X5 + 2400, Y5 + 2600), b_const="0.04"), ret=RB))
+mo_up = d_op("Greater_DoubleDouble", X5 + 2800, Y5 + 2700, cur("CurMoney", X5 + 2600, Y5 + 2700),
+             d_op("Add_DoubleDouble", X5 + 2600, Y5 + 2800, cur("StartMoney", X5 + 2400, Y5 + 2800), b_const="0.5"), ret=RB)
+stk = set_from("Took", "bool", X5 + 2700, Y5 + 2000,
+               b_or(X5 + 3200, Y5 + 2300, self_get("Took", "bool", X5 + 3000, Y5 + 2100), pw_up, lw_dn, mo_up),
+               "took something? (player heavier, loot lighter or more money)")
+g.link(bb["else"], stk["execute"])
+bbp = branch(X5 + 1500, Y5 + 2700, "actually the backpack (I key)?",
+             member_pure(PC, "IsUsingBackpack", X5 + 1300, Y5 + 2850, as_pc, [RB])["ReturnValue"])
+g.link(sq52["then_1"], bbp["execute"])
+g.link(bbp["then"], self_set("LootKind", "int", X5 + 1800, Y5 + 2700, "not loot", default="0")["execute"])
+
+#   L3: gone -> after 0.25 s, and the view hidden (a popup keeps it shown; 3 s fail-safe): closed
+b53 = branch(X5 + 300, Y5 + 3300, "window context gone?", b_and(X5 + 150, Y5 + 3450, b_not(X5, Y5 + 3450, inv), inv_open(X5, Y5 + 3550)))
+g.link(sq5["then_3"], b53["execute"])
+gone_at = lambda x, y: self_get("InvGoneAt", "real", x, y, subcat="double")
+b53a = branch(X5 + 600, Y5 + 3300, "just now?", d_op("Less_DoubleDouble", X5 + 450, Y5 + 3500, gone_at(X5 + 250, Y5 + 3600), b_const="0.0", ret=RB))
+g.link(b53["then"], b53a["execute"])
+g.link(b53a["then"], set_from("InvGoneAt", "real", X5 + 900, Y5 + 3200, now(X5 + 750, Y5 + 3100), "gone since", subcat="double")["execute"])
+gone_for = d_op("Subtract_DoubleDouble", X5 + 700, Y5 + 3700, now(X5 + 500, Y5 + 3700), gone_at(X5 + 500, Y5 + 3800))
+view = lambda x, y: self_get("InvView", "object", x, y, sub=UW)
+shown = b_and(X5 + 900, Y5 + 3900, is_valid(X5 + 700, Y5 + 3900, view(X5 + 500, Y5 + 3900)),
+              member_pure(UW, "IsInViewport", X5 + 700, Y5 + 4000, view(X5 + 500, Y5 + 4000), [RB])["ReturnValue"],
+              member_pure(cls("/Script/UMG.Widget"), "IsVisible", X5 + 700, Y5 + 4100, view(X5 + 500, Y5 + 4100), [RB])["ReturnValue"])
+closed = b_and(X5 + 1100, Y5 + 3700, d_op("GreaterEqual_DoubleDouble", X5 + 900, Y5 + 3700, gone_for, b_const="0.25", ret=RB),
+               b_or(X5 + 1100, Y5 + 3900, b_not(X5 + 1000, Y5 + 3900, shown),
+                    d_op("GreaterEqual_DoubleDouble", X5 + 900, Y5 + 4200, gone_for, b_const="3.0", ret=RB)))
+b53b = branch(X5 + 900, Y5 + 3400, "closed for good?", closed)
+g.link(b53a["else"], b53b["execute"])
+sc0 = self_set("InvOpen", "bool", X5 + 1200, Y5 + 3400, "closed", default="false")
+g.link(b53b["then"], sc0["execute"])
+b53c = branch(X5 + 1500, Y5 + 3400, "a corpse / stash, and something taken?",
+              b_and(X5 + 1400, Y5 + 3600, kml_int_gt(X5 + 1200, Y5 + 3600, self_get("LootKind", "int", X5 + 1000, Y5 + 3600), 0),
+                    self_get("Took", "bool", X5 + 1200, Y5 + 3700)))
+g.link(sc0["then"], b53c["execute"])
+lp1 = self_set("PendingReach", "bool", X5 + 1800, Y5 + 3400, "reach pending", default="true")
+lp2 = self_set("PendingCopy", "bool", X5 + 2100, Y5 + 3400, "no copy (nothing in the world)", default="false")
+lp3 = inc("NLootTook", X5 + 2400, Y5 + 3400, "count loot reaches")
+chain(lp1, lp2, lp3)
+g.link(b53c["then"], lp1["execute"])
+
+# ---- 4: track the loose item under the crosshair ----
 X2, Y2 = 1200, 4000
 g.box("EdGraphNode_Comment_903", X2 - 80, Y2 - 200, 3600, 1300, "Track the loose item we are looking at (its mesh and where it is)")
 tgt = member_pure(PC, "GetInteractionTarget", X2 - 400, Y2 + 200, as_pc, [("ReturnValue", "object", dict(sub=ICOMP, out=True))])["ReturnValue"]
 bt = branch(X2, Y2, "looking at something interactable?", is_valid(X2 - 150, Y2 + 200, tgt))
-g.link(sq["then_2"], bt["execute"])
+g.link(sq["then_4"], bt["execute"])
 own = member_pure(ACOMP, "GetOwner", X2 - 150, Y2 + 320, tgt, [("ReturnValue", "object", dict(sub=ACTOR, out=True))])["ReturnValue"]
 c2 = exec_pins(Node(g, BG + "K2Node_DynamicCast", nm("K2Node_DynamicCast"), X2 + 300, Y2, "a loose item?",
                     [f"TargetType=\"/Script/CoreUObject.Class'{IIC}'\""]))
@@ -516,12 +813,12 @@ xf = member_pure(SC_, "K2_GetComponentToWorld", X2 + 1350, Y2 + 850, icomp(X2 + 
 sxf = set_from("ItemXf", "struct", X2 + 1550, Y2 + 600, xf, "where it is", sub=XFORM)
 chain(sseen, sarm, sxf)
 
-# ---- 3: fly the copy into the left hand ----
+# ---- 5: fly the copy into the left hand ----
 X3, Y3 = 1200, 5800
 g.box("EdGraphNode_Comment_904", X3 - 80, Y3 - 200, 3400, 1300, "Fly the copy into the left hand, hold it, pocket it")
 fly = lambda x, y: self_get("Fly", "object", x, y, sub=ACTOR)
 bf = branch(X3, Y3, "a copy is flying?", is_valid(X3 - 150, Y3 + 200, fly(X3 - 350, Y3 + 200)))
-g.link(sq["then_3"], bf["execute"])
+g.link(sq["then_5"], bf["execute"])
 el = d_op("Subtract_DoubleDouble", X3 - 300, Y3 + 500, now(X3 - 500, Y3 + 500), self_get("FlyStart", "real", X3 - 500, Y3 + 580, subcat="double"))
 alpha_raw = d_op("Divide_DoubleDouble", X3 - 100, Y3 + 500, el, self_get("FlyDur", "real", X3 - 300, Y3 + 620, subcat="double"))
 cl = kml("FClamp", X3 + 100, Y3 + 500, [D("Value"), D("Min", "0.0"), D("Max", "1.0"), RD])
@@ -569,12 +866,12 @@ g.link(sq3["then_1"], bp["execute"])
 fdx = member_call(ACTOR, "K2_DestroyActor", X3 + 1550, Y3 + 600, fly(X3 + 1400, Y3 + 800), "gone into the pocket")
 g.link(bp["then"], fdx["execute"])
 
-# ---- 4: recover the left hand if our montage was cut ----
+# ---- 6: recover the left hand if our montage was cut ----
 X4, Y4 = 1200, 7600
 g.box("EdGraphNode_Comment_905", X4 - 80, Y4 - 200, 2600, 1100, "Reach cut short? Put the left hand back on the weapon")
 br4 = branch(X4, Y4, "our reach ended?", b_and(X4 - 100, Y4 + 250, self_get("Reaching", "bool", X4 - 300, Y4 + 200),
                                                 b_not(X4 - 300, Y4 + 300, montage_active(X4 - 500, Y4 + 300, anim, GRAB))))
-g.link(sq["then_4"], br4["execute"])
+g.link(sq["then_6"], br4["execute"])
 sr4 = self_set("Reaching", "bool", X4 + 300, Y4, "", default="false")
 g.link(br4["then"], sr4["execute"])
 cut = d_op("Less_DoubleDouble", X4 + 300, Y4 + 400, montage_time_since_reach(X4 + 100, Y4 + 400),

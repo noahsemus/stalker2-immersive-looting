@@ -63,8 +63,23 @@ reach, skip reason and copy, so a failure can be split without extra runs. After
    press Package Mod once (creates the subsystem data asset).
 4. Agent: mirror, cook, install the dev pak and the probe; the tester tests (test matrix rows 1-6).
 
+## Corpses and stashes (tester, 2026-10-09)
+After the player closes a corpse's or a stash's loot window, if they took at least one item from it, the same
+left-hand grab plays once (no flying copy: there is no item in the world). The game has no BP-visible
+"inventory changed" or "loot window" event, so (research: `zonekit/research/2026-10-09-loot-window-research.md`):
+- **Open / closed**: the input context `IMC_Inventory` is applied (backpack, corpse and stash share the
+  `W_Inventory` view; traders use `W_Trade` / `IMC_Trade`). Closed = context gone for 0.25 s and the view hidden or
+  out of the viewport (a split-stack popup keeps the view shown), 3 s fail-safe.
+- **Which container**: the interaction target from the tick before opening: `DeadBody` = corpse, owner an
+  `InteractableItemContainer` = stash (world stashes are subclasses of the item-container actors); the player's own
+  stash (`PlayerStash`), mutants and the I-key backpack (`IsUsingBackpack`) are ignored.
+- **Took something**: the window's two `CurrentWeightText` widgets (player, loot), found once per window by path
+  among all `W_Text` widgets, read as numbers: player heavier or loot lighter by more than 0.04 kg, or more money,
+  against a baseline taken in the first 0.3 s. Blind spots: weightless items (notes, flash drives) unless money
+  changes; mods that rebuild the inventory layout (then no loot reach, nothing else breaks).
+
 ## Decisions for the tester
-1. Scope of v1: loose items only (recommended) or also corpses / stashes (a single reach when the loot window opens)?
+1. ~~Scope of v1~~: loose items, plus corpses / stashes as above (decided 2026-10-09).
 2. Guns and other big items lying on the ground: same left-hand grab, or skip them (vanilla instant pickup)?
 3. Default speed: as authored (~1.7 s with the hand return) or faster (~1 s)?
 
@@ -88,7 +103,8 @@ reach, skip reason and copy, so a failure can be split without extra runs. After
 | 3 | detector in hand | same | reach plays or cleanly skips |
 | 4 | sprinting / aiming / reloading / flashlight toggling | pick up | no reach, vanilla pickup, nothing breaks |
 | 5 | several items in quick succession | spam F | one reach per pickup or a restart, never a queue, hand ends on the grip |
-| 6 | artifact, mutant parts, corpse, stash | loot | vanilla behaviour unchanged |
+| 6 | artifact, mutant parts | loot | vanilla behaviour unchanged |
+| 6b | corpse, stash | open, take one item / Take All / take nothing, close | grab plays once after closing if something was taken; nothing if not |
 | 7 | gamepad and rebound interact key | pick up | same as 1 |
 | 8 | with Player Gestures, ImmersiveCampfires, ImmersiveDialogue | stances, seated, dialogue | no conflict |
 | 9 | save / load right after a pickup, death during a reach | | no stuck hand, no lost item |
