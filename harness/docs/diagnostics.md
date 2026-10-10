@@ -73,3 +73,11 @@ stream + MemoryListStream + a link map work without a debugger.
 When a symptom might not be ours, park our dev pak (outside `Content\Paks\`) and have the tester repeat the exact
 steps. Known not-ours: the sleep black-screen soft hang (vanilla with all paks off sleeps fine; with the tester's mod
 set it hangs; bisect order if the tester wants it: UltraPlusExtensions → UObjectCacheMod → other time/weather mods).
+
+**The save is a suspect too.** A fault can live in the tester's save and survive removing the mod (Immersive Looting
+2026-10-10: body carry dead on every save made after the first dev builds, with the mod removed; a save from before the
+mod ever ran carried with the same mod list; 13 bisect builds on the broken save measured nothing). As soon as "nothing
+of ours runs" still fails, or a fix works once and never again, run one control on a save made BEFORE the mod (or its
+dev builds) ever ran, from the save list's dates (`%LOCALAPPDATA%\Stalker2\Saved\STEAM\SaveGames\Data\*.sav`
+timestamps vs the repo's first build commit). Mod removed + old save carries = saved state; mod removed + old save
+fails = another mod. Test on that clean save from then on.
