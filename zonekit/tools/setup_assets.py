@@ -126,7 +126,7 @@ ACTOR_VARS = [
     ("NPickups", "int", None), ("NReaches", "int", None), ("NSkips", "int", None), ("NRecover", "int", None),
     ("NFly", "int", None), ("SkipBits", "int", None), ("NLootOpen", "int", None), ("NLootTook", "int", None),
     ("NTicks", "int", None), ("GrabFwd", "real", None), ("GrabRight", "real", None), ("GrabUp", "real", None),
-    ("FovS", "real", None), ("TanFOVv", "real", None), ("FovOn", "real", None), ("CamOff", "real", None), ("TraceX", "real", None), ("TraceY", "real", None), ("TraceZ", "real", None), ("GrabBH", "bool", None), ("SegStart", "real", None),
+    ("FovS", "real", None), ("TanFOVv", "real", None), ("FovOn", "real", None), ("CamOff", "real", None), ("TraceX", "real", None), ("TraceY", "real", None), ("TraceZ", "real", None), ("GrabBH", "bool", None), ("SegStart", "real", None), ("ItemCenter", "vector", None),
 ]
 
 try:

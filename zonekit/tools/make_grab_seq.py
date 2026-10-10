@@ -297,6 +297,119 @@ def build_bh_table(src, rifle_seq, tgt_rot, nkeys):
                f"notifies {len(AL.get_animation_notify_events(seq))}, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
 
 
+
+ELEVS = list(range(-80, 31, 10))       # build 12: elevation of the item seen from the eye, body frame (deg, + = up)
+DISTS = [25, 35, 45, 55, 65]           # distance of the item from the eye (cm); 65 = "out of reach": arm fully out
+SEG2 = 45                              # frames per segment (1.5 s); the Blueprint stops it at +1.35 s
+
+
+def build_bh_reach_table(src, rifle_seq, tgt_rot, nkeys):
+    """Build 12 (tester: "what if the hand actually grabs the item, moves to where it is"): segments for every
+    (elevation, distance) of the item relative to the eye in the body frame. The hand's item point (jnt_l_weapon) goes
+    to the item by frame 12 (as far as the arm reaches, toward it), holds to 20, pocket by 27, rest by 39.
+    Segment index = ie * len(DISTS) + id; starts at index * 1.5 s."""
+    base = unreal.load_asset(BASE_BH)
+    sp_p, sp_q = cs(base, "jnt_spine_03", 0)
+    cam, _ = cs(base, "jnt_camera", 0)
+    cam_ar, _ = cs(src, "jnt_camera", 0)
+    ba, bf, bh = local(base, ARM, 0), local(base, FORE, 0), local(base, HAND, 0)
+    bsh = local(base, SHOULDER, 0)
+    rq_sh = qmul(sp_q, bsh[1]); rp_sh = add(sp_p, qrot(sp_q, bsh[0]))
+    rq_a = qmul(rq_sh, ba[1]); RA = add(rp_sh, qrot(rq_sh, ba[0]))
+    rq_f = qmul(rq_a, bf[1]); RE = add(RA, qrot(rq_a, bf[0]))
+    RQ = qmul(rq_f, bh[1]); R = add(RE, qrot(rq_f, bh[0]))
+    POCKET = add(sub((12.4, -8.2, 121.0), cam_ar), cam)
+    PQ = tgt_rot[min(27, nkeys - 1)]
+    GQ = tgt_rot[13]
+    wpn = local(src, "jnt_l_weapon", 13)[0]           # item point, in the hand's frame
+    path = f"{DIR}/{NAME_BH}"
+    if not EAL.does_asset_exist(path):
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(NAME_BH, DIR, rifle_seq)
+    seq = unreal.load_asset(path)
+    tracks = [str(t) for t in AL.get_animation_track_names(src)]
+    cache = {k: {b: local(src, b, k) for b in tracks} for k in range(min(SEG2, nkeys))}
+    nseg = len(ELEVS) * len(DISTS)
+    keys = {b: ([], [], []) for b in tracks}
+    for ie, elev in enumerate(ELEVS):
+        er = math.radians(elev)
+        dirv_e = (math.cos(er), 0.0, math.sin(er))
+        qp = (0.0, -math.sin(er / 2), 0.0, math.cos(er / 2))
+        GQp = qmul(qp, GQ)
+        for dd in DISTS:
+            item = add(cam, mul(dirv_e, dd))
+            G = sub(item, qrot(GQp, wpn))               # wrist so that the item point sits on the item
+            for f in range(SEG2):
+                k = min(f, nkeys - 1)
+                if f <= 12:
+                    bw, T0, Q0, T1, Q1 = smooth(f / 12), R, RQ, G, GQp
+                elif f <= 20:
+                    bw, T0, Q0, T1, Q1 = 1.0, G, GQp, G, GQp
+                elif f <= 27:
+                    bw, T0, Q0, T1, Q1 = smooth((f - 20) / 7), G, GQp, POCKET, PQ
+                elif f <= 39:
+                    bw, T0, Q0, T1, Q1 = smooth((f - 27) / 12), POCKET, PQ, R, RQ
+                else:
+                    bw, T0, Q0, T1, Q1 = 1.0, R, RQ, R, RQ
+                T = add(T0, mul(sub(T1, T0), bw))
+                hq = slerp(Q0, Q1, bw)
+                c = cache[min(k, SEG2 - 1)]
+                sh_l = c[SHOULDER]
+                sh_q = qmul(sp_q, sh_l[1]); sh_p = add(sp_p, qrot(sp_q, sh_l[0]))
+                a_l, f_l, h_l = c[ARM], c[FORE], c[HAND]
+                a_q = qmul(sh_q, ba[1]); A = add(sh_p, qrot(sh_q, a_l[0]))
+                f_q = qmul(a_q, bf[1]); E = add(A, qrot(a_q, f_l[0]))
+                H = add(E, qrot(f_q, h_l[0]))
+                l1, l2 = norm(sub(E, A)), norm(sub(H, E))
+                to_t = sub(T, A)
+                d = max(abs(l1 - l2) + 0.01, min(l1 + l2 - 0.01, norm(to_t)))
+                dv = unit(to_t)
+                a = (l1 * l1 - l2 * l2 + d * d) / (2 * d)
+                h = math.sqrt(max(l1 * l1 - a * a, 0.0))
+                hint = sub(E, A)
+                pole = sub(hint, mul(dv, dot(hint, dv)))
+                pole = unit(pole) if norm(pole) > 1e-6 else unit(cross(dv, (0.0, 0.0, 1.0)))
+                E2 = add(A, add(mul(dv, a), mul(pole, h)))
+                T2 = add(A, mul(dv, d))
+                r1 = q_between(sub(E, A), sub(E2, A))
+                a_q2 = qmul(r1, a_q)
+                r2 = q_between(qrot(r1, sub(H, E)), sub(T2, E2))
+                f_q2 = qmul(r2, qmul(r1, f_q))
+                solved = {ARM: qmul(qinv(sh_q), a_q2), FORE: qmul(qinv(a_q2), f_q2), HAND: qmul(qinv(f_q2), hq)}
+                for b in tracks:
+                    l = c[b]
+                    keys[b][0].append(unreal.Vector(*l[0]))
+                    keys[b][1].append(unreal.Quat(*(solved[b] if b in solved else l[1])))
+                    keys[b][2].append(unreal.Vector(*l[2]))
+                if f == 12 and (dd in (25, 65)) and elev % 20 == 0:
+                    got = add(T2, qrot(hq, wpn))
+                    out.append(f"elev {elev:+3d} dist {dd}: item point at {norm(sub(got, item)):.1f} cm from the item "
+                               f"(reach {norm(to_t):.1f}/{l1 + l2:.1f})")
+    total = nseg * SEG2
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot reach table, empty hands", True)
+    ctrl.set_frame_rate(unreal.FrameRate(30, 1), True)
+    ctrl.set_number_of_frames(unreal.FrameNumber(total - 1), True)
+    for b, (pos, rot, scl) in keys.items():
+        ctrl.set_bone_track_keys(b, pos, rot, scl, True)
+    ctrl.close_bracket(True)
+    for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
+        AL.remove_animation_notify_events_by_track(seq, tn)
+    track = "ImmLoot"
+    if track not in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
+        AL.add_animation_notify_track(seq, track, unreal.LinearColor(0.2, 0.8, 0.2, 1.0))
+    hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
+    hand_enum = None
+    for e in AL.get_animation_notify_events(unreal.load_asset(MONT)):
+        if e.notify is not None and e.notify.get_class().get_name() == "AnimNotify_HandIK":
+            hand_enum = e.notify.get_editor_property("hand_to_apply")
+    for i in range(nseg):                           # left-hand IK off at every segment start (it pulled the hand to the grip)
+        n = AL.add_animation_notify_event(seq, track, i * SEG2 / 30.0 + 0.02, hik)
+        n.set_editor_property("hand_to_apply", hand_enum)
+        n.set_editor_property("blend_time", 0.05)
+    out.append(f"BH reach table: {len(ELEVS)} elevations x {len(DISTS)} distances x {SEG2} frames, len {seq.get_play_length():.2f} s, "
+               f"notifies {len(AL.get_animation_notify_events(seq))}, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
+
+
 try:
     src = unreal.load_asset(SRC)
     path = f"{DIR}/{NAME}"
@@ -387,7 +500,7 @@ try:
     out.append(f"notifies now: {[str(x) for x in AL.get_animation_notify_event_names(seq)]}")
     out.append(f"saved: {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
     if ARGS.get("BH", "1") == "1":
-        build_bh_table(src, seq, tgt_rot, nkeys)
+        build_bh_reach_table(src, seq, tgt_rot, nkeys)   # build 12 (build_bh_table = checkpoint-b11)
 except Exception:
     import traceback
     out.append("EXCEPTION " + traceback.format_exc())

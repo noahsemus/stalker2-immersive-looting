@@ -584,23 +584,55 @@ mp = play_grab(X1 + 2750, Y1 - 50, GRAB_SEQ, "left-hand grab, armed")
 mpb = play_grab(X1 + 2750, Y1 + 350, GRAB_SEQ_BH, "left-hand grab, empty hands (segment for the view pitch)")
 # build 9: AS_ImmLoot_GrabBH is a table of 2 s segments, one per view pitch -75..+30 in 15 deg steps (the arm bones do
 # not follow the view pitch); start at the nearest one
-_cm = lib_pure(GS, "GameplayStatics", "GetPlayerCameraManager", X1 + 1900, Y1 + 700,
-               [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)),
-                ("PlayerIndex", "int", dict(extra='DefaultValue="0",')), ("ReturnValue", "object", dict(sub=PCM, out=True))])["ReturnValue"]
-_rot = member_pure(PCM, "GetCameraRotation", X1 + 2100, Y1 + 700, _cm, [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"]
-_br = kml("BreakRotator", X1 + 2300, Y1 + 700, [("InRot", "struct", dict(sub=ROT)), ("Roll", "real", dict(subcat="float", out=True)),
-                                               ("Pitch", "real", dict(subcat="float", out=True)), ("Yaw", "real", dict(subcat="float", out=True))])
-g.link(_rot, _br["InRot"])
-_na = kml("NormalizeAxis", X1 + 2300, Y1 + 850, [("Angle", "real", dict(subcat="float")), ("ReturnValue", "real", dict(subcat="float", out=True))])
-g.link(_br["Pitch"], _na["Angle"])
-_ix = kml("FClamp", X1 + 2500, Y1 + 850, [D("Value"), D("Min", "0.0"), D("Max", "7.0"), RD])
-g.link(d_op("Divide_DoubleDouble", X1 + 2500, Y1 + 950, d_op("Add_DoubleDouble", X1 + 2300, Y1 + 950, _na["ReturnValue"], b_const="75.0"),
-            b_const="15.0"), _ix["Value"])
-_rd = kml("Round", X1 + 2700, Y1 + 850, [D("A"), ("ReturnValue", "int", dict(out=True))])
-g.link(_ix["ReturnValue"], _rd["A"])
-_cv = kml("Conv_IntToDouble", X1 + 2700, Y1 + 950, [("InInt", "int"), RD])
-g.link(_rd["ReturnValue"], _cv["InInt"])
-seg_start = d_op("Multiply_DoubleDouble", X1 + 2900, Y1 + 950, _cv["ReturnValue"], b_const="2.0")
+# build 12: AS_ImmLoot_GrabBH is a table of 1.5 s segments, one per (elevation, distance) of the item seen from the
+# eye in the body frame (the arm bones do not follow the view pitch): elevation -80..+30 in 10 deg steps, distance
+# 25..65 cm in 10 cm steps (65 = arm fully out toward it). Segment = ie * 5 + id, start = segment * 1.5 s.
+XFT = "\"/Script/CoreUObject.ScriptStruct'/Script/CoreUObject.Transform'\""
+_mx = member_pure(SC_, "K2_GetComponentToWorld", X1 + 1500, Y1 + 700, mesh, [("ReturnValue", "struct", dict(sub=XFT, out=True))])["ReturnValue"]
+_cb = member_pure(SKC, "GetSocketLocation", X1 + 1500, Y1 + 800, mesh,
+                  [("InSocketName", "name", dict(extra='DefaultValue="jnt_camera",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+
+
+def _itl(x, y, loc):
+    n = kml("InverseTransformLocation", x, y, [("T", "struct", dict(sub=XFT)), ("Location", "struct", dict(sub=VEC)),
+                                               ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+    g.link(_mx, n["T"])
+    g.link(loc, n["Location"])
+    return n["ReturnValue"]
+
+
+_rel = vop("Subtract_VectorVector", X1 + 1900, Y1 + 750, _itl(X1 + 1700, Y1 + 700, self_get("ItemCenter", "struct", X1 + 1500, Y1 + 900, sub=VEC)),
+           _itl(X1 + 1700, Y1 + 800, _cb))
+_bv = kml("BreakVector", X1 + 2100, Y1 + 750, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
+                                              ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
+g.link(_rel, _bv["InVec"])
+_el = kml("DegAtan2", X1 + 2300, Y1 + 700, [D("Y"), D("X"), RD])
+g.link(_bv["Z"], _el["Y"])
+g.link(_bv["X"], _el["X"])
+_dist = kml("VSize", X1 + 2300, Y1 + 850, [("A", "struct", dict(sub=VEC)), RD])
+g.link(_rel, _dist["A"])
+
+
+def _bin(x, y, val, offset, step, top):
+    cl_ = kml("FClamp", x + 200, y, [D("Value"), D("Min", "0.0"), D("Max", f"{top}.0"), RD])
+    g.link(d_op("Divide_DoubleDouble", x, y + 80, d_op("Add_DoubleDouble", x - 200, y + 80, val, b_const=offset), b_const=step), cl_["Value"])
+    rd = kml("Round", x + 400, y, [D("A"), ("ReturnValue", "int", dict(out=True))])
+    g.link(cl_["ReturnValue"], rd["A"])
+    return rd["ReturnValue"]
+
+
+_ie = _bin(X1 + 2500, Y1 + 700, _el["ReturnValue"], "80.0", "10.0", 11)
+_id = _bin(X1 + 2500, Y1 + 850, _dist["ReturnValue"], "-25.0", "10.0", 4)
+_mul = kml("Multiply_IntInt", X1 + 2950, Y1 + 700, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="5",')),
+                                                   ("ReturnValue", "int", dict(out=True))])
+g.link(_ie, _mul["A"])
+_sum = kml("Add_IntInt", X1 + 3100, Y1 + 750, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="0",')),
+                                              ("ReturnValue", "int", dict(out=True))])
+g.link(_mul["ReturnValue"], _sum["A"])
+g.link(_id, _sum["B"])
+_cv = kml("Conv_IntToDouble", X1 + 3250, Y1 + 750, [("InInt", "int"), RD])
+g.link(_sum["ReturnValue"], _cv["InInt"])
+seg_start = d_op("Multiply_DoubleDouble", X1 + 3400, Y1 + 750, _cv["ReturnValue"], b_const="1.5")
 g.link(seg_start, mpb["InTimeToStartMontageAt"])
 sss = set_from("SegStart", "real", X1 + 3700, Y1 + 350, seg_start, "segment start (montage s)", subcat="double")
 g.link(bst["then"], mp["execute"])
@@ -928,7 +960,13 @@ sarm = self_set("ItemArmed", "bool", X2 + 1250, Y2 + 600, "", default="true")
 xf = member_pure(SC_, "K2_GetComponentToWorld", X2 + 1350, Y2 + 850, icomp(X2 + 1150, Y2 + 850),
                  [("ReturnValue", "struct", dict(sub=XFORM, out=True))])["ReturnValue"]
 sxf = set_from("ItemXf", "struct", X2 + 1550, Y2 + 600, xf, "where it is", sub=XFORM)
-chain(sseen, sarm, sxf)
+_gb = lib_pure(KSL, "KismetSystemLibrary", "GetComponentBounds", X2 + 1600, Y2 + 1000,
+               [("Component", "object", dict(sub=SC_)), ("Origin", "struct", dict(sub=VEC, out=True)),
+                ("BoxExtent", "struct", dict(sub=VEC, out=True)), ("SphereRadius", "real", dict(subcat="float", out=True))])
+_gb.pins["Component"].const = True
+g.link(icomp(X2 + 1400, Y2 + 1000), _gb["Component"])
+sctr = set_from("ItemCenter", "struct", X2 + 1850, Y2 + 600, _gb["Origin"], "its centre", sub=VEC)
+chain(sseen, sarm, sxf, sctr)
 
 # ---- 5: the copy waits where the item was; the hand takes it at the grab frame and carries it to the pocket ----
 # build 9 (tester: "it should look like the hand grabs the item and takes it, not the item floating into the hand"):
@@ -1046,7 +1084,7 @@ _pos = member_pure(ANIMI, "Montage_GetPosition", X4 - 300, Y4 - 600, anim, [("Mo
 _pos.pins["Montage"].const = True
 g.link(self_get("GrabMontage", "object", X4 - 500, Y4 - 600, sub=MONT), _pos["Montage"])
 seg_done = d_op("GreaterEqual_DoubleDouble", X4 - 100, Y4 - 600, _pos["ReturnValue"],
-                d_op("Add_DoubleDouble", X4 - 300, Y4 - 500, self_get("SegStart", "real", X4 - 500, Y4 - 500, subcat="double"), b_const="1.5"), ret=RB)
+                d_op("Add_DoubleDouble", X4 - 300, Y4 - 500, self_get("SegStart", "real", X4 - 500, Y4 - 500, subcat="double"), b_const="1.35"), ret=RB)
 bstop = branch(X4, Y4 - 700, "empty-hands segment over? stop the table there",
                b_and(X4 - 100, Y4 - 800, self_get("GrabBH", "bool", X4 - 300, Y4 - 850), grab_active(X4 - 300, Y4 - 950), seg_done))
 g.link(sq6["then_0"], bstop["execute"])
