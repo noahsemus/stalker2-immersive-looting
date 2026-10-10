@@ -1521,6 +1521,6 @@ g.link(br4b["then"], mr["execute"])
 nrc = inc("NRecover", X4 + 1300, Y4, "count recoveries")
 g.link(mr["then"], nrc["execute"])
 
-g.layout()
+g.layout_tree()
 write(sys.argv[1], g.text())
 print("ok", len(g.nodes), "nodes")
