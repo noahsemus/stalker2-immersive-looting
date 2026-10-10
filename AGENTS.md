@@ -54,8 +54,12 @@ harness on 2026-10-09.
   build minus the unused `AM_ImmLoot_Grab`, `AS_ImmLoot_GrabAR` and the single `AS_ImmLoot_Touch` (no referencers;
   the Blueprint is unchanged). Full PLAN.md matrix confirmed by Noah (bare hands / pistol / shotgun / rifle, human
   and mutant corpses, stashes, take-all / nothing, hold-F drag, walk-away, skips, spam, artifacts, alongside the
-  other mods, save/load). Zip in `zonekit/builds/v1.0.0/`, GitHub release v1.0.0. Nexus page still to be created
-  (`mod.json` nexus_id null).
+  other mods, save/load). Zip in `zonekit/builds/v1.0.0/`, GitHub release v1.0.0. Nexus page: mod 2972.
+
+- 2026-10-10 OPEN BUG, unresolved: carrying bodies (hold F) broken (Nexus report on 1.0.0: the key capture turns
+  every hold into a tap; on Noah's save also the "hold F" prompt stays a dot, even with nothing of ours running).
+  13 builds tried, see `zonekit/research/2026-10-10-body-carry-handover.md` (what was tried, what it showed, what
+  to try next). `main` reset to v1.0.0; all 1.0.1 work on branch `wip/1.0.1-body-carry`. Start there.
 
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,

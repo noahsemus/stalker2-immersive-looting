@@ -5,7 +5,7 @@
     "description":  "Skif reaches out with his left hand and takes the item when you loot, instead of it vanishing instantly.",
     "release_pak_suffix":  20,
     "dev_pak_suffix":  30,
-    "nexus_id":  null,
+    "nexus_id":  2972,
     "optional_plugins":  [
 
                          ]
