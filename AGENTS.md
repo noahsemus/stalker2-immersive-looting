@@ -36,6 +36,10 @@ harness on 2026-10-09.
   pistol (armed = rifle grab `AS_ImmLoot_Grab`; one hand-recovery fired with the pistol). Not tested yet: PLAN.md test
   matrix (corpses / stashes, long guns, knife / bolt / detector, skips, gamepad, coexistence, save/load).
 
+- 2026-10-10 v0.1.0 beta released (Noah: "cut this as the first release but make it 0.1.0 beta"): the checkpoint-b15
+  paks unchanged (`zonekit/builds/v0.1.0/`, GitHub pre-release). Unused `AM_ImmLoot_Grab` and the probe-only nodes
+  are still in it (harmless). Nexus page not created yet.
+
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
   `CoreVariables.cfg:888-889`), visual in `MeshComponent`; pickup is instant and has no BP-visible "item added" event.

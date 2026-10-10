@@ -2,7 +2,7 @@
 
 Skif reaches out with his left hand and takes the item when you loot, instead of it vanishing instantly.
 
-**Status: in development.** See [PLAN.md](PLAN.md). Built in the official S.T.A.L.K.E.R. 2 Zone Kit; ships as a pak,
+**Status: v0.1.0 beta** (2026-10-10). See [PLAN.md](PLAN.md) for what is tested. Built in the official S.T.A.L.K.E.R. 2 Zone Kit; ships as a pak,
 no UE4SS.
 
 Build instructions: [BUILD.md](BUILD.md). Made with the
