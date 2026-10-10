@@ -38,6 +38,15 @@ generators in the mod's `zonekit/tools/gen_*.py`; lift reusable node builders in
 - Function purity after a paste comes from the UFunction (`bDefaultsToPureFunc`), not the pasted `bIsPureFunc`:
   write `const` getters (BlueprintCallable const = pure) without exec pins and static library calls with them, or the
   reconstructed node drops the exec links.
+- **A pasted call to a BlueprintInternalUseOnly function is silently dropped** (no error, its links vanish): e.g.
+  `KismetMathLibrary` `Ease` / `VEase` / `REase` belong to the `K2Node_EaseFunction` node. Ease by hand
+  (`alpha * alpha` + `VLerp`). After every paste, export the graph and compare node and link counts with the
+  generated text (match by function + comment, not node name: the editor renames nodes that collide with deleted,
+  not yet garbage-collected ones).
+- **Cast output pin names use the class display name with spaces**: `AsInput Mapping Context`,
+  `AsInteractable Item Container`, `AsDead Body` (a misspelled pin silently drops its links).
+- From Git Bash, `ue_exec.py --arg ASSET=/Mod/...` gets its path rewritten to `C:/Program Files/Git/Mod/...` (MSYS
+  path conversion): run it from PowerShell or with `MSYS_NO_PATHCONV=1`.
 - `UUserWidget::GetWidgetFromName` is not Blueprint-callable in 5.5; native widget members bound with BindWidget are
   usually not BP-visible either. Find a child widget by `GetAllWidgetsOfClass(<its class>, TopLevelOnly=false)` +
   `GetPathName` contains `<Parent>.WidgetTree.<Child>` (once, on an edge).
