@@ -133,5 +133,14 @@ location / forward (`PlayerCameraManager`), and scale it by the same `s`. `MPC_F
 - Unused vanilla left-hand **grab with a rifle held**: `ar/ak74/MG_fp_ak74_weapon_grab` (= gp37) on
   `ar/common/grabitem/fp_ar_weapon_grab`, 1.667 s, LeftHand, only the left arm moves (camera still). Firearm anim
   collections have a `WeaponAnimations.PickUpItem` field for it, filled only for the grenade-launcher AK / gp37.
+- **The arm bones do not follow the view pitch** (Looting b4-b11 probe traces, empty hands): only `jnt_camera` pitches.
+  A left-arm pose played in `LeftHand` that is right looking straight ahead ends ~50 cm above the view axis when
+  looking 30 deg down. A reach meant to land somewhere on screen needs one pose per view pitch (or per item elevation):
+  a table of segments in one sequence, started with `InTimeToStartMontageAt` and stopped with `Montage_Stop`.
+- The empty-handed spine differs a lot from the rifle stance: the same left-arm locals put the hand ~40 cm higher.
+  Solve left-arm poses on the stance's own spine (`fp_bh_idle_stand` matched the in-game rest hand to 1 cm).
+- With empty hands the left-hand IK still pulls a `LeftHand` montage's hand toward the grip point (`jnt_weapon`, just
+  right of centre): a default `AnimNotify_HandIK` (LeftHand, End 0) at the start keeps it off; a "back on" one (End 1)
+  makes the hand jump there.
 - Left-hand item point: bone `jnt_l_weapon` (child of `jnt_l_hand`; the game's `AttachItem PickingUpItem` socket).
   `jnt_item` / `jnt_unequipped_item` / `jnt_camera` are root children, not hand bones.
