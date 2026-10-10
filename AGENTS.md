@@ -66,6 +66,10 @@ harness on 2026-10-09.
   Tested there: carry, and carry after loose items / body tap / stash tap / save+reload; loot window opens sooner.
   Next: MCM toggle for the body / stash touch (Nexus: looting slower in combat / radiation). Kit = wip branch.
 
+- 2026-10-10 v1.0.1 released (Noah: "with the faster looting window i don't think we need mcm support. let's cut
+  the release"): the rc-1.0.1 paks unchanged; MCM toggle dropped (`TouchBodies` stays, default on, unused). Zip in
+  `zonekit/builds/v1.0.1/`, GitHub release v1.0.1, `main` = the former wip branch.
+
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
   `CoreVariables.cfg:888-889`), visual in `MeshComponent`; pickup is instant and has no BP-visible "item added" event.
@@ -89,4 +93,4 @@ harness on 2026-10-09.
 - `CLAUDE.md` / `GEMINI.md` only import `harness/AGENTS.md` and this file, for tools that don't read `AGENTS.md`.
 
 ## Release (only when the tester says "cut a release")
-Follow `harness/docs/pipeline.md` § Release. Nexus page: _(record the mod id here once it exists)_.
+Follow `harness/docs/pipeline.md` § Release. Nexus page: mod 2972, https://www.nexusmods.com/stalker2heartofchornobyl/mods/2972.

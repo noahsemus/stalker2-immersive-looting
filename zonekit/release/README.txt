@@ -1,4 +1,4 @@
-Immersive Looting v1.0.0 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
+Immersive Looting v1.0.1 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
 When you pick something up, Skif reaches out with his left hand, takes it and pockets it,
 instead of the item just vanishing. Looting a body or a stash, he reaches out and touches
 it first. No UE4SS required.
@@ -17,7 +17,7 @@ INSTALL (manual)
   (create the ~mods folder if it does not exist). Don't rename them.
 
 UNINSTALL
-  Delete the six files. Safe to remove at any time; nothing is written to your save.
+  Delete the six files. Safe to remove at any time.
 
 WHAT IT DOES
   - Items lying in the world: press the interact key as usual. Skif's left hand reaches
@@ -26,9 +26,10 @@ WHAT IT DOES
   - With empty hands the hand reaches to where the item is (far items slide the last bit
     into the hand, the arm only reaches so far). With a weapon in hand the left hand leaves
     the weapon, grabs, and goes back to it.
-  - Bodies and stashes: press the interact key, Skif's hand reaches out toward the body or
+  - Bodies and stashes: tap the interact key, Skif's hand reaches out toward the body or
     the stash, then the loot window opens. Close it and the hand comes back (onto the
-    weapon, or to rest with empty hands). Holding the key to drag a body works as before.
+    weapon, or to rest with empty hands). Holding the key picks up and carries a body
+    exactly as in vanilla (no touch animation).
   - No reach (vanilla pickup) while sprinting, aiming, reloading, in dialogue or cutscenes,
     or with a detector or binoculars in hand.
   - Artifacts and mutant parts keep their own vanilla animations.
@@ -41,3 +42,9 @@ COMPATIBILITY
   look odd together with it.
 
 Source and build instructions: https://github.com/noahsemus/stalker2-immersive-looting
+
+CHANGES
+  1.0.1  Carrying bodies works again: holding the interact key on a body picks it up as in
+         vanilla (1.0.0 turned every hold into a tap). The loot window on bodies and stashes
+         opens sooner.
+  1.0.0  First release.
