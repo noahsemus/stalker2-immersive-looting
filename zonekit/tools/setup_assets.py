@@ -126,14 +126,40 @@ ACTOR_VARS = [
     ("NPickups", "int", None), ("NReaches", "int", None), ("NSkips", "int", None), ("NRecover", "int", None),
     ("NFly", "int", None), ("SkipBits", "int", None), ("NLootOpen", "int", None), ("NLootTook", "int", None),
     ("NTicks", "int", None), ("GrabFwd", "real", None), ("GrabRight", "real", None), ("GrabUp", "real", None),
-    ("FovS", "real", None), ("TanFOVv", "real", None), ("FovOn", "real", None), ("CamOff", "real", None), ("TraceX", "real", None), ("TraceY", "real", None), ("TraceZ", "real", None), ("GrabBH", "bool", None), ("SegStart", "real", None), ("ItemCenter", "vector", None), ("ItemElev", "real", None), ("ItemDist", "real", None), ("ItemAzim", "real", None), ("WeapX", "real", None), ("WeapY", "real", None), ("WeapZ", "real", None), ("CamPitch", "real", None), ("SpX", "real", None), ("SpY", "real", None), ("SpZ", "real", None), ("ShX", "real", None), ("ShY", "real", None), ("ShZ", "real", None), ("ElX", "real", None), ("ElY", "real", None), ("ElZ", "real", None), 
+    ("FovS", "real", None), ("TanFOVv", "real", None), ("FovOn", "real", None), ("CamOff", "real", None), ("TraceX", "real", None), ("TraceY", "real", None), ("TraceZ", "real", None), ("GrabBH", "bool", None), ("SegStart", "real", None), ("ItemCenter", "vector", None), ("ItemElev", "real", None), ("ItemDist", "real", None), ("ItemAzim", "real", None), ("LootComp", unreal.PrimitiveComponent.static_class(), None), ("LootReach", "bool", None), ("LootPaused", "bool", None), ("LootReverse", "bool", None), ("TouchState", "int", None), ("TouchAdded", "bool", None), ("Lootable", "bool", None), ("KeysSynced", "bool", None), ("TouchPressAt", "real", None), ("TouchOpenAt", "real", None), ("NTouch", "int", None), ("GripAt", "real", None), ("GripPending", "bool", None), ("TrBusy", "bool", None), ("TrLH", "bool", None), ("TrPos", "real", None), ("TouchHX", "real", None), ("TouchHY", "real", None), ("TouchHZ", "real", None), ("PausedAt", "real", None), ("TouchHoldBeforeOpen", "real", 0.25), ("WeapX", "real", None), ("WeapY", "real", None), ("WeapZ", "real", None), ("CamPitch", "real", None), ("SpX", "real", None), ("SpY", "real", None), ("SpZ", "real", None), ("ShX", "real", None), ("ShY", "real", None), ("ShZ", "real", None), ("ElX", "real", None), ("ElY", "real", None), ("ElZ", "real", None), 
 ]
+
+def make_input():
+    """v0.2: our interact action and context (corpse / stash touch). The Blueprint adds the player's own interact keys
+    at runtime (QueryKeysMappedToAction); F and the gamepad face-left button are the defaults."""
+    tools = unreal.AssetToolsHelpers.get_asset_tools()
+    ia_path, imc_path = f"{MOD_ROOT}/Input/IA_ImmLootInteract", f"{MOD_ROOT}/Input/IMC_ImmLoot"
+    if not EAL.does_asset_exist(ia_path):
+        tools.create_asset("IA_ImmLootInteract", f"{MOD_ROOT}/Input", unreal.InputAction, unreal.InputAction_Factory())
+    ia = unreal.load_asset(ia_path)
+    ia.set_editor_property("value_type", unreal.InputActionValueType.BOOLEAN)
+    ia.set_editor_property("consume_input", True)
+    log(f"IA: {ia} consume={ia.get_editor_property('consume_input')} saved={EAL.save_asset(ia_path, only_if_is_dirty=False)}")
+    if not EAL.does_asset_exist(imc_path):
+        tools.create_asset("IMC_ImmLoot", f"{MOD_ROOT}/Input", unreal.InputMappingContext, unreal.InputMappingContext_Factory())
+    imc = unreal.load_asset(imc_path)
+    imc.unmap_all_keys_from_action(ia)
+    for key in ("F", "Gamepad_FaceButton_Left"):
+        k = unreal.Key()
+        k.import_text(key)
+        imc.map_key(ia, k)
+    log(f"IMC: {imc} mappings={len(imc.get_editor_property('mappings'))} saved={EAL.save_asset(imc_path, only_if_is_dirty=False)}")
+
 
 try:
     log(f"mod mounted: {mount_mod()}")
+    make_input()
     make_grab()
     actor = make_bp(ACTOR, unreal.Actor)
     add_vars(actor, ACTOR, ACTOR_VARS)
+    cdo = unreal.get_default_object(BEL.generated_class(actor))
+    cdo.set_editor_property("auto_receive_input", unreal.AutoReceiveInput.PLAYER0)
+    log(f"actor auto_receive_input = {cdo.get_editor_property('auto_receive_input')} saved={EAL.save_asset(ACTOR, only_if_is_dirty=False)}")
     sub = make_bp(SUBSYS, unreal.ModWorldSubsystem)
     add_vars(sub, SUBSYS, [("LootActor", BEL.generated_class(actor), None), ("SpawnAttempts", "int", None)])
     for p in (GRAB, ACTOR, SUBSYS):

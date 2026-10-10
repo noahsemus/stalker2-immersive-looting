@@ -308,12 +308,13 @@ BIAS = (9.0, 15.0, 5.0)                # build 15: in game the hand lands this f
                                        # ahead, right, up; builds 10, 12-14 traces, cause unknown); aim this much short
 
 
-def build_bh_reach_table(src, rifle_seq, tgt_rot, nkeys):
+def build_bh_reach_table(src, rifle_seq, tgt_rot, nkeys, base_path=None, name=None):
     """Build 12 (tester: "what if the hand actually grabs the item, moves to where it is"): segments for every
     (elevation, distance) of the item relative to the eye in the body frame. The hand's item point (jnt_l_weapon) goes
     to the item by frame 12 (as far as the arm reaches, toward it), holds to 20, pocket by 27, rest by 39.
     Segment index = (ie * len(DISTS) + id) * len(AZIMS) + ia; starts at index * 1.5 s."""
-    base = unreal.load_asset(BASE_BH)
+    base_path, name = base_path or BASE_BH, name or NAME_BH
+    base = unreal.load_asset(base_path)
     sp_p, sp_q = cs(base, "jnt_spine_03", 0)
     cam, _ = cs(base, "jnt_camera", 0)
     cam_ar, _ = cs(src, "jnt_camera", 0)
@@ -327,9 +328,9 @@ def build_bh_reach_table(src, rifle_seq, tgt_rot, nkeys):
     PQ = tgt_rot[min(27, nkeys - 1)]
     GQ = tgt_rot[13]
     wpn = local(src, "jnt_l_weapon", 13)[0]           # item point, in the hand's frame
-    path = f"{DIR}/{NAME_BH}"
+    path = f"{DIR}/{name}"
     if not EAL.does_asset_exist(path):
-        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(NAME_BH, DIR, rifle_seq)
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, rifle_seq)
     seq = unreal.load_asset(path)
     tracks = [str(t) for t in AL.get_animation_track_names(src)]
     cache = {k: {b: local(src, b, k) for b in tracks} for k in range(min(SEG2, nkeys))}
@@ -394,6 +395,17 @@ def build_bh_reach_table(src, rifle_seq, tgt_rot, nkeys):
                     got = add(T2, qrot(hq, wpn))
                     out.append(f"elev {elev:+3d} az {az:+3d} dist {dd}: item point at {norm(sub(got, item)):.1f} cm from the item "
                                f"(reach {norm(to_t):.1f}/{l1 + l2:.1f})")
+    if name.endswith("AR") and ARGS.get("AR_FROM_RIFLE", "0") == "1":   # build 2026-10-10b; reverted: same result
+        rk = {b: [local(rifle_seq, b, min(f, AL.get_num_keys(rifle_seq) - 1)) for f in range(SEG2)] for b in tracks}
+        keys = {b: ([], [], []) for b in tracks}
+        for i in range(nseg):
+            for f in range(SEG2):
+                for b in tracks:
+                    l = rk[b][f]
+                    keys[b][0].append(unreal.Vector(*l[0]))
+                    keys[b][1].append(unreal.Quat(*l[1]))
+                    keys[b][2].append(unreal.Vector(*l[2]))
+        out.append(f"{name}: every segment = the raised rifle grab (frames 0-{SEG2 - 1})")
     total = nseg * SEG2
     ctrl = seq.get_editor_property("controller")
     ctrl.open_bracket("ImmLoot reach table, empty hands", True)
@@ -419,7 +431,24 @@ def build_bh_reach_table(src, rifle_seq, tgt_rot, nkeys):
             n = AL.add_animation_notify_event(seq, track, i * SEG2 / 30.0 + t, hik)
             n.set_editor_property("hand_to_apply", hand_enum)
             n.set_editor_property("blend_time", 0.05)
-    out.append(f"BH reach table: {len(ELEVS)} elevations x {len(DISTS)} distances x {len(AZIMS)} azimuths x {SEG2} frames, len {seq.get_play_length():.2f} s, "
+    if name.endswith("AR"):
+        # notifies as in the working rifle grab (left-hand IK off at 0.036, back on at 1.1786) plus "on" at 0.01, so the
+        # hand re-grips when the touch plays BACK to the segment start after the loot window closes; no curves (the
+        # working rifle grab has none)
+        if "left_hand_curve" in [str(c) for c in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]:
+            AL.remove_curve(seq, "left_hand_curve", False)
+        for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
+            AL.remove_animation_notify_events_by_track(seq, tn)
+        if track not in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
+            AL.add_animation_notify_track(seq, track, unreal.LinearColor(0.2, 0.8, 0.2, 1.0))
+        for i in range(nseg):
+            for t, end in ((0.01, 1.0), (0.035907, None), (1.17855, 1.0)):
+                n = AL.add_animation_notify_event(seq, track, i * SEG2 / 30.0 + t, hik)
+                n.set_editor_property("hand_to_apply", hand_enum)
+                if end is not None:
+                    n.set_editor_property("end_value", end)
+        out.append(f"{name}: notifies per segment: on 0.01, off 0.036, on 1.179")
+    out.append(f"{name} reach table (base {base_path.rsplit('/', 1)[1]}): {len(ELEVS)} elevations x {len(DISTS)} distances x {len(AZIMS)} azimuths x {SEG2} frames, len {seq.get_play_length():.2f} s, "
                f"notifies {len(AL.get_animation_notify_events(seq))}, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
 
 
@@ -514,6 +543,11 @@ try:
     out.append(f"saved: {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
     if ARGS.get("BH", "1") == "1":
         build_bh_reach_table(src, seq, tgt_rot, nkeys)   # build 12 (build_bh_table = checkpoint-b11)
+    if ARGS.get("AR", "1") == "1":
+        # v0.2: the same reach table on the rifle stance (weapon in hand), used to touch a corpse / stash; the rest pose
+        # is the stance's own left hand on the grip
+        build_bh_reach_table(src, seq, tgt_rot, nkeys, "/Game/_STALKER2/Animations/Player/AnimSequences/ar/common/stand/fp_ar_idle_stand",
+                             "AS_ImmLoot_GrabAR")
 except Exception:
     import traceback
     out.append("EXCEPTION " + traceback.format_exc())

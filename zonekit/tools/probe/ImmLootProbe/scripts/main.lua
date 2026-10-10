@@ -8,7 +8,7 @@
 local TAG = "[ImmLootProbe] "
 local FIELDS = { "NPickups", "NReaches", "NSkips", "SkipBits", "NFly", "NRecover", "Reaching", "ItemArmed",
                  "InvOpen", "LootKind", "Took", "NLootOpen", "NLootTook", "StartPW", "CurPW", "StartLW", "CurLW",
-                 "StartMoney", "CurMoney", "GrabFwd", "GrabRight", "GrabUp", "FovS", "TanFOVv", "CamOff", "GrabBH", "SegStart", "ItemElev", "ItemDist", "ItemAzim", "SpX", "SpY", "SpZ", "ShX", "ShY", "ShZ", "ElX", "ElY", "ElZ", "GrabFwd", "PlayRate" }
+                 "StartMoney", "CurMoney", "GrabFwd", "GrabRight", "GrabUp", "FovS", "TanFOVv", "CamOff", "GrabBH", "SegStart", "ItemElev", "ItemDist", "ItemAzim", "SpX", "SpY", "SpZ", "ShX", "ShY", "ShZ", "ElX", "ElY", "ElZ", "GrabFwd", "TouchState", "TouchAdded", "Lootable", "KeysSynced", "NTouch", "LootReach", "LootPaused", "LootReverse", "TrBusy", "TrLH", "TrPos", "TouchHX", "TouchHY", "TouchHZ", "PlayRate" }
 local actor = nil
 local pawn = nil
 local last_ticks, last_look = -1, ""
