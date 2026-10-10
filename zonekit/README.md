@@ -28,3 +28,9 @@ mod go to `harness/docs/` instead (promote them).
 - b10/b11: target lower left. b10 landed at ~(55, +4, -8) view frame whatever the target: left-hand IK to the grip
   point; b11 switches it off at each segment start (HandIK notify, default = off) and aims at (40, -28, -16). Tester:
   "this is good" -> checkpoint-b11.
+- b12-b15 "the hand grabs the item where it is": table by item elevation and distance (b12), + body azimuth (b13);
+  both landed ~15 cm right / up of the computed point. b14 traced the grip point (`jnt_weapon`): at the hip, so not the
+  left-hand IK. The rest pose matches the model to ~3 cm; the reached pose is off by ~(+9 ahead, +15 right, +5 up) in
+  the view frame (neither a local- nor a mesh-space rotation blend model reproduces it). b15 aims short by that bias:
+  tester "looks good" -> checkpoint-b15 (release candidate). Items picked up were 100-130 cm away (arm ~52 cm): far
+  items still slide the last part into the hand.

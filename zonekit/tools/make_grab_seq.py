@@ -298,16 +298,21 @@ def build_bh_table(src, rifle_seq, tgt_rot, nkeys):
 
 
 
-ELEVS = list(range(-80, 31, 10))       # build 12: elevation of the item seen from the eye, body frame (deg, + = up)
-DISTS = [25, 35, 45, 55, 65]           # distance of the item from the eye (cm); 65 = "out of reach": arm fully out
+ELEVS = list(range(-80, 26, 15))       # elevation of the item seen from the eye, body frame (deg, + = up): 8 bins
+DISTS = [30, 45, 60]                   # distance of the item from the eye (cm); 60 = "out of reach": arm fully out
+AZIMS = [-45, -30, -15, 0, 15]         # build 13: azimuth of the item in the body frame (deg, + = right). Build 12 aimed
+                                       # straight ahead of the body and landed ~15 cm right of the item: the body is
+                                       # turned relative to the view, so the item is not dead ahead in the body frame
 SEG2 = 45                              # frames per segment (1.5 s); the Blueprint stops it at +1.35 s
+BIAS = (9.0, 15.0, 5.0)                # build 15: in game the hand lands this far from the computed point (view frame:
+                                       # ahead, right, up; builds 10, 12-14 traces, cause unknown); aim this much short
 
 
 def build_bh_reach_table(src, rifle_seq, tgt_rot, nkeys):
     """Build 12 (tester: "what if the hand actually grabs the item, moves to where it is"): segments for every
     (elevation, distance) of the item relative to the eye in the body frame. The hand's item point (jnt_l_weapon) goes
     to the item by frame 12 (as far as the arm reaches, toward it), holds to 20, pocket by 27, rest by 39.
-    Segment index = ie * len(DISTS) + id; starts at index * 1.5 s."""
+    Segment index = (ie * len(DISTS) + id) * len(AZIMS) + ia; starts at index * 1.5 s."""
     base = unreal.load_asset(BASE_BH)
     sp_p, sp_q = cs(base, "jnt_spine_03", 0)
     cam, _ = cs(base, "jnt_camera", 0)
@@ -328,16 +333,21 @@ def build_bh_reach_table(src, rifle_seq, tgt_rot, nkeys):
     seq = unreal.load_asset(path)
     tracks = [str(t) for t in AL.get_animation_track_names(src)]
     cache = {k: {b: local(src, b, k) for b in tracks} for k in range(min(SEG2, nkeys))}
-    nseg = len(ELEVS) * len(DISTS)
+    nseg = len(ELEVS) * len(DISTS) * len(AZIMS)
     keys = {b: ([], [], []) for b in tracks}
     for ie, elev in enumerate(ELEVS):
-        er = math.radians(elev)
-        dirv_e = (math.cos(er), 0.0, math.sin(er))
-        qp = (0.0, -math.sin(er / 2), 0.0, math.cos(er / 2))
-        GQp = qmul(qp, GQ)
-        for dd in DISTS:
+      for dd in DISTS:
+        for az in AZIMS:
+            er, ar = math.radians(elev), math.radians(az)
+            dirv_e = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
+            qp = qmul((0.0, 0.0, math.sin(ar / 2), math.cos(ar / 2)), (0.0, -math.sin(er / 2), 0.0, math.cos(er / 2)))
+            GQp = qmul(qp, GQ)
             item = add(cam, mul(dirv_e, dd))
-            G = sub(item, qrot(GQp, wpn))               # wrist so that the item point sits on the item
+            vf = dirv_e
+            vu = (-math.sin(er) * math.cos(ar), -math.sin(er) * math.sin(ar), math.cos(er))
+            vr = cross(vu, vf)
+            bias = add(mul(vf, BIAS[0]), add(mul(vr, BIAS[1]), mul(vu, BIAS[2])))
+            G = sub(sub(item, qrot(GQp, wpn)), bias)    # wrist so that the item point sits on the item (minus the bias)
             for f in range(SEG2):
                 k = min(f, nkeys - 1)
                 if f <= 12:
@@ -380,9 +390,9 @@ def build_bh_reach_table(src, rifle_seq, tgt_rot, nkeys):
                     keys[b][0].append(unreal.Vector(*l[0]))
                     keys[b][1].append(unreal.Quat(*(solved[b] if b in solved else l[1])))
                     keys[b][2].append(unreal.Vector(*l[2]))
-                if f == 12 and (dd in (25, 65)) and elev % 20 == 0:
+                if f == 12 and dd in (30, 60) and az in (-30, 0) and elev in (-80, -35, 10):
                     got = add(T2, qrot(hq, wpn))
-                    out.append(f"elev {elev:+3d} dist {dd}: item point at {norm(sub(got, item)):.1f} cm from the item "
+                    out.append(f"elev {elev:+3d} az {az:+3d} dist {dd}: item point at {norm(sub(got, item)):.1f} cm from the item "
                                f"(reach {norm(to_t):.1f}/{l1 + l2:.1f})")
     total = nseg * SEG2
     ctrl = seq.get_editor_property("controller")
@@ -402,11 +412,14 @@ def build_bh_reach_table(src, rifle_seq, tgt_rot, nkeys):
     for e in AL.get_animation_notify_events(unreal.load_asset(MONT)):
         if e.notify is not None and e.notify.get_class().get_name() == "AnimNotify_HandIK":
             hand_enum = e.notify.get_editor_property("hand_to_apply")
-    for i in range(nseg):                           # left-hand IK off at every segment start (it pulled the hand to the grip)
-        n = AL.add_animation_notify_event(seq, track, i * SEG2 / 30.0 + 0.02, hik)
-        n.set_editor_property("hand_to_apply", hand_enum)
-        n.set_editor_property("blend_time", 0.05)
-    out.append(f"BH reach table: {len(ELEVS)} elevations x {len(DISTS)} distances x {SEG2} frames, len {seq.get_play_length():.2f} s, "
+    # left-hand IK off, repeated through every segment (build 14: builds 10, 12, 13 all ended ~15 cm right of the
+    # planned point whatever the target, as if still pulled to the grip; a single "off" at the start may be undone)
+    for i in range(nseg):
+        for t in (0.02, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1.05, 1.2):
+            n = AL.add_animation_notify_event(seq, track, i * SEG2 / 30.0 + t, hik)
+            n.set_editor_property("hand_to_apply", hand_enum)
+            n.set_editor_property("blend_time", 0.05)
+    out.append(f"BH reach table: {len(ELEVS)} elevations x {len(DISTS)} distances x {len(AZIMS)} azimuths x {SEG2} frames, len {seq.get_play_length():.2f} s, "
                f"notifies {len(AL.get_animation_notify_events(seq))}, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
 
 

@@ -126,7 +126,7 @@ ACTOR_VARS = [
     ("NPickups", "int", None), ("NReaches", "int", None), ("NSkips", "int", None), ("NRecover", "int", None),
     ("NFly", "int", None), ("SkipBits", "int", None), ("NLootOpen", "int", None), ("NLootTook", "int", None),
     ("NTicks", "int", None), ("GrabFwd", "real", None), ("GrabRight", "real", None), ("GrabUp", "real", None),
-    ("FovS", "real", None), ("TanFOVv", "real", None), ("FovOn", "real", None), ("CamOff", "real", None), ("TraceX", "real", None), ("TraceY", "real", None), ("TraceZ", "real", None), ("GrabBH", "bool", None), ("SegStart", "real", None), ("ItemCenter", "vector", None),
+    ("FovS", "real", None), ("TanFOVv", "real", None), ("FovOn", "real", None), ("CamOff", "real", None), ("TraceX", "real", None), ("TraceY", "real", None), ("TraceZ", "real", None), ("GrabBH", "bool", None), ("SegStart", "real", None), ("ItemCenter", "vector", None), ("ItemElev", "real", None), ("ItemDist", "real", None), ("ItemAzim", "real", None), ("WeapX", "real", None), ("WeapY", "real", None), ("WeapZ", "real", None), ("CamPitch", "real", None), ("SpX", "real", None), ("SpY", "real", None), ("SpZ", "real", None), ("ShX", "real", None), ("ShY", "real", None), ("ShZ", "real", None), ("ElX", "real", None), ("ElY", "real", None), ("ElZ", "real", None), 
 ]
 
 try:

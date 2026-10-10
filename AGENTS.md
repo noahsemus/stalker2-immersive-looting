@@ -28,6 +28,14 @@ harness on 2026-10-09.
   the hand at the grab frame at real size and parented to `jnt_l_weapon`, removed at the pocket frame. Armed: the
   raised rifle grab `AS_ImmLoot_Grab` (not pitch-aware yet, untested since build 4). Corpse / stash reach coded, untested.
 
+- 2026-10-09 checkpoint-b15 = release candidate (Noah: "looks good!!!! checkpoint as possible release"; paks in
+  `zonekit/builds/checkpoint-b15/`): empty hands reach TO the item: `AS_ImmLoot_GrabBH` = 120 segments (item elevation
+  -80..+25 x distance 30/45/60 x body azimuth -45..+15, from the item's bounds centre in the mesh frame), aimed short by
+  an empirical bias (9 ahead, 15 right, 5 up in the view frame; cause still unknown, joint probe values logged), IK-off
+  notifies through each segment; item pulled into the hand at the grab frame and parented. Tested: unarmed and with a
+  pistol (armed = rifle grab `AS_ImmLoot_Grab`; one hand-recovery fired with the pistol). Not tested yet: PLAN.md test
+  matrix (corpses / stashes, long guns, knife / bolt / detector, skips, gamepad, coexistence, save/load).
+
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
   `CoreVariables.cfg:888-889`), visual in `MeshComponent`; pickup is instant and has no BP-visible "item added" event.

@@ -621,20 +621,37 @@ def _bin(x, y, val, offset, step, top):
     return rd["ReturnValue"]
 
 
-_ie = _bin(X1 + 2500, Y1 + 700, _el["ReturnValue"], "80.0", "10.0", 11)
-_id = _bin(X1 + 2500, Y1 + 850, _dist["ReturnValue"], "-25.0", "10.0", 4)
-_mul = kml("Multiply_IntInt", X1 + 2950, Y1 + 700, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="5",')),
-                                                   ("ReturnValue", "int", dict(out=True))])
-g.link(_ie, _mul["A"])
-_sum = kml("Add_IntInt", X1 + 3100, Y1 + 750, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="0",')),
-                                              ("ReturnValue", "int", dict(out=True))])
-g.link(_mul["ReturnValue"], _sum["A"])
-g.link(_id, _sum["B"])
+# build 13: + azimuth (body frame, + = right): elevation -80..+25 step 15 (8), distance 30/45/60 (3), azimuth
+# -45..+15 step 15 (5); segment = (ie * 3 + id) * 5 + ia
+_az = kml("DegAtan2", X1 + 2300, Y1 + 1000, [D("Y"), D("X"), RD])
+g.link(_bv["Y"], _az["Y"])
+g.link(_bv["X"], _az["X"])
+_ie = _bin(X1 + 2500, Y1 + 700, _el["ReturnValue"], "80.0", "15.0", 7)
+_id = _bin(X1 + 2500, Y1 + 850, _dist["ReturnValue"], "-30.0", "15.0", 2)
+_ia = _bin(X1 + 2500, Y1 + 1000, _az["ReturnValue"], "45.0", "15.0", 4)
+
+
+def _imad(x, y, a, mul_const, b):
+    m = kml("Multiply_IntInt", x, y, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra=f'DefaultValue="{mul_const}",')),
+                                      ("ReturnValue", "int", dict(out=True))])
+    g.link(a, m["A"])
+    ad = kml("Add_IntInt", x + 150, y + 50, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="0",')),
+                                            ("ReturnValue", "int", dict(out=True))])
+    g.link(m["ReturnValue"], ad["A"])
+    g.link(b, ad["B"])
+    return ad["ReturnValue"]
+
+
+_sum = {"ReturnValue": _imad(X1 + 3100, Y1 + 800, _imad(X1 + 2950, Y1 + 700, _ie, 3, _id), 5, _ia)}
 _cv = kml("Conv_IntToDouble", X1 + 3250, Y1 + 750, [("InInt", "int"), RD])
 g.link(_sum["ReturnValue"], _cv["InInt"])
 seg_start = d_op("Multiply_DoubleDouble", X1 + 3400, Y1 + 750, _cv["ReturnValue"], b_const="1.5")
 g.link(seg_start, mpb["InTimeToStartMontageAt"])
-sss = set_from("SegStart", "real", X1 + 3700, Y1 + 350, seg_start, "segment start (montage s)", subcat="double")
+sss0 = set_from("SegStart", "real", X1 + 3700, Y1 + 350, seg_start, "segment start (montage s)", subcat="double")
+_pv = [set_from(v, "real", X1 + 4000 + 300 * k, Y1 + 350, src_pin, "item seen from the eye, body frame (probe)" if k == 0 else "", subcat="double")
+       for k, (v, src_pin) in enumerate((("ItemElev", _el["ReturnValue"]), ("ItemDist", _dist["ReturnValue"]), ("ItemAzim", _az["ReturnValue"])))]
+chain(sss0, *_pv)
+sss = {"execute": sss0["execute"], "then": _pv[-1]["then"]}
 g.link(bst["then"], mp["execute"])
 g.link(bst["else"], mpb["execute"])
 sgm_a = set_from("GrabMontage", "object", X1 + 3100, Y1 - 50, mp["ReturnValue"], "our montage", sub=MONT)
@@ -1041,7 +1058,21 @@ hrel_b = vop("Subtract_VectorVector", X3 + 1300, Y3 + 700, bone, cl_)
 trs = [set_from(v, "real", X3 + 1550 + 300 * k, Y3 - 100, vop("Dot_VectorVector", X3 + 1500, Y3 + 800 + 100 * k, hrel_b, axis, ret_sub="real"),
                 "hand bone in camera axes (probe)" if k == 0 else "", subcat="double")
        for k, (v, axis) in enumerate((("TraceX", cf_), ("TraceY", cr_), ("TraceZ", cu_)))]
-chain(sl, *trs)
+wpn_b = member_pure(SKC, "GetSocketLocation", X3 + 1300, Y3 + 1500, mesh,
+                    [("InSocketName", "name", dict(extra='DefaultValue="jnt_weapon",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+wrel = vop("Subtract_VectorVector", X3 + 1500, Y3 + 1500, wpn_b, cl_)
+trw = [set_from(v, "real", X3 + 2450 + 300 * k, Y3 - 100, vop("Dot_VectorVector", X3 + 1700, Y3 + 1500 + 100 * k, wrel, axis, ret_sub="real"),
+                "grip point (jnt_weapon) in camera axes (probe)" if k == 0 else "", subcat="double")
+       for k, (v, axis) in enumerate((("WeapX", cf_), ("WeapY", cr_), ("WeapZ", cu_)))]
+_cbr = kml("BreakRotator", X3 + 1300, Y3 + 1800, [("InRot", "struct", dict(sub=ROT)), ("Roll", "real", dict(subcat="float", out=True)),
+                                                 ("Pitch", "real", dict(subcat="float", out=True)), ("Yaw", "real", dict(subcat="float", out=True))])
+g.link(member_pure(PCM, "GetCameraRotation", X3 + 1100, Y3 + 1800,
+                   lib_pure(GS, "GameplayStatics", "GetPlayerCameraManager", X3 + 900, Y3 + 1800,
+                            [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)), ("PlayerIndex", "int", dict(extra='DefaultValue="0",')),
+                             ("ReturnValue", "object", dict(sub=PCM, out=True))])["ReturnValue"],
+                   [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"], _cbr["InRot"])
+scp = set_from("CamPitch", "real", X3 + 3350, Y3 - 100, _cbr["Pitch"], "view pitch (probe)", subcat="double")
+chain(sl, *trs, *trw, scp)
 #   at the hand: parent it to the hand's item bone (keeps its size and its rotation at that moment)
 bat = branch(X3 + 1300, Y3 + 250, "reached the hand, not parented yet?",
              b_and(X3 + 1150, Y3 + 450, d_op("GreaterEqual_DoubleDouble", X3 + 950, Y3 + 450, alpha, b_const="1.0", ret=RB),
@@ -1062,6 +1093,16 @@ for k, (var, axis) in enumerate((("GrabFwd", cf_), ("GrabRight", cr_), ("GrabUp"
     pr.append(set_from(var, "real", X3 + 1900 + 300 * k, Y3 + 250, vop("Dot_VectorVector", X3 + 1500, Y3 + 1200 + 100 * k, hrel, axis, ret_sub="real"),
                        "hand as seen, camera axes" if k == 0 else "", subcat="double"))
 pr.append(set_from("FovS", "real", X3 + 2800, Y3 + 250, s_eff, "squeeze", subcat="double"))
+# build 15 probe: where the arm's joints really are at the hand-over (camera axes), to find which joint differs from
+# the model in make_grab_seq
+for j, (bn, pre) in enumerate((("jnt_spine_03", "Sp"), ("jnt_l_arm", "Sh"), ("jnt_l_fore_arm", "El"))):
+    jl = member_pure(SKC, "GetSocketLocation", X3 + 1300, Y3 + 2000 + 300 * j, mesh,
+                     [("InSocketName", "name", dict(extra=f'DefaultValue="{bn}",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+    jr = vop("Subtract_VectorVector", X3 + 1500, Y3 + 2000 + 300 * j, jl, cl_)
+    for k, (ax, axis) in enumerate((("X", cf_), ("Y", cr_), ("Z", cu_))):
+        pr.append(set_from(pre + ax, "real", X3 + 3100 + 300 * len(pr), Y3 + 250,
+                           vop("Dot_VectorVector", X3 + 1700, Y3 + 2000 + 300 * j + 100 * k, jr, axis, ret_sub="real"),
+                           f"{bn} (probe)" if k == 0 else "", subcat="double"))
 pr.append(self_set("FlyAttached", "bool", X3 + 3100, Y3 + 250, "", default="true"))
 chain(att, *pr)
 pocket = d_op("GreaterEqual_DoubleDouble", X3 + 700, Y3 + 850, montage_time_since_reach(X3 + 500, Y3 + 850),

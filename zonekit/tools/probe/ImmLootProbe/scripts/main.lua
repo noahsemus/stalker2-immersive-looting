@@ -8,7 +8,7 @@
 local TAG = "[ImmLootProbe] "
 local FIELDS = { "NPickups", "NReaches", "NSkips", "SkipBits", "NFly", "NRecover", "Reaching", "ItemArmed",
                  "InvOpen", "LootKind", "Took", "NLootOpen", "NLootTook", "StartPW", "CurPW", "StartLW", "CurLW",
-                 "StartMoney", "CurMoney", "GrabFwd", "GrabRight", "GrabUp", "FovS", "TanFOVv", "CamOff", "GrabBH", "SegStart", "PlayRate" }
+                 "StartMoney", "CurMoney", "GrabFwd", "GrabRight", "GrabUp", "FovS", "TanFOVv", "CamOff", "GrabBH", "SegStart", "ItemElev", "ItemDist", "ItemAzim", "SpX", "SpY", "SpZ", "ShX", "ShY", "ShZ", "ElX", "ElY", "ElZ", "GrabFwd", "PlayRate" }
 local actor = nil
 local pawn = nil
 local last_ticks, last_look = -1, ""
@@ -99,7 +99,7 @@ LoopAsync(50, function()
         if ok and reaching then
             local now = os.clock()
             t0 = t0 or now
-            log(string.format("trace t=%.2f x=%s y=%s z=%s", now - t0, tostring(actor.TraceX), tostring(actor.TraceY), tostring(actor.TraceZ)))
+            log(string.format("trace t=%.2f x=%s y=%s z=%s grip=%s/%s/%s pitch=%s", now - t0, tostring(actor.TraceX), tostring(actor.TraceY), tostring(actor.TraceZ), tostring(actor.WeapX), tostring(actor.WeapY), tostring(actor.WeapZ), tostring(actor.CamPitch)))
         else
             t0 = nil
         end

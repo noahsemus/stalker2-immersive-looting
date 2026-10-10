@@ -95,6 +95,10 @@ left-hand grab plays once (no flying copy: there is no item in the world). The g
 | LeftHand montage with a detector in hand? | Build 3 |
 | What does holding F on a loose item do (pile / take all)? | Tester, in game |
 
+## Before a release
+- Remove the unused `AM_ImmLoot_Grab` (build 1-3 montage) from the plugin and NewPackages.
+- Decide whether the probe-only nodes (Trace*, Weap*, Sp/Sh/El*, Grab*) stay (cheap, only while a copy is out).
+
 ## Test matrix (all must pass before a release)
 | # | Setup | Steps | Expected |
 |---|---|---|---|
