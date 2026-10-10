@@ -71,20 +71,31 @@ class Graph:
     # ---- readable layout -------------------------------------------------------------------------------------
     @staticmethod
     def _size(n):
-        """Rough on-screen size of a node: width from its longest pin name / title, height from its visible pins."""
-        vis = [p for p in n.pins.values() if not p.hidden and not p.adv]
-        ins = sum(1 for p in vis if not p.out)
-        outs = sum(1 for p in vis if p.out)
-        longest = max([len(p.name) for p in vis] + [12])
+        """Conservative on-screen size of a node (the editor does not export it): one ~30 px row per visible pin on the
+        longer side (the exec pins share the header row), ~7.5 px per character of the widest input + output label,
+        room for default-value boxes, and the comment bubble above the node (as wide as its text)."""
+        import re as _re
+        vis = [p for p in n.pins.values() if not p.hidden and not (p.adv and not p.links)]
+        ins = [p for p in vis if not p.out and p.cat != "exec"]
+        outs = [p for p in vis if p.out and p.cat != "exec"]
+        execs = any(p.cat == "exec" for p in vis)
+        label = lambda p: len(_re.sub(r"(?<!^)([A-Z])", r" \1", p.name))   # CamelCase -> "Camel Case"
+        win = max([label(p) + (12 if ("DefaultValue" in p.extra and not p.links) else 0) for p in ins] + [0])
+        wout = max([label(p) for p in outs] + [0])
         title = 0
         for b in n.body:
-            if 'MemberName="' in b:
-                title = len(b.split('MemberName="')[1].split('"')[0])
-        w = max(200, 9 * max(title, 2 * longest) + 60)
-        h = 46 + 24 * max(ins, outs, 1) + (34 if n.comment else 0)
+            m = _re.search(r'MemberName="([^"]+)"', b)
+            if m:
+                title = len(_re.sub(r"(?<!^)([A-Z])", r" \1", m.group(1)))
+        w = max(160, int(7.5 * max(title + 6, win + wout + 6)) + 40)
+        rows = max(len(ins), len(outs)) + (1 if execs else 0)
+        h = 44 + 30 * max(rows, 1)
+        if n.comment:
+            w = max(w, int(7 * len(n.comment)) + 40)
+            h += 40
         return w, h
 
-    def layout(self, col_gap=70, row_gap=28, box_gap=220, pad=60):
+    def layout(self, col_gap=110, row_gap=46, box_gap=260, pad=80):
         """Re-place every node so nothing overlaps and execution flows left to right.
 
         Each node belongs to the comment box that contained its original position (the smallest one), or to a
@@ -152,7 +163,7 @@ class Graph:
                 y = top
                 for n in col:
                     w, h = self._size(n)
-                    n.x, n.y = int(x), int(y + (34 if n.comment else 0))
+                    n.x, n.y = int(x), int(y + (40 if n.comment else 0))
                     row_of[id(n)] = y
                     y += h + row_gap
                 bottom = max(bottom, y)
