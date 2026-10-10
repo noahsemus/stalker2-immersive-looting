@@ -9,13 +9,15 @@ What it does (PLAN.md):
                   opened (IMC_Inventory applied) -> classify the target cached the tick before (DeadBody = corpse,
                   InteractableItemContainer owner = stash), find the two CurrentWeightText widgets and the view;
                   while open, the first 0.3 s set the baseline, then "took" = player weight up, loot weight down
-                  or more money; closed (context gone 0.25 s and the view hidden, or 3 s) and took -> PendingReach
-                  without a copy.
+                  or more money; closed (context gone 0.25 s and the view hidden, or 3 s). v0.2+: the touch BEFORE the
+                  window (our IMC_ImmLoot swallows the interact while a corpse / stash is in sight; the press reaches,
+                  holds at 0.6 s, then the game's interact is injected); on close the hand comes back (BUILD.md).
     3 Pending reach: skip (sprint, aim, MainActionSlot action, another left-hand montage, dialogue, cutscene,
                   detector or binoculars in hand, Enabled off) -> NSkips += 1, SkipBits = why
-                  else -> the grab montage (AM_ImmLoot_Grab, LeftHand slot) unless one is already before its
-                  pocketing frame, and (PendingCopy) a copy of the item (StaticMeshActor / SkeletalMeshActor)
-                  spawned where the item was.
+                  else -> the grab in the LeftHand slot (weapon: AS_ImmLoot_Grab, or the touch asset picked at the
+                  press; empty hands: the AS_ImmLoot_GrabBH segment for the item's direction) unless one is already
+                  before its pocketing frame, and (PendingCopy) a copy of the item (StaticMeshActor /
+                  SkeletalMeshActor) spawned where the item was.
     4 Track:      PC.GetInteractionTarget -> owner -> InteractableItemContainer: remember the actor, its
                   mesh component and mesh asset (when the target changes) and its world transform (every tick).
     5 Fly:        the copy eases to the left-hand bone jnt_l_weapon, arriving at the grab frame; then it is
@@ -61,7 +63,6 @@ XFORM = "\"/Script/CoreUObject.ScriptStruct'/Script/CoreUObject.Transform'\""
 HIT = "\"/Script/CoreUObject.ScriptStruct'/Script/Engine.HitResult'\""
 EN = lambda p: "\"/Script/CoreUObject.Enum'%s'\"" % p
 SELF = "\"/Script/Engine.BlueprintGeneratedClass'/ImmersiveLooting/Runtime/BP_ImmLootActor.BP_ImmLootActor_C'\""
-GRAB = "/ImmersiveLooting/Runtime/AM_ImmLoot_Grab.AM_ImmLoot_Grab"   # build 1-3 montage (unused since build 4)
 GRAB_SEQ = "/ImmersiveLooting/Runtime/AS_ImmLoot_Grab.AS_ImmLoot_Grab"   # build 4: hand raised into view (make_grab_seq)
 ANIMSEQB = cls("/Script/Engine.AnimSequenceBase")
 PCM = cls("/Script/Engine.PlayerCameraManager")
@@ -563,7 +564,6 @@ inreach = b_and(X1 + 2050, Y1 + 420, grab_active(X1 + 1850, Y1 + 400), early)
 bm = branch(X1 + 2150, Y1 + 150, "a reach already before its pocketing frame? (then the new item joins it)", inreach)
 g.link(sqr["then_1"], bm["execute"])
 GRAB_SEQ_BH = "/ImmersiveLooting/Runtime/AS_ImmLoot_GrabBH.AS_ImmLoot_GrabBH"
-GRAB_SEQ_AR = "/ImmersiveLooting/Runtime/AS_ImmLoot_GrabAR.AS_ImmLoot_GrabAR"   # v0.2 table, weapon in hand: never showed over a rifle (unused)
 TOUCH_SEQS = [f"/ImmersiveLooting/Runtime/AS_ImmLoot_Touch{i}.AS_ImmLoot_Touch{i}" for i in range(25)]   # 2026-10-10: corpse / stash
 # touch, weapon in hand (make_grab_seq build_touch): the hand reaches toward the body's / stash's centre. With a weapon the
 # arm rig follows the view (build d trace), so the centre's direction in VIEW axes picks the asset: elevation -45..+15 x

@@ -1,6 +1,7 @@
-Immersive Looting v0.1.0 (BETA) for S.T.A.L.K.E.R. 2: Heart of Chornobyl
+Immersive Looting v1.0.0 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
 When you pick something up, Skif reaches out with his left hand, takes it and pockets it,
-instead of the item just vanishing. No UE4SS required.
+instead of the item just vanishing. Looting a body or a stash, he reaches out and touches
+it first. No UE4SS required.
 
 WHAT IS IN THIS ZIP
   Six files, all required:
@@ -25,19 +26,18 @@ WHAT IT DOES
   - With empty hands the hand reaches to where the item is (far items slide the last bit
     into the hand, the arm only reaches so far). With a weapon in hand the left hand leaves
     the weapon, grabs, and goes back to it.
-  - Corpses and stashes: after you close the loot window, if you took something, Skif does
-    the same grab once.
+  - Bodies and stashes: press the interact key, Skif's hand reaches out toward the body or
+    the stash, then the loot window opens. Close it and the hand comes back (onto the
+    weapon, or to rest with empty hands). Holding the key to drag a body works as before.
   - No reach (vanilla pickup) while sprinting, aiming, reloading, in dialogue or cutscenes,
     or with a detector or binoculars in hand.
   - Artifacts and mutant parts keep their own vanilla animations.
-
-BETA
-  Tested with empty hands and with a pistol. Rifles and other weapons, the corpse / stash
-  grab and gamepad have had little or no testing yet. Reports welcome.
+  - Uses whatever key or gamepad button you have bound to interact.
 
 COMPATIBILITY
   Overrides no game assets and changes no config files: everything is new content, so it
-  should work alongside other mods. Mods that change the player's left-hand animations may
+  should work alongside other mods. Tested together with Immersive Campfires, Immersive
+  Dialogue and Player Gestures. Mods that change the player's left-hand animations may
   look odd together with it.
 
 Source and build instructions: https://github.com/noahsemus/stalker2-immersive-looting

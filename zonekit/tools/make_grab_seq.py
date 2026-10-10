@@ -690,7 +690,7 @@ try:
         build_touch(src, seq, path_h, path_q, nkeys)
     if ARGS.get("BH", "1") == "1":
         build_bh_reach_table(src, seq, tgt_rot, nkeys)   # build 12 (build_bh_table = checkpoint-b11)
-    if ARGS.get("AR", "1") == "1":
+    if ARGS.get("AR", "0") == "1":   # the rifle table never showed over a rifle (no left_hand_curve then); deleted for v1.0.0
         # v0.2: the same reach table on the rifle stance (weapon in hand), used to touch a corpse / stash; the rest pose
         # is the stance's own left hand on the grip
         build_bh_reach_table(src, seq, tgt_rot, nkeys, "/Game/_STALKER2/Animations/Player/AnimSequences/ar/common/stand/fp_ar_idle_stand",

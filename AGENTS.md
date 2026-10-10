@@ -46,9 +46,16 @@ harness on 2026-10-09.
   interact (window opens); on close the montage plays on (armed) or back (empty hands). Armed = 25 short assets
   `AS_ImmLoot_Touch0..24` (hand toward the body's pelvis / stash centre, picked by its direction in view axes: with a
   weapon the arm rig follows the view). `AS_ImmLoot_Grab` carries `left_hand_curve` (rifles with an underbarrel idle
-  pin the left hand otherwise). Noah confirmed with a rifle: body touch + return, loose items. Not tested yet: PLAN.md
-  matrix rows 2-9 (other weapons / bare-hands touch, detector, skips, spam, mutant corpses, take-all / nothing, hold-F
-  drag, gamepad / rebinds, coexistence, save/load).
+  pin the left hand otherwise). Noah confirmed: rifle, pistol, shotgun (body touch + return, loose items); rows 8-9
+  (coexistence, save/load) fine, tested alongside the other mods throughout. Not tested yet: bare-hands / knife / bolt
+  touch, detector, skips, spam, mutant corpses, take-all / nothing, hold-F drag, walk-away, gamepad / rebinds.
+
+- 2026-10-10 v1.0.0 released (Noah: "tested everything, looks good, cleanup cook and cut a release"): the rc-1.0.0
+  build minus the unused `AM_ImmLoot_Grab`, `AS_ImmLoot_GrabAR` and the single `AS_ImmLoot_Touch` (no referencers;
+  the Blueprint is unchanged). Full PLAN.md matrix confirmed by Noah (bare hands / pistol / shotgun / rifle, human
+  and mutant corpses, stashes, take-all / nothing, hold-F drag, walk-away, skips, spam, artifacts, alongside the
+  other mods, save/load). Zip in `zonekit/builds/v1.0.0/`, GitHub release v1.0.0. Nexus page still to be created
+  (`mod.json` nexus_id null).
 
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,

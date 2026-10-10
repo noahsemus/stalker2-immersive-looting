@@ -3,9 +3,8 @@ closed, after the tester picked the mod once in the toolbar selector (GameFeatur
 
     powershell -File harness\\tools\\run_headless.ps1 -Script zonekit\\tools\\setup_assets.py
 
-1. /ImmersiveLooting/Runtime/AM_ImmLoot_Grab: duplicate of the unused vanilla MG_fp_ak74_weapon_grab (LeftHand slot,
-   left-hand grab over a held rifle), without its two native AttachItem notifies (their effect outside a real
-   PickUpItem is unknown); the two HandIK notifies (left hand off / back on the grip) stay.
+1. (v1.0.0: the montage copy AM_ImmLoot_Grab of builds 1-3 is no longer made; the sequences from make_grab_seq.py
+   play as dynamic montages.) The input action IA_ImmLootInteract and context IMC_ImmLoot (make_input).
 2. /ImmersiveLooting/Runtime/BP_ImmLootActor (Actor) and BP_ImmLootSubsystem (ModWorldSubsystem) with their member
    variables and defaults. Re-running keeps existing assets and only adds what is missing.
 Log: <SCRATCH>/setup_assets.log and "[harness]" lines in the commandlet output.
@@ -154,7 +153,7 @@ def make_input():
 try:
     log(f"mod mounted: {mount_mod()}")
     make_input()
-    make_grab()
+    # make_grab()  # AM_ImmLoot_Grab (builds 1-3) deleted for v1.0.0: the sequences play as dynamic montages
     actor = make_bp(ACTOR, unreal.Actor)
     add_vars(actor, ACTOR, ACTOR_VARS)
     cdo = unreal.get_default_object(BEL.generated_class(actor))
