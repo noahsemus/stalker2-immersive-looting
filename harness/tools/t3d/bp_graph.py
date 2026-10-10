@@ -310,27 +310,41 @@ class Graph:
                         else:
                             run(m, nx + w + col_gap, top)
                         first = False
-                    else:
-                        run(m, nx + w + col_gap, state["bottom"] + row_gap)
+                    else:                                   # extra outputs open a row below (wrapped too: a long
+                        run(m, 0 if nx + w + col_gap > max_row else nx + w + col_gap, state["bottom"] + row_gap)   # else-chain)
 
             for k, r in enumerate(entered):
                 run(r, 0, 0 if k == 0 else state["bottom"] + row_gap)
             extent[gi] = (state["right"], state["bottom"])
 
-        # 2. boxes as a flow tree: box B is a child of box A if an exec link goes from A into B
-        feeds = {gi: [] for gi in groups}
-        fed = set()
+        # 2. boxes as a flow tree: box B is a child of the first box (breadth-first from the roots) with an exec link
+        # into B. Roots are the boxes holding an event (an exec node with no exec input); a box still unreached
+        # becomes a root too. (Marking "fed" greedily lost every root when two boxes link both ways: nothing was
+        # placed, the boxes kept their generator sizes and most nodes ended up outside them.)
+        links = {gi: [] for gi in groups}
         for gi, members in groups.items():
             for n in sorted(members, key=lambda n: (n.y, n.x)):
-                for p in n.pins.values():
-                    if p.cat == "exec" and p.out:
-                        for q in p.links:
-                            gj = home.get(id(q.node))
-                            if gj is not None and gj != gi and gj not in fed and gj not in feeds[gi]:
-                                feeds[gi].append(gj)
-                                fed.add(gj)
-        roots = [gi for gi in groups if gi not in fed]
-        roots.sort(key=lambda gi: (self.boxes[gi][2], self.boxes[gi][1]))
+                for m in exec_out(n):
+                    gj = home.get(id(m))
+                    if gj is not None and gj != gi and gj not in links[gi]:
+                        links[gi].append(gj)
+        has_event = set(gi for gi, members in groups.items() if any(not exec_in(n) for n in members))
+        order = sorted(groups, key=lambda gi: (gi not in has_event, self.boxes[gi][2], self.boxes[gi][1]))
+        feeds = {gi: [] for gi in groups}
+        reached, roots = set(), []
+        for r in order:
+            if r in reached:
+                continue
+            roots.append(r)
+            reached.add(r)
+            queue = [r]
+            while queue:
+                a = queue.pop(0)
+                for b in links[a]:
+                    if b not in reached:
+                        reached.add(b)
+                        feeds[a].append(b)
+                        queue.append(b)
         origin = {}
 
         def place_box(gi, x, y):
