@@ -1159,7 +1159,8 @@ alive = obj_q("IsAlive", XT + 800, YT + 100, cob["AsObj"])
 dbc = member_pure(ACTOR, "GetComponentByClass", XT + 800, YT + 200, cob["AsObj"], [
     ("ComponentClass", "class", dict(sub=ACOMP, extra='DefaultObject="/Script/Stalker2.DeadBody",')),
     ("ReturnValue", "object", dict(sub=ACOMP, out=True))])["ReturnValue"]
-corpse = b_and(XT + 1050, YT + 100, b_not(XT + 950, YT + 50, alive), is_valid(XT + 1000, YT + 200, dbc))
+corpse = b_and(XT + 1050, YT + 100, b_not(XT + 950, YT + 50, alive), is_valid(XT + 1000, YT + 200, dbc),
+               self_get("TouchBodies", "bool", XT + 850, YT + 280))   # setting (MCM): off = bodies stay vanilla
 sl_c = set_from("Lootable", "bool", XT + 1100, YT - 300, corpse, "a corpse?")
 g.link(cob["then"], sl_c["execute"])
 #     its tap interaction (DeadBody = "search"; the carry is a separate DeadBodyHoldComponent we never touch)
@@ -1167,22 +1168,8 @@ stc = set_from("TapComp", "object", XT + 1400, YT - 300, member_pure(ACTOR, "Get
     ("ComponentClass", "class", dict(sub=ACOMP, extra='DefaultObject="/Script/Stalker2.DeadBody",')),
     ("ReturnValue", "object", dict(sub=ICOMP, out=True))])["ReturnValue"], "its search interaction", sub=ICOMP)
 g.link(sl_c["then"], stc["execute"])
-#     1.0.1l: the left-hand reset again each time a new body comes into sight (the once-per-world call can run before
-#     the save's player state is applied; 1.0.1i carried, 1.0.1k with the same call did not), never during an
-#     interaction (carrying a body) or while a left-hand animation plays (flashlight, our reach)
-brs = branch(XT + 1700, YT - 300, "a new body in sight, no interaction, left hand idle? left-hand state reset",
-             b_and(XT + 1600, YT - 100,
-                   kml("NotEqual_ObjectObject", XT + 1400, YT - 50, [("A", "object", dict(sub=OBJ)), ("B", "object", dict(sub=OBJ)), RB])["ReturnValue"],
-                   self_get("Lootable", "bool", XT + 1400, YT + 50),
-                   b_not(XT + 1400, YT + 120, obj_q("IsInteractionInProgress", XT + 1200, YT + 120, as_pc, owner=PC)),
-                   b_not(XT + 1400, YT + 190, slot_active(XT + 1200, YT + 190, anim, "LeftHand"))))
-_neq = [n for n in g.nodes if n.klass.endswith("K2Node_CallFunction") and any('MemberName="NotEqual_ObjectObject"' in b for b in n.body)][-1]
-g.link(self_get("ResetFor", "object", XT + 1200, YT - 100, sub=ICOMP), _neq["A"])
-g.link(self_get("TapComp", "object", XT + 1200, YT - 20, sub=ICOMP), _neq["B"])
-g.link(stc["then"], brs["execute"])
-rlh2 = member_call(PC, "ReturnLeftHandOnItemEnded", XT + 2000, YT - 300, as_pc, "left hand back on the item")
-g.link(brs["then"], rlh2["execute"])
-g.link(rlh2["then"], set_from("ResetFor", "object", XT + 2300, YT - 300, self_get("TapComp", "object", XT + 2100, YT - 100, sub=ICOMP), "once per body", sub=ICOMP)["execute"])
+#     1.0.1l's per-body ReturnLeftHandOnItemEnded removed in 1.0.1m (carry still dead with it; back to 1.0.1i, which
+#     carried: the reset once per world only)
 cic = exec_pins(Node(g, BG + "K2Node_DynamicCast", nm("K2Node_DynamicCast"), XT + 900, YT + 400, "an item container?",
                      [f"TargetType=\"/Script/CoreUObject.Class'{IIC}'\""]))
 cic.pin("CastFailed", "exec", out=True)
@@ -1206,8 +1193,9 @@ def str_starts(x, y, a, lit):
     return n["ReturnValue"]
 
 
-stash = b_not(XT + 1700, YT + 700, b_or(XT + 1600, YT + 700, str_starts(XT + 1500, YT + 650, _cn["ReturnValue"], "BP_StaticItemContainer_C"),
-                                        str_starts(XT + 1500, YT + 750, _cn["ReturnValue"], "BP_SkeletalItemContainer_C")))
+stash = b_and(XT + 1850, YT + 700, b_not(XT + 1700, YT + 700, b_or(XT + 1600, YT + 700, str_starts(XT + 1500, YT + 650, _cn["ReturnValue"], "BP_StaticItemContainer_C"),
+                                        str_starts(XT + 1500, YT + 750, _cn["ReturnValue"], "BP_SkeletalItemContainer_C"))),
+               self_get("TouchBodies", "bool", XT + 1700, YT + 820))   # setting (MCM): off = stashes stay vanilla
 sl_s = set_from("Lootable", "bool", XT + 1300, YT + 400, stash, "a stash (not a loose item)?")
 g.link(cic["then"], sl_s["execute"])
 sts = set_from("TapComp", "object", XT + 1600, YT + 400, member_pure(ACTOR, "GetComponentByClass", XT + 1400, YT + 600, cic["AsInteractable Item Container"], [

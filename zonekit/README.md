@@ -183,3 +183,16 @@ mod go to `harness/docs/` instead (promote them).
   removed; the reset also runs each time a new body comes into sight (`ResetFor` != its search component), never
   during an interaction or a LeftHand animation. Layout bug found and fixed in the harness (`layout_tree`: two boxes
   linking both ways lost every root, nothing was laid out, 818 of 1777 nodes outside the boxes; since 1.0.1e).
+- 1.0.1l (per-body reset): Noah: carry dead, dot. 1.0.1m: the per-body reset removed (back to 1.0.1i: once per world),
+  new setting `TouchBodies` (default true; off = corpses / stashes are not `Lootable` for us = pure vanilla; written by
+  the coming MCM toggle). Noah on the 10:08 and 13:13 saves of 2026-10-10: no change. Then with Immersive Looting
+  REMOVED (no pak at all, every other mod on): the 10:08 save still cannot carry. The 2026-10-09 17:13 save (made
+  ~4 h before Immersive Looting first ran in game, same mod list including the three mods installed 2026-10-09 23:12)
+  CARRIES. So Noah's later saves hold a broken state that survives removing the mod; every bisect step 1.0.1a-l ran on
+  such a save, which is why none of them said anything. Source still unknown (a dev build of 2026-10-09 evening is the
+  window; 1.0.1m does not repair those saves).
+- 1.0.1m on the clean 2026-10-09 17:13 save, full sequence (carry; 3-4 loose items then carry; tap a body = touch +
+  window, then carry; tap a stash, then carry; save, reload, carry): Noah: "carrying bodies fully works"; the loot
+  window on a body also opens sooner than in 1.0.0 with the touch still looking right (no timing value changed; 1.0.0
+  removed its input context and the input map was rebuilt before the injected press counted). = rc-1.0.1
+  (`zonekit/builds/rc-1.0.1/`).
