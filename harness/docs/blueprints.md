@@ -18,7 +18,9 @@ of 20-200 nodes (event graphs and anim graphs).
 4. They compile and save; read it back with `export_t3d.py` to verify (the export lists deleted-but-not-GC'd nodes
    too: trust each graph's `Nodes(n)` list).
 
-Put `NodeComment` labels and comment boxes in the generated text (see `collaboration.md`). Keep mod-specific
+Call `graph.layout()` before writing: it re-places every node so nothing overlaps (columns by link depth inside each
+comment box, boxes stacked and resized to fit; nodes outside every box join the box of a node they link to). Hand
+placed coordinates only need to put each node inside the right box. Put `NodeComment` labels and comment boxes in the generated text (see `collaboration.md`). Keep mod-specific
 generators in the mod's `zonekit/tools/gen_*.py`; lift reusable node builders into `bp_graph.py` here.
 
 - **Delegate binding pastes fine**: `K2Node_AddDelegate` (`DelegateReference=(MemberParent=<class>,MemberName=...)`,
