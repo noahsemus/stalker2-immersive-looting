@@ -440,9 +440,12 @@ cast.pin("AsPC", "object", sub=PC, out=True)
 cast.pin("bSuccess", "bool", out=True)
 g.link(gp["ReturnValue"], cast["Object"])
 g.link(tick["then"], cast["execute"])
-as_pc = cast["AsPC"]
+# the player goes into a variable once per tick; every use reads it locally (no wires fanning out from the cast)
+spl = set_from("Player", "object", 500, 0, cast["AsPC"], "remember the player", sub=PC)
+g.link(cast["then"], spl["execute"])
+as_pc = self_get("Player", "object", 650, 300, sub=PC)
 sq = sequence(700, 0, "tick steps", 7)
-g.link(cast["then"], sq["execute"])
+g.link(spl["then"], sq["execute"])
 mesh = other_get(CHAR, "Mesh", "object", 700, 300, as_pc, sub=SKC)
 anim = member_pure(SKC, "GetAnimInstance", 950, 300, mesh, [("ReturnValue", "object", dict(sub=ANIMI, out=True))])["ReturnValue"]
 
@@ -986,6 +989,7 @@ g.link(brv["else"], self_set("LootReach", "bool", X5 + 1800, Y5 + 4200, "nothing
 # =====================================================================
 XT, YT = 1200, 16500
 g.box("EdGraphNode_Comment_907", XT - 300, YT - 400, 7200, 3400, "Corpse / stash: catch the interact key, reach out, then open the loot window")
+g.box("EdGraphNode_Comment_908", XT - 400, YT + 3500, 7200, 1600, "Our interact key pressed on a corpse / stash: start the reach (or pass the press on)")
 gpc_t = lib_pure(GS, "GameplayStatics", "GetPlayerController", XT - 900, YT + 1500,
                  [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)),
                   ("PlayerIndex", "int", dict(extra='DefaultValue="0",')),
