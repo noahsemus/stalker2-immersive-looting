@@ -20,6 +20,14 @@ harness on 2026-10-09.
   Added to the build-1 generator (loot window from `IMC_Inventory`, "taken" from the window's weight texts and
   money; `zonekit/research/2026-10-09-loot-window-research.md`).
 
+- 2026-10-09 checkpoint-b11 (Noah: "this is good, checkpoint it"; paks in `zonekit/builds/checkpoint-b11/`): loose-item
+  pickups detected (`PC.GetInteractedActor`, else the interaction target's owner; build 1's `GetInteractionTarget`
+  alone never saw loose items), empty hands play `AS_ImmLoot_GrabBH` = 8 view-pitch segments (the arm bones do not
+  follow the view pitch) reaching lower left of centre (view frame (40, -28, -16) cm) with the left-hand IK switched
+  off at the start (it pulled the hand to the grip point); the copy of the item waits where it lay, is pulled into
+  the hand at the grab frame at real size and parented to `jnt_l_weapon`, removed at the pocket frame. Armed: the
+  raised rifle grab `AS_ImmLoot_Grab` (not pitch-aware yet, untested since build 4). Corpse / stash reach coded, untested.
+
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
   `CoreVariables.cfg:888-889`), visual in `MeshComponent`; pickup is instant and has no BP-visible "item added" event.

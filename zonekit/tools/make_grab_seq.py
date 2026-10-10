@@ -188,7 +188,7 @@ def build_bh(src, rifle_seq, tgt_path, tgt_rot, nkeys):
 
 PITCHES = [-75, -60, -45, -30, -15, 0, 15, 30]   # view pitch of each segment (deg, + = up)
 SEG = 60                                         # frames per segment (2 s); the Blueprint stops it at +1.5 s
-REACH = (42.0, -13.0, -11.0)                     # hand target in the VIEW frame: ahead, right, up (cm); build 10: lower left of centre (build 9: (48, -4, -3) "in the centre")
+REACH = (40.0, -28.0, -16.0)                     # hand target in the VIEW frame: ahead, right, up (cm); build 11: "way more left, a bit lower" (b10 (42,-13,-11), b9 (48,-4,-3))
 
 
 def build_bh_table(src, rifle_seq, tgt_rot, nkeys):
@@ -278,6 +278,21 @@ def build_bh_table(src, rifle_seq, tgt_rot, nkeys):
     ctrl.close_bracket(True)
     for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
         AL.remove_animation_notify_events_by_track(seq, tn)
+    # build 11: the hand ended ~(55, +4, -8) in view axes in build 10 whatever the target (planned (39, -13, -11)), as if
+    # pulled to a fixed point: suspected the left-hand IK to jnt_weapon. Switch it off at the start of every segment
+    # (no "back on": with empty hands that made the hand jump centre-left, build 7).
+    track = "ImmLoot"
+    if track not in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
+        AL.add_animation_notify_track(seq, track, unreal.LinearColor(0.2, 0.8, 0.2, 1.0))
+    hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
+    hand_enum = None
+    for e in AL.get_animation_notify_events(unreal.load_asset(MONT)):
+        if e.notify is not None and e.notify.get_class().get_name() == "AnimNotify_HandIK":
+            hand_enum = e.notify.get_editor_property("hand_to_apply")
+    for i in range(len(PITCHES)):
+        n = AL.add_animation_notify_event(seq, track, i * SEG / 30.0 + 0.02, hik)
+        n.set_editor_property("hand_to_apply", hand_enum)
+        n.set_editor_property("blend_time", 0.05)
     out.append(f"BH table: {len(PITCHES)} segments x {SEG} frames, len {seq.get_play_length():.2f} s, keys {AL.get_num_keys(seq)}, "
                f"notifies {len(AL.get_animation_notify_events(seq))}, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
 
