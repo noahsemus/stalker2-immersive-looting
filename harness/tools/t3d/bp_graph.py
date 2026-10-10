@@ -209,15 +209,23 @@ class Graph:
                     self.link(c.pins[p.name], q)
                     changed = True
 
-    def layout_tree(self, col_gap=90, row_gap=60, box_gap=300, pad=100):
-        """Readable layout: within each comment box, the execution chain runs left to right on a row; every exec
-        node's data inputs form a small tree directly to its left (after untangle(), each pure node feeds exactly
-        one pin); extra exec outputs (Branch false, Sequence then_1..) start new rows below, indented under the node
-        they come from. Boxes are stacked top to bottom and resized to fit."""
+    def layout_tree(self, col_gap=90, row_gap=60, box_gap=160, pad=100, max_row=7000):
+        """Readable layout. Inside each comment box the exec chain runs left to right on a row, every exec node's data
+        inputs form a small tree directly to its left (untangle() first: each pure node feeds one pin), and extra exec
+        outputs (Branch false, Sequence then_1..) open rows below; a chain longer than max_row wraps onto a new row.
+        The boxes themselves follow the flow: a box entered
+        from another box sits to the right of it, boxes fed by the same box are stacked in the order of the pins that
+        feed them, and boxes nobody feeds (events) start new trees below."""
         self.untangle()
 
         def contains(b, n):
             return b[1] <= n.x <= b[1] + b[3] and b[2] <= n.y <= b[2] + b[4]
+
+        def exec_out(n):
+            return [q.node for p in n.pins.values() if p.cat == "exec" and p.out for q in p.links]
+
+        def exec_in(n):
+            return [q.node for p in n.pins.values() if p.cat == "exec" and not p.out for q in p.links]
 
         execs = [n for n in self.nodes if self._is_exec(n)]
         home = {}
@@ -225,20 +233,22 @@ class Graph:
             inside = [i for i, b in enumerate(self.boxes) if contains(b, n)]
             if inside:
                 home[id(n)] = min(inside, key=lambda i: self.boxes[i][3] * self.boxes[i][4])
-        for _ in range(10):
+        for _ in range(12):   # an exec node outside every box joins the box it leads into, else the one it comes from
             for n in execs:
                 if id(n) in home:
                     continue
-                for p in n.pins.values():
-                    if p.cat != "exec":
-                        continue
-                    hit = [home[id(q.node)] for q in p.links if id(q.node) in home]
+                for cand in (exec_out(n), exec_in(n)):
+                    hit = [home[id(m)] for m in cand if id(m) in home]
                     if hit:
                         home[id(n)] = hit[0]
                         break
+        if any(id(n) not in home for n in execs):
+            self.boxes.append(["EdGraphNode_Comment_999", 0, 0, 10, 10, "Other"])
+            for n in execs:
+                home.setdefault(id(n), len(self.boxes) - 1)
         groups = {}
         for n in execs:
-            groups.setdefault(home.get(id(n), -1), []).append(n)
+            groups.setdefault(home[id(n)], []).append(n)
 
         def data_children(n):
             out = []
@@ -249,21 +259,7 @@ class Graph:
                             out.append(q.node)
             return out
 
-        placed = set()
-
-        def place_tree(n, right, top):
-            """Place n's data inputs as a tree whose right edge is `right`, starting at `top`; returns the bottom."""
-            y = top
-            for c in data_children(n):
-                if id(c) in placed:
-                    continue
-                w, h = self._size(c)
-                cx = right - w
-                placed.add(id(c))
-                sub_bottom = place_tree(c, cx - col_gap // 2, y)
-                c.x, c.y = int(cx), int(y + (40 if c.comment else 0))
-                y = max(y + h, sub_bottom) + row_gap // 2
-            return y
+        placed, owner = set(), {}
 
         def tree_width(n):
             best = 0
@@ -271,60 +267,92 @@ class Graph:
                 best = max(best, self._size(c)[0] + col_gap // 2 + tree_width(c))
             return best
 
-        order = sorted(groups, key=lambda i: (self.boxes[i][2], self.boxes[i][1]) if i >= 0 else (1e9, 0))
-        y_cursor = min([b[2] for b in self.boxes] + [0])
-        x0 = min([b[1] for b in self.boxes] + [0])
-        for gi in order:
-            members = groups[gi]
+        def place_tree(n, right, top, gi):
+            y = top
+            for c in data_children(n):
+                if id(c) in placed:
+                    continue
+                w, h = self._size(c)
+                placed.add(id(c))
+                owner[id(c)] = gi
+                sub_bottom = place_tree(c, right - w - col_gap // 2, y, gi)
+                c.x, c.y = int(right - w), int(y + (40 if c.comment else 0))
+                y = max(y + h, sub_bottom) + row_gap // 2
+            return y
+
+        # 1. each box laid out on its own, at the origin
+        extent = {}
+        for gi, members in groups.items():
             ids = set(id(n) for n in members)
-            has_in = set()
-            for n in members:
-                for p in n.pins.values():
-                    if p.cat == "exec" and p.out:
-                        for q in p.links:
-                            if id(q.node) in ids:
-                                has_in.add(id(q.node))
-            roots = [n for n in members if id(n) not in has_in] or members[:1]
-            roots.sort(key=lambda n: (n.y, n.x))
-            state = {"bottom": y_cursor + pad + 40}
+            entered = [n for n in members if not any(id(m) in ids for m in exec_in(n))] or members[:1]
+            entered.sort(key=lambda n: (n.y, n.x))
+            state = {"bottom": 0, "right": 0}
 
             def run(n, x, top):
-                """Place exec node n with its data tree starting at x on the row at `top`, then follow its exec
-                outputs: the first continues the row, the others open rows below."""
                 if id(n) in placed or id(n) not in ids:
                     return
                 placed.add(id(n))
+                owner[id(n)] = gi
                 tw = tree_width(n)
                 w, h = self._size(n)
                 nx = x + tw
                 n.x, n.y = int(nx), int(top + (40 if n.comment else 0))
-                tree_bottom = place_tree(n, nx - col_gap // 2, top) if tw else top
-                state["bottom"] = max(state["bottom"], top + h + 40, tree_bottom)
-                outs = [p for p in n.pins.values() if p.cat == "exec" and p.out and p.links]
+                tb = place_tree(n, nx - col_gap // 2, top, gi) if tw else top
+                state["bottom"] = max(state["bottom"], top + h + 40, tb)
+                state["right"] = max(state["right"], nx + w)
                 first = True
-                for p in outs:
-                    for q in p.links:
-                        if id(q.node) in placed or id(q.node) not in ids:
-                            continue
-                        if first:
-                            run(q.node, nx + w + col_gap, top)
-                            first = False
+                for m in exec_out(n):
+                    if id(m) in placed or id(m) not in ids:
+                        continue
+                    if first:
+                        if nx + w + col_gap > max_row:      # wrap a long chain onto a new row, like a line of text
+                            run(m, 0, state["bottom"] + row_gap)
                         else:
-                            run(q.node, nx + w + col_gap, state["bottom"] + row_gap)
+                            run(m, nx + w + col_gap, top)
+                        first = False
+                    else:
+                        run(m, nx + w + col_gap, state["bottom"] + row_gap)
 
-            for r in roots:
-                run(r, x0 + pad, state["bottom"] + (row_gap if r is not roots[0] else 0))
-            # pure nodes not reached (feeding nodes outside this box): park them under the box
-            right = max([n.x + self._size(n)[0] for n in members] + [x0])
-            if gi >= 0:
-                b = self.boxes[gi]
-                b[1], b[2], b[3], b[4] = int(x0), int(y_cursor), int(right - x0 + pad), int(state["bottom"] - y_cursor + pad)
-            y_cursor = state["bottom"] + pad + box_gap
-        # anything still unplaced (pure nodes whose consumer sits elsewhere): next to its consumer
+            for k, r in enumerate(entered):
+                run(r, 0, 0 if k == 0 else state["bottom"] + row_gap)
+            extent[gi] = (state["right"], state["bottom"])
+
+        # 2. boxes as a flow tree: box B is a child of box A if an exec link goes from A into B
+        feeds = {gi: [] for gi in groups}
+        fed = set()
+        for gi, members in groups.items():
+            for n in sorted(members, key=lambda n: (n.y, n.x)):
+                for p in n.pins.values():
+                    if p.cat == "exec" and p.out:
+                        for q in p.links:
+                            gj = home.get(id(q.node))
+                            if gj is not None and gj != gi and gj not in fed and gj not in feeds[gi]:
+                                feeds[gi].append(gj)
+                                fed.add(gj)
+        roots = [gi for gi in groups if gi not in fed]
+        roots.sort(key=lambda gi: (self.boxes[gi][2], self.boxes[gi][1]))
+        origin = {}
+
+        def place_box(gi, x, y):
+            """Place box gi with its top-left at (x, y) and its fed boxes to its right; returns the subtree bottom."""
+            w, h = extent[gi][0] + 2 * pad, extent[gi][1] + 2 * pad + 40
+            origin[gi] = (x, y, w, h)
+            child_y = y
+            for gj in feeds[gi]:
+                child_y = place_box(gj, x + w + box_gap, child_y) + box_gap
+            return max(y + h, child_y - box_gap)
+
+        y = min([b[2] for b in self.boxes] + [0])
+        x0 = min([b[1] for b in self.boxes] + [0])
+        for gi in roots:
+            y = place_box(gi, x0, y) + box_gap * 2
+        # 3. move every node with its box; resize the boxes
         for n in self.nodes:
-            if id(n) in placed or self._is_exec(n):
+            gi = owner.get(id(n))
+            if gi is None or gi not in origin:
                 continue
-            cons = [q.node for p in n.pins.values() if p.out for q in p.links]
-            if cons:
-                c = cons[0]
-                n.x, n.y = int(c.x - self._size(n)[0] - col_gap), int(c.y + 60)
+            bx, by, _, _ = origin[gi]
+            n.x, n.y = int(n.x + bx + pad), int(n.y + by + pad + 40)
+        for gi, (bx, by, w, h) in origin.items():
+            b = self.boxes[gi]
+            b[1], b[2], b[3], b[4] = int(bx), int(by), int(w), int(h)
