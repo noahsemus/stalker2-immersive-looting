@@ -3,3 +3,4 @@
 /ImmersiveLooting/Runtime/BP_ImmLootActor
 /ImmersiveLooting/Runtime/AM_ImmLoot_Grab
 /ImmersiveLooting/Runtime/AS_ImmLoot_Grab
+/ImmersiveLooting/Runtime/AS_ImmLoot_GrabBH

@@ -230,9 +230,10 @@ def b_not(x, y, a):
     return n["ReturnValue"]
 
 
-def d_op(member, x, y, a, b=None, b_const="0.0", ret=RD):
-    n = kml(member, x, y, [D("A"), D("B", b_const), ret])
-    g.link(a, n["A"])
+def d_op(member, x, y, a, b=None, b_const="0.0", ret=RD, a_const="0.0"):
+    n = kml(member, x, y, [D("A", a_const), D("B", b_const), ret])
+    if a is not None:
+        g.link(a, n["A"])
     if b is not None:
         g.link(b, n["B"])
     return n["ReturnValue"]
@@ -558,23 +559,65 @@ early = d_op("Less_DoubleDouble", X1 + 1900, Y1 + 500, montage_time_since_reach(
 inreach = b_and(X1 + 2050, Y1 + 420, grab_active(X1 + 1850, Y1 + 400), early)
 bm = branch(X1 + 2150, Y1 + 150, "a reach already before its pocketing frame? (then the new item joins it)", inreach)
 g.link(sqr["then_1"], bm["execute"])
-mp = member_call(ANIMI, "PlaySlotAnimationAsDynamicMontage", X1 + 2450, Y1 + 250, anim, "left-hand grab, hand raised (LeftHand slot)", [
-    ("Asset", "object", dict(sub=ANIMSEQB, extra=f'DefaultObject="{GRAB_SEQ}",')),
-    ("SlotNodeName", "name", dict(extra='DefaultValue="LeftHand",')),
-    ("BlendInTime", "real", dict(subcat="float", extra='DefaultValue="0.200000",')),
-    ("BlendOutTime", "real", dict(subcat="float", extra='DefaultValue="0.700000",')),
-    ("InPlayRate", "real", dict(subcat="float", extra='DefaultValue="1.000000",')),
-    ("LoopCount", "int", dict(extra='DefaultValue="1",')),
-    ("BlendOutTriggerTime", "real", dict(subcat="float", extra='DefaultValue="-1.000000",')),
-    ("InTimeToStartMontageAt", "real", dict(subcat="float", extra='DefaultValue="0.000000",')),
-    ("ReturnValue", "object", dict(sub=MONT, out=True))])
-g.link(self_get("PlayRate", "real", X1 + 2250, Y1 + 450, subcat="double"), mp["InPlayRate"])
-g.link(bm["else"], mp["execute"])
-sgm = set_from("GrabMontage", "object", X1 + 2450, Y1 + 600, mp["ReturnValue"], "our montage", sub=MONT)
+GRAB_SEQ_BH = "/ImmersiveLooting/Runtime/AS_ImmLoot_GrabBH.AS_ImmLoot_GrabBH"   # build 8: empty hands (make_grab_seq)
+
+
+def play_grab(x, y, asset, comment):
+    n = member_call(ANIMI, "PlaySlotAnimationAsDynamicMontage", x, y, anim, comment, [
+        ("Asset", "object", dict(sub=ANIMSEQB, extra=f'DefaultObject="{asset}",')),
+        ("SlotNodeName", "name", dict(extra='DefaultValue="LeftHand",')),
+        ("BlendInTime", "real", dict(subcat="float", extra='DefaultValue="0.200000",')),
+        ("BlendOutTime", "real", dict(subcat="float", extra='DefaultValue="0.700000",')),
+        ("InPlayRate", "real", dict(subcat="float", extra='DefaultValue="1.000000",')),
+        ("LoopCount", "int", dict(extra='DefaultValue="1",')),
+        ("BlendOutTriggerTime", "real", dict(subcat="float", extra='DefaultValue="-1.000000",')),
+        ("InTimeToStartMontageAt", "real", dict(subcat="float", extra='DefaultValue="0.000000",')),
+        ("ReturnValue", "object", dict(sub=MONT, out=True))])
+    g.link(self_get("PlayRate", "real", x - 200, y + 200, subcat="double"), n["InPlayRate"])
+    return n
+
+
+armed = obj_q("HasItemInMainHand", X1 + 2250, Y1 + 100, as_pc)
+bst = branch(X1 + 2450, Y1 + 150, "something in the main hand? (rifle-stance grab) else empty hands", armed)
+g.link(bm["else"], bst["execute"])
+mp = play_grab(X1 + 2750, Y1 - 50, GRAB_SEQ, "left-hand grab, armed")
+mpb = play_grab(X1 + 2750, Y1 + 350, GRAB_SEQ_BH, "left-hand grab, empty hands (segment for the view pitch)")
+# build 9: AS_ImmLoot_GrabBH is a table of 2 s segments, one per view pitch -75..+30 in 15 deg steps (the arm bones do
+# not follow the view pitch); start at the nearest one
+_cm = lib_pure(GS, "GameplayStatics", "GetPlayerCameraManager", X1 + 1900, Y1 + 700,
+               [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)),
+                ("PlayerIndex", "int", dict(extra='DefaultValue="0",')), ("ReturnValue", "object", dict(sub=PCM, out=True))])["ReturnValue"]
+_rot = member_pure(PCM, "GetCameraRotation", X1 + 2100, Y1 + 700, _cm, [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"]
+_br = kml("BreakRotator", X1 + 2300, Y1 + 700, [("InRot", "struct", dict(sub=ROT)), ("Roll", "real", dict(subcat="float", out=True)),
+                                               ("Pitch", "real", dict(subcat="float", out=True)), ("Yaw", "real", dict(subcat="float", out=True))])
+g.link(_rot, _br["InRot"])
+_na = kml("NormalizeAxis", X1 + 2300, Y1 + 850, [("Angle", "real", dict(subcat="float")), ("ReturnValue", "real", dict(subcat="float", out=True))])
+g.link(_br["Pitch"], _na["Angle"])
+_ix = kml("FClamp", X1 + 2500, Y1 + 850, [D("Value"), D("Min", "0.0"), D("Max", "7.0"), RD])
+g.link(d_op("Divide_DoubleDouble", X1 + 2500, Y1 + 950, d_op("Add_DoubleDouble", X1 + 2300, Y1 + 950, _na["ReturnValue"], b_const="75.0"),
+            b_const="15.0"), _ix["Value"])
+_rd = kml("Round", X1 + 2700, Y1 + 850, [D("A"), ("ReturnValue", "int", dict(out=True))])
+g.link(_ix["ReturnValue"], _rd["A"])
+_cv = kml("Conv_IntToDouble", X1 + 2700, Y1 + 950, [("InInt", "int"), RD])
+g.link(_rd["ReturnValue"], _cv["InInt"])
+seg_start = d_op("Multiply_DoubleDouble", X1 + 2900, Y1 + 950, _cv["ReturnValue"], b_const="2.0")
+g.link(seg_start, mpb["InTimeToStartMontageAt"])
+sss = set_from("SegStart", "real", X1 + 3700, Y1 + 350, seg_start, "segment start (montage s)", subcat="double")
+g.link(bst["then"], mp["execute"])
+g.link(bst["else"], mpb["execute"])
+sgm_a = set_from("GrabMontage", "object", X1 + 3100, Y1 - 50, mp["ReturnValue"], "our montage", sub=MONT)
+sgm_b = set_from("GrabMontage", "object", X1 + 3100, Y1 + 350, mpb["ReturnValue"], "our montage", sub=MONT)
+ses_a = self_set("GrabBH", "bool", X1 + 3400, Y1 - 50, "", default="false")
+ses_a2 = self_set("SegStart", "real", X1 + 3700, Y1 - 50, "", default="0.0", subcat="double")
+ses_b = self_set("GrabBH", "bool", X1 + 3400, Y1 + 350, "", default="true")
+chain(mp, sgm_a, ses_a, ses_a2)
+chain(mpb, sgm_b, ses_b, sss)
 srs = set_from("ReachStart", "real", X1 + 2800, Y1 + 250, now(X1 + 2650, Y1 + 450), "reach started", subcat="double")
 srg = self_set("Reaching", "bool", X1 + 3100, Y1 + 250, "", default="true")
 nr = inc("NReaches", X1 + 3400, Y1 + 250, "count reaches")
-chain(mp, sgm, srs, srg, nr)
+g.link(ses_a2["then"], srs["execute"])
+g.link(sss["then"], srs["execute"])
+chain(srs, srg, nr)
 #   c) the flying copy
 FX, FY = X1 + 1850, Y1 + 900
 sfs = set_from("FlyStart", "real", FX, FY, now(FX - 150, FY + 200), "flight starts", subcat="double")
@@ -887,16 +930,29 @@ xf = member_pure(SC_, "K2_GetComponentToWorld", X2 + 1350, Y2 + 850, icomp(X2 + 
 sxf = set_from("ItemXf", "struct", X2 + 1550, Y2 + 600, xf, "where it is", sub=XFORM)
 chain(sseen, sarm, sxf)
 
-# ---- 5: fly the copy into the left hand ----
+# ---- 5: the copy waits where the item was; the hand takes it at the grab frame and carries it to the pocket ----
+# build 9 (tester: "it should look like the hand grabs the item and takes it, not the item floating into the hand"):
+# - until the grab frame (GrabTime) the copy stays where the item lay;
+# - then, in 0.12 s, it is pulled into the hand at its real size (the hand is at the crosshair, the item behind it on
+#   the same line, so it reads as snatched) and PARENTED to the left-hand item bone jnt_l_weapon (tester, build 9: "make
+#   it actually get parented to the hand"; build 9's depth-ratio shrink would have put a doll-sized bottle in the hand);
+# - it rides with the hand to the pocket and is removed at PocketTime.
+# Where the hand is seen: the arm bones are where they are drawn, except the arms' materials spread the sideways part
+# (relative to the camera) by s = tan(view FOV/2) / MPC_FOV.TanFOV (MF_Foreground_FOVCorrection; depth scaling keeps
+# the screen position). Builds 5-8 assumed the arms follow the view pitch; they do not (build 7 trace, empty hands).
 X3, Y3 = 1200, 5800
-g.box("EdGraphNode_Comment_904", X3 - 1600, Y3 - 200, 5000, 2000, "Fly the copy to the left hand as seen (first-person FOV squeeze), hold it, pocket it")
+g.box("EdGraphNode_Comment_904", X3 - 1600, Y3 - 500, 5200, 2400, "The hand takes the copy at the grab frame and carries it to the pocket")
 fly = lambda x, y: self_get("Fly", "object", x, y, sub=ACTOR)
-bf = branch(X3, Y3, "a copy is flying?", is_valid(X3 - 150, Y3 + 200, fly(X3 - 350, Y3 + 200)))
+bf = branch(X3, Y3, "a copy is out?", is_valid(X3 - 150, Y3 + 200, fly(X3 - 350, Y3 + 200)))
 g.link(sq["then_5"], bf["execute"])
 el = d_op("Subtract_DoubleDouble", X3 - 300, Y3 + 500, now(X3 - 500, Y3 + 500), self_get("FlyStart", "real", X3 - 500, Y3 + 580, subcat="double"))
-alpha_raw = d_op("Divide_DoubleDouble", X3 - 100, Y3 + 500, el, self_get("FlyDur", "real", X3 - 300, Y3 + 620, subcat="double"))
-cl = kml("FClamp", X3 + 100, Y3 + 500, [D("Value"), D("Min", "0.0"), D("Max", "1.0"), RD])
-g.link(alpha_raw, cl["Value"])
+#   u: 0 before the grab frame, 0 -> 1 over 0.12 s after it
+grab_at = d_op("Add_DoubleDouble", X3 - 300, Y3 + 650, self_get("ReachStart", "real", X3 - 500, Y3 + 650, subcat="double"),
+               d_op("Divide_DoubleDouble", X3 - 500, Y3 + 720, self_get("GrabTime", "real", X3 - 700, Y3 + 720, subcat="double"),
+                    self_get("PlayRate", "real", X3 - 700, Y3 + 800, subcat="double")))
+since_grab = d_op("Subtract_DoubleDouble", X3 - 100, Y3 + 650, now(X3 - 300, Y3 + 750), grab_at)
+cl = kml("FClamp", X3 + 100, Y3 + 650, [D("Value"), D("Min", "0.0"), D("Max", "1.0"), RD])
+g.link(d_op("Divide_DoubleDouble", X3 - 100, Y3 + 750, since_grab, b_const="0.12"), cl["Value"])
 alpha = cl["ReturnValue"]
 bone = member_pure(SKC, "GetSocketLocation", X3 - 900, Y3 + 900, mesh,
                    [("InSocketName", "name", dict(extra=f'DefaultValue="{HAND}",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
@@ -915,64 +971,63 @@ axial = vop("Multiply_VectorFloat", X3 - 200, Y3 + 950, cf_, vop("Dot_VectorVect
 side = vop("Multiply_VectorFloat", X3, Y3 + 1050, vop("Subtract_VectorVector", X3 - 200, Y3 + 1050, rel, axial), s_eff,
            b_cat="real", b_sub="None", b_subcat="double")
 hand = vop("Add_VectorVector", X3 + 250, Y3 + 950, cl_, vop("Add_VectorVector", X3 + 100, Y3 + 1000, axial, side))
+#   the copy: from where the item lay to the hand as seen, scaled by the depth ratio (same size on screen)
+ffrom = lambda x, y: self_get("FlyFrom", "struct", x, y, sub=VEC)
+ve = kml("VLerp", X3 + 650, Y3 + 300, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)),
+                                       ("Alpha", "real", dict(subcat="float", extra='DefaultValue="0.0",')),
+                                       ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(ffrom(X3 + 450, Y3 + 300), ve["A"])
+g.link(bone, ve["B"])
+g.link(alpha, ve["Alpha"])
+pos = ve["ReturnValue"]
+
+
+sq3 = sequence(X3 + 300, Y3, "copy steps", 3)
 m1 = mpc_scalar_call(X3 - 600, Y3 - 400, "TanFOV", "arms' FOV (MPC_FOV)")
 m1s = set_from("TanFOVv", "real", X3 - 300, Y3 - 400, m1["ReturnValue"], "", subcat="double")
 m2 = mpc_scalar_call(X3, Y3 - 400, "IsFOVEnabled", "")
 m2s = set_from("FovOn", "real", X3 + 300, Y3 - 400, m2["ReturnValue"], "", subcat="double")
 chain(m1, m1s, m2, m2s)
 g.link(bf["then"], m1["execute"])
-sq3 = sequence(X3 + 300, Y3, "fly steps", 3)
 g.link(m2s["then"], sq3["execute"])
-ba = branch(X3 + 600, Y3 - 100, "still on the way?", d_op("Less_DoubleDouble", X3 + 400, Y3 + 150, alpha, b_const="1.0", ret=RB))
-g.link(sq3["then_0"], ba["execute"])
-# ease-in (alpha^2) by hand: KismetMathLibrary's Ease / VEase are BlueprintInternalUseOnly (only the K2Node_EaseFunction
-# node may call them; a pasted CallFunction to VEase is dropped)
-a2 = d_op("Multiply_DoubleDouble", X3 + 450, Y3 + 450, alpha, alpha)
-ve = kml("VLerp", X3 + 650, Y3 + 300, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)),
-                                       ("Alpha", "real", dict(subcat="float", extra='DefaultValue="0.0",')),
-                                       ("ReturnValue", "struct", dict(sub=VEC, out=True))])
-g.link(self_get("FlyFrom", "struct", X3 + 450, Y3 + 300, sub=VEC), ve["A"])
-g.link(hand, ve["B"])
-g.link(a2, ve["Alpha"])
-sl = member_call(ACTOR, "K2_SetActorLocation", X3 + 950, Y3 - 100, fly(X3 + 800, Y3 + 100), "toward the hand as seen", [
+attached = lambda x, y: self_get("FlyAttached", "bool", x, y)
+bna = branch(X3 + 650, Y3 - 100, "not in the hand yet?", b_not(X3 + 500, Y3 + 50, attached(X3 + 300, Y3 + 50)))
+g.link(sq3["then_0"], bna["execute"])
+sl = member_call(ACTOR, "K2_SetActorLocation", X3 + 950, Y3 - 100, fly(X3 + 800, Y3 + 100), "where the item lay, then pulled to the hand", [
     ("NewLocation", "struct", dict(sub=VEC)), B("bSweep"),
     ("SweepHitResult", "struct", dict(sub=HIT, out=True)), B("bTeleport", "true"), RB])
-g.link(ve["ReturnValue"], sl["NewLocation"])
-g.link(ba["then"], sl["execute"])
-sl2 = member_call(ACTOR, "K2_SetActorLocation", X3 + 950, Y3 + 250, fly(X3 + 800, Y3 + 450), "in the hand (follow it)", [
-    ("NewLocation", "struct", dict(sub=VEC)), B("bSweep"),
-    ("SweepHitResult", "struct", dict(sub=HIT, out=True)), B("bTeleport", "true"), RB])
-g.link(hand, sl2["NewLocation"])
-g.link(ba["else"], sl2["execute"])
-#   shrink with the arms' sideways squeeze, so it sits in the hand at the right size
-bxs = kml("BreakTransform", X3 + 300, Y3 + 1500, [("InTransform", "struct", dict(sub=XFORM)),
-                                                 ("Location", "struct", dict(sub=VEC, out=True)),
-                                                 ("Rotation", "struct", dict(sub=ROT, out=True)),
-                                                 ("Scale", "struct", dict(sub=VEC, out=True))])
-g.link(self_get("ItemXf", "struct", X3 + 100, Y3 + 1500, sub=XFORM), bxs["InTransform"])
-lerp_k = kml("Lerp", X3 + 300, Y3 + 1700, [D("A", "1.0"), D("B"), D("Alpha"), RD])
-g.link(s_eff, lerp_k["B"])
-g.link(alpha, lerp_k["Alpha"])
-ssc = member_call(ACTOR, "SetActorScale3D", X3 + 700, Y3 + 1400, fly(X3 + 550, Y3 + 1600), "scale as seen",
-                  [("NewScale3D", "struct", dict(sub=VEC))])
-g.link(vop("Multiply_VectorFloat", X3 + 500, Y3 + 1600, bxs["Scale"], lerp_k["ReturnValue"], b_cat="real", b_sub="None", b_subcat="double"),
-       ssc["NewScale3D"])
-g.link(sq3["then_1"], ssc["execute"])
-#   probe: where the item meets the hand, in camera space, and the squeeze factor (once per item)
-bat = branch(X3 + 1300, Y3 + 250, "first frame in the hand? (probe values)", b_not(X3 + 1150, Y3 + 450, self_get("FlyAttached", "bool", X3 + 950, Y3 + 450)))
-g.link(sl2["then"], bat["execute"])
-hrel = vop("Subtract_VectorVector", X3 + 1300, Y3 + 700, hand, cl_)
+g.link(pos, sl["NewLocation"])
+g.link(bna["then"], sl["execute"])
+#   probe: the hand bone relative to the camera (camera axes) every tick
+hrel_b = vop("Subtract_VectorVector", X3 + 1300, Y3 + 700, bone, cl_)
+trs = [set_from(v, "real", X3 + 1550 + 300 * k, Y3 - 100, vop("Dot_VectorVector", X3 + 1500, Y3 + 800 + 100 * k, hrel_b, axis, ret_sub="real"),
+                "hand bone in camera axes (probe)" if k == 0 else "", subcat="double")
+       for k, (v, axis) in enumerate((("TraceX", cf_), ("TraceY", cr_), ("TraceZ", cu_)))]
+chain(sl, *trs)
+#   at the hand: parent it to the hand's item bone (keeps its size and its rotation at that moment)
+bat = branch(X3 + 1300, Y3 + 250, "reached the hand, not parented yet?",
+             b_and(X3 + 1150, Y3 + 450, d_op("GreaterEqual_DoubleDouble", X3 + 950, Y3 + 450, alpha, b_const="1.0", ret=RB),
+                   b_not(X3 + 950, Y3 + 550, attached(X3 + 750, Y3 + 550))))
+g.link(sq3["then_1"], bat["execute"])
+RULE = EN("/Script/Engine.EAttachmentRule")
+att = member_call(ACTOR, "K2_AttachToComponent", X3 + 1600, Y3 + 250, fly(X3 + 1450, Y3 + 450), "parent to the left hand", [
+    ("Parent", "object", dict(sub=SC_)), ("SocketName", "name", dict(extra=f'DefaultValue="{HAND}",')),
+    ("LocationRule", "byte", dict(sub=RULE, extra='DefaultValue="SnapToTarget",')),
+    ("RotationRule", "byte", dict(sub=RULE, extra='DefaultValue="KeepWorld",')),
+    ("ScaleRule", "byte", dict(sub=RULE, extra='DefaultValue="KeepWorld",')),
+    B("bWeldSimulatedBodies"), RB])
+g.link(mesh, att["Parent"])
+g.link(bat["then"], att["execute"])
+hrel = vop("Subtract_VectorVector", X3 + 1300, Y3 + 1100, hand, cl_)
 pr = []
 for k, (var, axis) in enumerate((("GrabFwd", cf_), ("GrabRight", cr_), ("GrabUp", cu_))):
-    pr.append(set_from(var, "real", X3 + 1600 + 300 * k, Y3 + 250, vop("Dot_VectorVector", X3 + 1500, Y3 + 800 + 100 * k, hrel, axis, ret_sub="real"),
-                       "camera space" if k == 0 else "", subcat="double"))
-pr.append(set_from("FovS", "real", X3 + 2500, Y3 + 250, s_eff, "squeeze", subcat="double"))
+    pr.append(set_from(var, "real", X3 + 1900 + 300 * k, Y3 + 250, vop("Dot_VectorVector", X3 + 1500, Y3 + 1200 + 100 * k, hrel, axis, ret_sub="real"),
+                       "hand as seen, camera axes" if k == 0 else "", subcat="double"))
+pr.append(set_from("FovS", "real", X3 + 2800, Y3 + 250, s_eff, "squeeze", subcat="double"))
 pr.append(self_set("FlyAttached", "bool", X3 + 3100, Y3 + 250, "", default="true"))
-chain(*pr)
-g.link(bat["then"], pr[0]["execute"])
-pocket = b_and(X3 + 900, Y3 + 800, d_op("GreaterEqual_DoubleDouble", X3 + 700, Y3 + 750, alpha, b_const="1.0", ret=RB),
-               d_op("GreaterEqual_DoubleDouble", X3 + 700, Y3 + 850, montage_time_since_reach(X3 + 500, Y3 + 850),
-                    self_get("PocketTime", "real", X3 + 500, Y3 + 1000, subcat="double"), ret=RB))
+chain(att, *pr)
+pocket = d_op("GreaterEqual_DoubleDouble", X3 + 700, Y3 + 850, montage_time_since_reach(X3 + 500, Y3 + 850),
+              self_get("PocketTime", "real", X3 + 500, Y3 + 1000, subcat="double"), ret=RB)
 stale = d_op("Greater_DoubleDouble", X3 + 700, Y3 + 1050, el, b_const="3.0", ret=RB)
 bp = branch(X3 + 1250, Y3 + 600, "pocketed? (or stuck for 3 s)", b_or(X3 + 1050, Y3 + 900, pocket, stale))
 g.link(sq3["then_2"], bp["execute"])
@@ -984,7 +1039,22 @@ X4, Y4 = 1200, 7600
 g.box("EdGraphNode_Comment_905", X4 - 80, Y4 - 200, 2600, 1100, "Reach cut short? Put the left hand back on the weapon")
 br4 = branch(X4, Y4, "our reach ended?", b_and(X4 - 100, Y4 + 250, self_get("Reaching", "bool", X4 - 300, Y4 + 200),
                                                 b_not(X4 - 300, Y4 + 300, grab_active(X4 - 500, Y4 + 300))))
-g.link(sq["then_6"], br4["execute"])
+sq6 = sequence(X4 - 400, Y4 - 400, "end steps", 2)
+g.link(sq["then_6"], sq6["execute"])
+g.link(sq6["then_1"], br4["execute"])
+_pos = member_pure(ANIMI, "Montage_GetPosition", X4 - 300, Y4 - 600, anim, [("Montage", "object", dict(sub=MONT)), ("ReturnValue", "real", dict(subcat="float", out=True))])
+_pos.pins["Montage"].const = True
+g.link(self_get("GrabMontage", "object", X4 - 500, Y4 - 600, sub=MONT), _pos["Montage"])
+seg_done = d_op("GreaterEqual_DoubleDouble", X4 - 100, Y4 - 600, _pos["ReturnValue"],
+                d_op("Add_DoubleDouble", X4 - 300, Y4 - 500, self_get("SegStart", "real", X4 - 500, Y4 - 500, subcat="double"), b_const="1.5"), ret=RB)
+bstop = branch(X4, Y4 - 700, "empty-hands segment over? stop the table there",
+               b_and(X4 - 100, Y4 - 800, self_get("GrabBH", "bool", X4 - 300, Y4 - 850), grab_active(X4 - 300, Y4 - 950), seg_done))
+g.link(sq6["then_0"], bstop["execute"])
+mst = member_call(ANIMI, "Montage_Stop", X4 + 300, Y4 - 700, anim, "blend out", [
+    ("InBlendOutTime", "real", dict(subcat="float", extra='DefaultValue="0.300000",')), ("Montage", "object", dict(sub=MONT))])
+mst.pins["Montage"].const = True
+g.link(self_get("GrabMontage", "object", X4 + 100, Y4 - 550, sub=MONT), mst["Montage"])
+g.link(bstop["then"], mst["execute"])
 sr4 = self_set("Reaching", "bool", X4 + 300, Y4, "", default="false")
 g.link(br4["then"], sr4["execute"])
 cut = d_op("Less_DoubleDouble", X4 + 300, Y4 + 400, montage_time_since_reach(X4 + 100, Y4 + 400),

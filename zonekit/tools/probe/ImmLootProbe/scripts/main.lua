@@ -8,7 +8,7 @@
 local TAG = "[ImmLootProbe] "
 local FIELDS = { "NPickups", "NReaches", "NSkips", "SkipBits", "NFly", "NRecover", "Reaching", "ItemArmed",
                  "InvOpen", "LootKind", "Took", "NLootOpen", "NLootTook", "StartPW", "CurPW", "StartLW", "CurLW",
-                 "StartMoney", "CurMoney", "GrabFwd", "GrabRight", "GrabUp", "FovS", "TanFOVv", "PlayRate" }
+                 "StartMoney", "CurMoney", "GrabFwd", "GrabRight", "GrabUp", "FovS", "TanFOVv", "CamOff", "GrabBH", "SegStart", "PlayRate" }
 local actor = nil
 local pawn = nil
 local last_ticks, last_look = -1, ""
@@ -89,3 +89,20 @@ LoopAsync(200, function()
 end)
 
 log("loaded")
+
+-- build 7: while a reach runs, the hand bone's offset from jnt_camera (mesh frame) every 50 ms
+local t0 = nil
+LoopAsync(50, function()
+    ExecuteInGameThread(function()
+        if not actor or not actor:IsValid() then return end
+        local ok, reaching = pcall(function() return actor.Reaching end)
+        if ok and reaching then
+            local now = os.clock()
+            t0 = t0 or now
+            log(string.format("trace t=%.2f x=%s y=%s z=%s", now - t0, tostring(actor.TraceX), tostring(actor.TraceY), tostring(actor.TraceZ)))
+        else
+            t0 = nil
+        end
+    end)
+    return false
+end)

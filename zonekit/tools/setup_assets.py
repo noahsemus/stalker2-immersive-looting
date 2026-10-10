@@ -112,7 +112,7 @@ ACTOR_VARS = [
     ("Fly", unreal.Actor.static_class(), None), ("FlyFrom", "vector", None), ("FlyStart", "real", None),
     ("FlyDur", "real", 0.5), ("FlyAttached", "bool", None),
     # settings (montage seconds; real seconds = montage seconds / PlayRate)
-    ("PlayRate", "real", 1.15), ("GrabTime", "real", 0.569), ("PocketTime", "real", 0.80),
+    ("PlayRate", "real", 1.15), ("GrabTime", "real", 0.40), ("PocketTime", "real", 0.87),
     ("IKOnTime", "real", 1.179), ("SeenWindow", "real", 0.3),
     ("GrabMontage", unreal.AnimMontage.static_class(), None), ("PendingReach", "bool", None), ("PendingCopy", "bool", None),
     # loot window (corpse / stash)
@@ -126,7 +126,7 @@ ACTOR_VARS = [
     ("NPickups", "int", None), ("NReaches", "int", None), ("NSkips", "int", None), ("NRecover", "int", None),
     ("NFly", "int", None), ("SkipBits", "int", None), ("NLootOpen", "int", None), ("NLootTook", "int", None),
     ("NTicks", "int", None), ("GrabFwd", "real", None), ("GrabRight", "real", None), ("GrabUp", "real", None),
-    ("FovS", "real", None), ("TanFOVv", "real", None), ("FovOn", "real", None),
+    ("FovS", "real", None), ("TanFOVv", "real", None), ("FovOn", "real", None), ("CamOff", "real", None), ("TraceX", "real", None), ("TraceY", "real", None), ("TraceZ", "real", None), ("GrabBH", "bool", None), ("SegStart", "real", None),
 ]
 
 try:
