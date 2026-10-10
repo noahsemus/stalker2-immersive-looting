@@ -336,7 +336,7 @@ def load_imc(x, y, name, prev_then, comment):
                        [f"TargetType={IMC_CLS}"]))
     c.pin("CastFailed", "exec", out=True)
     c.pin("Object", "object", sub=OBJ)
-    c.pin("AsInputMappingContext", "object", sub=IMC_CLS, out=True)
+    c.pin("AsInput Mapping Context", "object", sub=IMC_CLS, out=True)
     c.pin("bSuccess", "bool", out=True)
     g.link(ld["ReturnValue"], c["Object"])
     g.link(ld["then"], c["execute"])
@@ -392,7 +392,7 @@ si0 = self_set("Init", "bool", X0 + 650, Y0, "", default="true")
 g.link(br0["then"], stg["execute"])
 g.link(stg["then"], si0["execute"])
 imc_c = load_imc(X0 + 950, Y0, "IMC_Inventory", si0["then"], "inventory / loot input context (game path)")
-sim0 = set_from("InvIMC", "object", X0 + 1700, Y0, imc_c["AsInputMappingContext"], "remember it", sub=IMC_CLS)
+sim0 = set_from("InvIMC", "object", X0 + 1700, Y0, imc_c["AsInput Mapping Context"], "remember it", sub=IMC_CLS)
 g.link(imc_c["then"], sim0["execute"])
 
 # ---- 1: picked up? -> pending reach with a copy ----
@@ -830,15 +830,15 @@ sq3 = sequence(X3 + 300, Y3, "fly steps", 2)
 g.link(bf["then"], sq3["execute"])
 ba = branch(X3 + 600, Y3 - 100, "still on the way?", d_op("Less_DoubleDouble", X3 + 400, Y3 + 150, alpha, b_const="1.0", ret=RB))
 g.link(sq3["then_0"], ba["execute"])
-ve = kml("VEase", X3 + 650, Y3 + 300, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)),
+# ease-in (alpha^2) by hand: KismetMathLibrary's Ease / VEase are BlueprintInternalUseOnly (only the K2Node_EaseFunction
+# node may call them; a pasted CallFunction to VEase is dropped)
+a2 = d_op("Multiply_DoubleDouble", X3 + 450, Y3 + 450, alpha, alpha)
+ve = kml("VLerp", X3 + 650, Y3 + 300, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)),
                                        ("Alpha", "real", dict(subcat="float", extra='DefaultValue="0.0",')),
-                                       ("EasingFunc", "byte", dict(sub=EN("/Script/Engine.EEasingFunc"), extra='DefaultValue="EaseIn",')),
-                                       ("BlendExp", "real", dict(subcat="float", extra='DefaultValue="2.000000",')),
-                                       ("Steps", "int", dict(extra='DefaultValue="2",')),
                                        ("ReturnValue", "struct", dict(sub=VEC, out=True))])
 g.link(self_get("FlyFrom", "struct", X3 + 450, Y3 + 300, sub=VEC), ve["A"])
 g.link(hand, ve["B"])
-g.link(alpha, ve["Alpha"])
+g.link(a2, ve["Alpha"])
 sl = member_call(ACTOR, "K2_SetActorLocation", X3 + 950, Y3 - 100, fly(X3 + 800, Y3 + 100), "toward the hand", [
     ("NewLocation", "struct", dict(sub=VEC)), B("bSweep"),
     ("SweepHitResult", "struct", dict(sub=HIT, out=True)), B("bTeleport", "true"), RB])
