@@ -8,7 +8,7 @@
 local TAG = "[ImmLootProbe] "
 local FIELDS = { "NPickups", "NReaches", "NSkips", "SkipBits", "NFly", "NRecover", "Reaching", "ItemArmed",
                  "InvOpen", "LootKind", "Took", "NLootOpen", "NLootTook", "StartPW", "CurPW", "StartLW", "CurLW",
-                 "StartMoney", "CurMoney", "GrabFwd", "GrabRight", "GrabUp", "FovS", "TanFOVv", "CamOff", "GrabBH", "SegStart", "ItemElev", "ItemDist", "ItemAzim", "SpX", "SpY", "SpZ", "ShX", "ShY", "ShZ", "ElX", "ElY", "ElZ", "GrabFwd", "TouchState", "TouchAdded", "Lootable", "KeysSynced", "NTouch", "LootReach", "LootPaused", "LootReverse", "TrBusy", "TrLH", "TrPos", "TouchHX", "TouchHY", "TouchHZ", "PlayRate" }
+                 "StartMoney", "CurMoney", "GrabFwd", "GrabRight", "GrabUp", "FovS", "TanFOVv", "CamOff", "GrabBH", "SegStart", "ItemElev", "ItemDist", "ItemAzim", "SpX", "SpY", "SpZ", "ShX", "ShY", "ShZ", "ElX", "ElY", "ElZ", "GrabFwd", "TouchState", "TouchAdded", "Lootable", "KeysSynced", "NTouch", "LootReach", "LootPaused", "LootReverse", "TrBusy", "TrLH", "TrPos", "TouchHX", "TouchHY", "TouchHZ", "CamPitch", "TouchBin", "PlayRate" }
 local actor = nil
 local pawn = nil
 local last_ticks, last_look = -1, ""
@@ -53,7 +53,7 @@ LoopAsync(200, function()
             if last[f] ~= v then changed = true; last[f] = v end
             parts[#parts + 1] = f .. "=" .. v
         end
-        for _, f in ipairs({ "Item", "ItemMesh", "ItemSkel", "Fly", "LootTarget", "PWText", "LWText", "InvView", "InvIMC" }) do
+        for _, f in ipairs({ "Item", "ItemMesh", "ItemSkel", "Fly", "LootTarget", "LootComp", "PWText", "LWText", "InvView", "InvIMC" }) do
             local v = obj_name(actor[f])
             if last[f] ~= v then changed = true; last[f] = v end
             parts[#parts + 1] = f .. "=" .. v

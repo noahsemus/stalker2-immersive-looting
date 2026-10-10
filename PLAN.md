@@ -108,7 +108,9 @@ left-hand grab plays once (no flying copy: there is no item in the world). The g
 | 4 | sprinting / aiming / reloading / flashlight toggling | pick up | no reach, vanilla pickup, nothing breaks |
 | 5 | several items in quick succession | spam F | one reach per pickup or a restart, never a queue, hand ends on the grip |
 | 6 | artifact, mutant parts | loot | vanilla behaviour unchanged |
-| 6b | corpse, stash | open, take one item / Take All / take nothing, close | grab plays once after closing if something was taken; nothing if not |
+| 6b | corpse, stash (rifle, pistol, bare hands) | press F: touch, window; take one item / Take All / take nothing, close | hand reaches toward the body / stash BEFORE the window, holds; on close it returns to the grip (armed) or rest (bare hands); never stuck |
+| 6c | corpse | hold F (the game's drag), walk away mid-touch, open the backpack instead | drag still works; no stuck hand; window never opening = hand comes back within ~1 s |
+| 6d | mutant corpse, dead body without a pelvis bone | touch | hand goes toward the body (bounds centre), nothing floats in the air |
 | 7 | gamepad and rebound interact key | pick up | same as 1 |
 | 8 | with Player Gestures, ImmersiveCampfires, ImmersiveDialogue | stances, seated, dialogue | no conflict |
 | 9 | save / load right after a pickup, death during a reach | | no stuck hand, no lost item |

@@ -563,7 +563,11 @@ inreach = b_and(X1 + 2050, Y1 + 420, grab_active(X1 + 1850, Y1 + 400), early)
 bm = branch(X1 + 2150, Y1 + 150, "a reach already before its pocketing frame? (then the new item joins it)", inreach)
 g.link(sqr["then_1"], bm["execute"])
 GRAB_SEQ_BH = "/ImmersiveLooting/Runtime/AS_ImmLoot_GrabBH.AS_ImmLoot_GrabBH"
-GRAB_SEQ_AR = "/ImmersiveLooting/Runtime/AS_ImmLoot_GrabAR.AS_ImmLoot_GrabAR"   # v0.2: same table, weapon in hand (corpse / stash touch)
+GRAB_SEQ_AR = "/ImmersiveLooting/Runtime/AS_ImmLoot_GrabAR.AS_ImmLoot_GrabAR"   # v0.2 table, weapon in hand: never showed over a rifle (unused)
+TOUCH_SEQS = [f"/ImmersiveLooting/Runtime/AS_ImmLoot_Touch{i}.AS_ImmLoot_Touch{i}" for i in range(25)]   # 2026-10-10: corpse / stash
+# touch, weapon in hand (make_grab_seq build_touch): the hand reaches toward the body's / stash's centre. With a weapon the
+# arm rig follows the view (build d trace), so the centre's direction in VIEW axes picks the asset: elevation -45..+15 x
+# azimuth -30..+30, 15 deg bins, index ie * 5 + ia, stored in TouchAsset at the press
 IA_TOUCH = "/ImmersiveLooting/Input/IA_ImmLootInteract.IA_ImmLootInteract"
 IMC_TOUCH = "/ImmersiveLooting/Input/IMC_ImmLoot.IMC_ImmLoot"
 IA_INTERACT = "/Game/_Stalker_2/data/input/InputActions/Delayable/IA_Interact.IA_Interact"   # build 8: empty hands (make_grab_seq)
@@ -659,16 +663,20 @@ _pv = [set_from(v, "real", X1 + 4000 + 300 * k, Y1 + 350, src_pin, "item seen fr
        for k, (v, src_pin) in enumerate((("ItemElev", _el["ReturnValue"]), ("ItemDist", _dist["ReturnValue"]), ("ItemAzim", _az["ReturnValue"])))]
 chain(sss0, *_pv)
 sss = {"execute": sss0["execute"], "then": _pv[-1]["then"]}
-blr = branch(X1 + 2600, Y1 - 300, "a corpse / stash touch? (rifle-stance reach table) else the item grab", self_get("LootReach", "bool", X1 + 2400, Y1 - 200))
+# 2026-10-10: a corpse / stash touch with a weapon plays AS_ImmLoot_Touch, the same asset form as the rifle grab (a
+# short copy of the vanilla grab played from 0), which shows over a rifle where the 180 s reach table never did. The
+# hand goes fully out toward the ground ahead, is held at 0.6 s while the window is open, then comes straight back.
+blr = branch(X1 + 2600, Y1 - 300, "a corpse / stash touch? (hand fully out) else the item grab", self_get("LootReach", "bool", X1 + 2400, Y1 - 200))
 g.link(bst["then"], blr["execute"])
 g.link(blr["else"], mp["execute"])
-mpa = play_grab(X1 + 2750, Y1 - 450, GRAB_SEQ_AR, "left-hand touch, armed (segment for the target)")
-g.link(seg_start, mpa["InTimeToStartMontageAt"])
-g.link(blr["then"], mpa["execute"])
-sgm_c = set_from("GrabMontage", "object", X1 + 3100, Y1 - 450, mpa["ReturnValue"], "our montage", sub=MONT)
-ses_c = self_set("GrabBH", "bool", X1 + 3400, Y1 - 450, "", default="false")
-ses_c2 = set_from("SegStart", "real", X1 + 3700, Y1 - 450, seg_start, "segment start", subcat="double")
-chain(mpa, sgm_c, ses_c, ses_c2)
+mpt = play_grab(X1 + 2750, Y1 - 450, TOUCH_SEQS[12], "left-hand touch, armed: hand out toward the body / stash (asset picked at the press)")
+mpt.pins["Asset"].extra = ""
+g.link(self_get("TouchAsset", "object", X1 + 2550, Y1 - 300, sub=ANIMSEQB), mpt["Asset"])
+g.link(blr["then"], mpt["execute"])
+sgm_t = set_from("GrabMontage", "object", X1 + 3100, Y1 - 450, mpt["ReturnValue"], "our montage", sub=MONT)
+ses_t = self_set("GrabBH", "bool", X1 + 3400, Y1 - 450, "", default="false")
+ses_t2 = self_set("SegStart", "real", X1 + 3700, Y1 - 450, "", default="0.0", subcat="double")
+chain(mpt, sgm_t, ses_t, ses_t2)
 g.link(bst["else"], mpb["execute"])
 sgm_a = set_from("GrabMontage", "object", X1 + 3100, Y1 - 50, mp["ReturnValue"], "our montage", sub=MONT)
 sgm_b = set_from("GrabMontage", "object", X1 + 3100, Y1 + 350, mpb["ReturnValue"], "our montage", sub=MONT)
@@ -681,7 +689,7 @@ srs = set_from("ReachStart", "real", X1 + 2800, Y1 + 250, now(X1 + 2650, Y1 + 45
 srg = self_set("Reaching", "bool", X1 + 3100, Y1 + 250, "", default="true")
 nr = inc("NReaches", X1 + 3400, Y1 + 250, "count reaches")
 g.link(ses_a2["then"], srs["execute"])
-g.link(ses_c2["then"], srs["execute"])
+g.link(ses_t2["then"], srs["execute"])
 g.link(sss["then"], srs["execute"])
 chain(srs, srg, nr)
 #   c) the flying copy
@@ -971,7 +979,17 @@ g.link(d_op("Multiply_DoubleDouble", X5 + 1900, Y5 + 4400, self_get("PlayRate", 
 rv1 = self_set("LootPaused", "bool", X5 + 2400, Y5 + 3900, "", default="false")
 rv2 = self_set("LootReverse", "bool", X5 + 2700, Y5 + 3900, "returning", default="true")
 chain(mres, mrate, rv1, rv2)
-g.link(brv["then"], mres["execute"])
+bfw = branch(X5 + 1650, Y5 + 3700, "weapon in hand? (the rifle grab plays on: hand to the chest, back onto the grip)",
+             b_not(X5 + 1550, Y5 + 3600, self_get("GrabBH", "bool", X5 + 1350, Y5 + 3600)))
+g.link(brv["then"], bfw["execute"])
+g.link(bfw["else"], mres["execute"])
+mresf = member_call(ANIMI, "Montage_Resume", X5 + 1950, Y5 + 3600, anim, "go on (forward)", [("Montage", "object", dict(sub=MONT))])
+mresf.pins["Montage"].const = True
+g.link(gm(X5 + 1750, Y5 + 3500), mresf["Montage"])
+g.link(bfw["then"], mresf["execute"])
+chain(mresf, self_set("LootPaused", "bool", X5 + 2250, Y5 + 3600, "", default="false"),
+      self_set("LootReach", "bool", X5 + 2550, Y5 + 3600, "touch over", default="false"),
+      self_set("TouchState", "int", X5 + 2850, Y5 + 3600, "idle", default="0"))
 g.link(brv["else"], self_set("LootReach", "bool", X5 + 1800, Y5 + 4200, "nothing out", default="false")["execute"])
 
 
@@ -1192,7 +1210,16 @@ rv1b = self_set("LootPaused", "bool", XT + 1600, YT + 2700, "", default="false")
 rv2b = self_set("LootReverse", "bool", XT + 1900, YT + 2700, "returning", default="true")
 ts4 = self_set("TouchState", "int", XT + 2200, YT + 2700, "", default="0")
 chain(mres2, mrate2, rv1b, rv2b, ts4)
-g.link(bt2b["then"], mres2["execute"])
+bfw2 = branch(XT + 850, YT + 2500, "weapon in hand? play on forward", b_not(XT + 750, YT + 2400, self_get("GrabBH", "bool", XT + 550, YT + 2400)))
+g.link(bt2b["then"], bfw2["execute"])
+g.link(bfw2["else"], mres2["execute"])
+mresf2 = member_call(ANIMI, "Montage_Resume", XT + 1150, YT + 2450, anim, "go on (forward)", [("Montage", "object", dict(sub=MONT))])
+mresf2.pins["Montage"].const = True
+g.link(gm2(XT + 950, YT + 2350), mresf2["Montage"])
+g.link(bfw2["then"], mresf2["execute"])
+chain(mresf2, self_set("LootPaused", "bool", XT + 1450, YT + 2450, "", default="false"),
+      self_set("LootReach", "bool", XT + 1750, YT + 2450, "touch over", default="false"),
+      self_set("TouchState", "int", XT + 2050, YT + 2450, "idle", default="0"))
 g.link(bt2b["else"], ts4["execute"])
 
 #   our interact action pressed (only arrives while our context is on = looking at a corpse / stash)
@@ -1223,6 +1250,73 @@ tr = [set_from("ItemCenter", "struct", XT + 500, YT + 3700, _tgb["Origin"], "rea
       self_set("TouchState", "int", XT + 2600, YT + 3700, "reaching", default="2")]
 chain(*tr)
 g.link(bpress["then"], tr[0]["execute"])
+#     a body: its pelvis bone (the mesh component's bounds stay at the standing height: build e aimed 21 deg UP at a
+#     corpse), else (stash, mutant without that bone) the bounds centre set above
+for q_ in list(tr[0]["then"].links):
+    tr[0]["then"].links.remove(q_); q_.links.remove(tr[0]["then"])
+cskm = exec_pins(Node(g, BG + "K2Node_DynamicCast", nm("K2Node_DynamicCast"), XT + 650, YT + 4100, "a body (skeletal mesh)?",
+                      ["TargetType=\"/Script/CoreUObject.Class'/Script/Engine.SkeletalMeshComponent'\""]))
+cskm.pin("CastFailed", "exec", out=True)
+cskm.pin("Object", "object", sub=OBJ)
+cskm.pin("AsSkeletal Mesh Component", "object", sub=SKC, out=True)
+cskm.pin("bSuccess", "bool", out=True)
+g.link(lcomp(XT + 450, YT + 4300), cskm["Object"])
+g.link(tr[0]["then"], cskm["execute"])
+bhip = branch(XT + 950, YT + 4100, "has a pelvis bone?",
+              member_pure(SC_, "DoesSocketExist", XT + 800, YT + 4300, cskm["AsSkeletal Mesh Component"],
+                          [("InSocketName", "name", dict(extra='DefaultValue="jnt_hips",')), RB])["ReturnValue"])
+g.link(cskm["then"], bhip["execute"])
+ship = set_from("ItemCenter", "struct", XT + 1250, YT + 4100,
+                member_pure(SC_, "GetSocketLocation", XT + 1050, YT + 4300, cskm["AsSkeletal Mesh Component"],
+                            [("InSocketName", "name", dict(extra='DefaultValue="jnt_hips",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"],
+                "reach target = the pelvis", sub=VEC)
+g.link(bhip["then"], ship["execute"])
+g.link(ship["then"], tr[1]["execute"])
+g.link(bhip["else"], tr[1]["execute"])
+g.link(cskm["CastFailed"], tr[1]["execute"])
+#     the body's / stash's centre seen from the camera, in VIEW axes (with a weapon the arm rig follows the view):
+#     its direction picks the touch asset
+_tcm = lib_pure(GS, "GameplayStatics", "GetPlayerCameraManager", XT + 2300, YT + 4300,
+                [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)),
+                 ("PlayerIndex", "int", dict(extra='DefaultValue="0",')), ("ReturnValue", "object", dict(sub=PCM, out=True))])["ReturnValue"]
+_tcl = member_pure(PCM, "GetCameraLocation", XT + 2500, YT + 4200, _tcm, [("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+_tcr = member_pure(PCM, "GetCameraRotation", XT + 2500, YT + 4300, _tcm, [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"]
+_tax = []
+for k_, fn_ in enumerate(("GetForwardVector", "GetRightVector", "GetUpVector")):
+    n_ = kml(fn_, XT + 2750, YT + 4300 + 100 * k_, [("InRot", "struct", dict(sub=ROT)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+    g.link(_tcr, n_["InRot"])
+    _tax.append(n_["ReturnValue"])
+_trel = vop("Subtract_VectorVector", XT + 2750, YT + 4100, self_get("ItemCenter", "struct", XT + 2550, YT + 4100, sub=VEC), _tcl)
+_tah = vop("Dot_VectorVector", XT + 3000, YT + 4100, _trel, _tax[0], ret_sub="real")
+_trt = vop("Dot_VectorVector", XT + 3000, YT + 4200, _trel, _tax[1], ret_sub="real")
+_tup = vop("Dot_VectorVector", XT + 3000, YT + 4300, _trel, _tax[2], ret_sub="real")
+_tel = kml("DegAtan2", XT + 3300, YT + 4100, [D("Y"), D("X"), RD])
+g.link(_tup, _tel["Y"])
+g.link(_tah, _tel["X"])
+_taz = kml("DegAtan2", XT + 3300, YT + 4300, [D("Y"), D("X"), RD])
+g.link(_trt, _taz["Y"])
+g.link(_tah, _taz["X"])
+_tie = _bin(XT + 3500, YT + 4100, _tel["ReturnValue"], "45.0", "15.0", 4)
+_tia = _bin(XT + 3500, YT + 4300, _taz["ReturnValue"], "30.0", "15.0", 4)
+_tix = _imad(XT + 4000, YT + 4200, _tie, 5, _tia)
+tel = set_from("ItemElev", "real", XT + 2900, YT + 3700, _tel["ReturnValue"], "centre seen from the camera, view axes (probe)", subcat="double")
+taz = set_from("ItemAzim", "real", XT + 3200, YT + 3700, _taz["ReturnValue"], "", subcat="double")
+tdi = set_from("ItemDist", "real", XT + 3350, YT + 3700, kml("VSize", XT + 3200, YT + 4000, [("A", "struct", dict(sub=VEC)), RD], )["ReturnValue"], "", subcat="double")
+g.link(_trel, [n_ for n_ in g.nodes if n_.name == tdi.pins["ItemDist"].links[0].node.name][0]["A"])
+tbx = set_from("TouchBin", "int", XT + 3500, YT + 3700, _tix, "its bin: elevation row x 5 + azimuth column")
+chain(tel, taz, tdi, tbx)
+g.link(tr[-1]["then"], tel["execute"])
+prev = tbx
+for k in range(25):
+    bk = branch(XT + 3800 + 600 * k, YT + 3700, f"bin {k}: elevation {-45 + 15 * (k // 5):+d}, azimuth {-30 + 15 * (k % 5):+d}?",
+                int_eq(XT + 3700 + 600 * k, YT + 3900, self_get("TouchBin", "int", XT + 3500 + 600 * k, YT + 3900), k))
+    g.link(prev["then" if k == 0 else "else"], bk["execute"])
+    sa = self_set("TouchAsset", "object", XT + 4100 + 600 * k, YT + 3700, "the touch toward it", sub=ANIMSEQB)
+    sa.pins["TouchAsset"].extra = f'DefaultObject="{TOUCH_SEQS[k]}",'
+    g.link(bk["then"], sa["execute"])
+    if k == 24:
+        g.link(bk["else"], sa["execute"])
+    prev = bk
 
 #     not idle or nothing to reach for: just pass the press on to the game
 rmc3 = ctx_call(XT + 500, YT + 4500, "RemoveMappingContext", "our keys off", False)
@@ -1263,6 +1357,10 @@ for k, (var, fn) in enumerate((("TouchHX", "GetForwardVector"), ("TouchHY", "Get
     g.link(_cr4, ax["InRot"])
     tpr.append(set_from(var, "real", XT + 5300 + 300 * k, YT + 2500, vop("Dot_VectorVector", XT + 4200, YT + 3400 + 100 * k, _hr4, ax["ReturnValue"], ret_sub="real"),
                         "hand in view axes (probe)" if k == 0 else "", subcat="double"))
+_cbr4 = kml("BreakRotator", XT + 4000, YT + 3700, [("InRot", "struct", dict(sub=ROT)), ("Roll", "real", dict(subcat="float", out=True)),
+                                                  ("Pitch", "real", dict(subcat="float", out=True)), ("Yaw", "real", dict(subcat="float", out=True))])
+g.link(_cr4, _cbr4["InRot"])
+tpr.append(set_from("CamPitch", "real", XT + 6200, YT + 2500, _cbr4["Pitch"], "view pitch (probe)", subcat="double"))
 chain(*tpr)
 g.link(sqt["then_4"], tpr[0]["execute"])
 
@@ -1506,7 +1604,11 @@ bk1 = self_set("LootReverse", "bool", X4 + 1700, Y4 - 900, "", default="false")
 bk2 = self_set("LootReach", "bool", X4 + 2000, Y4 - 900, "", default="false")
 bk3 = self_set("TouchState", "int", X4 + 2300, Y4 - 900, "idle", default="0")
 chain(mst2, bk1, bk2, bk3)
-# (the extra "hand back on the item" animation is no longer played: the touch itself ends on the grip)
+# armed: the game's own "left hand back on the item" (its notify switches the left-hand IK back on: the hand re-grips)
+bgr = branch(X4 + 2600, Y4 - 900, "weapon in hand? put the left hand back on it", obj_q("HasItemInMainHand", X4 + 2400, Y4 - 700, as_pc))
+g.link(bk3["then"], bgr["execute"])
+mrg = montage_play(X4 + 2900, Y4 - 900, anim, RETURN, None, "hand back on the grip")
+g.link(bgr["then"], mrg["execute"])
 
 bmst = branch(X4 + 1250, Y4 - 1000, "still ours to stop?", grab_active(X4 + 1050, Y4 - 1050))
 g.link(bback["then"], bmst["execute"])

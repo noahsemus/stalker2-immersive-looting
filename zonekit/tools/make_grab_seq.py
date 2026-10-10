@@ -432,24 +432,159 @@ def build_bh_reach_table(src, rifle_seq, tgt_rot, nkeys, base_path=None, name=No
             n.set_editor_property("hand_to_apply", hand_enum)
             n.set_editor_property("blend_time", 0.05)
     if name.endswith("AR"):
-        # notifies as in the working rifle grab (left-hand IK off at 0.036, back on at 1.1786) plus "on" at 0.01, so the
-        # hand re-grips when the touch plays BACK to the segment start after the loot window closes; no curves (the
-        # working rifle grab has none)
-        if "left_hand_curve" in [str(c) for c in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]:
-            AL.remove_curve(seq, "left_hand_curve", False)
+        # Built like the game's own left-hand gestures over a rifle (MG_fp_ar_flashlight): the curve left_hand_curve
+        # 0 -> 1 in 0.17 s, held, back to 0, and "left-hand IK off" at the start. Rifle trace (2026-10-10): during the
+        # touch the hand bone did not move at all (41, 3, -13 in view axes the whole time) although our montage was
+        # playing in LeftHand: without the curve the slot's pose is not used over a rifle.
+        cname = "left_hand_curve"
+        if cname in [str(c) for c in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]:
+            AL.remove_curve(seq, cname, False)
+        AL.add_curve(seq, cname, unreal.RawCurveTrackTypes.RCT_FLOAT, False)
+        times, vals = [], []
+        for i in range(nseg):
+            t0 = i * SEG2 / 30.0
+            for f, v in ((0, 0.0), (5, 1.0), (34, 1.0), (39, 0.0), (SEG2 - 1, 0.0)):
+                times.append(t0 + f / 30.0)
+                vals.append(v)
+        AL.add_float_curve_keys(seq, cname, times, vals)
         for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
             AL.remove_animation_notify_events_by_track(seq, tn)
         if track not in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
             AL.add_animation_notify_track(seq, track, unreal.LinearColor(0.2, 0.8, 0.2, 1.0))
         for i in range(nseg):
-            for t, end in ((0.01, 1.0), (0.035907, None), (1.17855, 1.0)):
-                n = AL.add_animation_notify_event(seq, track, i * SEG2 / 30.0 + t, hik)
-                n.set_editor_property("hand_to_apply", hand_enum)
-                if end is not None:
-                    n.set_editor_property("end_value", end)
-        out.append(f"{name}: notifies per segment: on 0.01, off 0.036, on 1.179")
+            n = AL.add_animation_notify_event(seq, track, i * SEG2 / 30.0 + 0.0085, hik)
+            n.set_editor_property("hand_to_apply", hand_enum)
+            n.set_editor_property("blend_time", 0.3)
+        out.append(f"{name}: left_hand_curve ({len(times)} keys) + IK off at each segment start (like the flashlight)")
     out.append(f"{name} reach table (base {base_path.rsplit('/', 1)[1]}): {len(ELEVS)} elevations x {len(DISTS)} distances x {len(AZIMS)} azimuths x {SEG2} frames, len {seq.get_play_length():.2f} s, "
                f"notifies {len(AL.get_animation_notify_events(seq))}, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
+
+
+NAME_TOUCH = "AS_ImmLoot_Touch"
+TOUCH_ELEVS = [-45, -30, -15, 0, 15]   # direction of the body's / stash's centre seen from the camera, in VIEW axes
+TOUCH_AZIMS = [-30, -15, 0, 15, 30]    # (= the camera-bone frame of the sequence with a weapon in hand); asset
+                                       # AS_ImmLoot_Touch<ie * 5 + ia>, nearest bin, clamped
+# Where the hand bone lands in VIEW axes for a planned position relative to the camera bone (builds c, d, e: three
+# points): ahead + 8.4, right x 1.14 + 4.0, up x 1.15 + 2.0 (the sideways scale ~ the arms' FOV squeeze)
+TOUCH_MAP = ((1.0, 8.4), (1.14, 4.0), (1.15, 2.0))
+TOUCH_REACH = 0.95                     # of the arm length: fully out, not locked straight
+
+
+def build_touch(src, grab, path_h, path_q, nkeys):
+    """With a weapon in hand the whole arm rig follows the view (the weapon layer pitches jnt_spine_03 with the
+    look-vertical additive), so a hand position relative to the camera bone in the sequence IS its position in view
+    axes in game (builds c, d: planned (42.9,-10.4,-45.7) / (42.3,-7.5,-42.9) rel camera bone, measured
+    (51.6,-7.8,-50.6) / (50.7,-5.2,-48.0) in view axes whatever the view pitch, -48.6 deg in build d). Empty hands
+    differ (the bh layer leaves the arms in the body frame: the BH table bins by pitch). So: ONE asset, the hand on
+    the sight line as far as the arm reaches, 8 cm left of it (TOUCH_AZIM, minus the bias)."""
+    for ie, elev in enumerate(TOUCH_ELEVS):
+        for ia, az in enumerate(TOUCH_AZIMS):
+            build_touch_one(src, grab, path_h, path_q, nkeys, f"{NAME_TOUCH}{ie * len(TOUCH_AZIMS) + ia}", float(elev), float(az))
+
+
+def build_touch_one(src, grab, path_h, path_q, nkeys, name, TOUCH_ELEV, TOUCH_AZIM):
+    """2026-10-10, corpse / stash touch with a weapon: the same asset form as AS_ImmLoot_Grab (a copy of the vanilla
+    grab, only the left arm re-solved, played from 0), which shows over a rifle, where the 180 s reach table never did
+    (tester: "reaches a little, then stuck"; trace: the hand never left the grip). The hand goes from the grip straight
+    to a point TOUCH_DIST cm from the eye at TOUCH_ELEV / TOUCH_AZIM in the body frame (as far as the arm reaches) by
+    frame 12, holds to 20 (the Blueprint pauses it at 0.6 s while the loot window is open), and comes straight back to
+    the grip by frame 36, where the vanilla "left hand back on" IK notify takes over. Carries left_hand_curve like the
+    game's own left-hand gestures (MG_fp_ar_flashlight): rifles with an underbarrel idle (WeaponUnderbarrelIdleLayer,
+    weight LeftHandCurveValueInverse) replace the slot's left arm unless the curve is 1."""
+    cam, _ = cs(src, "jnt_camera", 0)
+    er, ar = math.radians(TOUCH_ELEV), math.radians(TOUCH_AZIM)
+    dirv_e = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
+    # the farthest point of the sight line the arm reaches (shoulder and arm length at the reach frame)
+    sh_p12, sh_q12 = cs(src, SHOULDER, 12)
+    a12, f12, h12 = local(src, ARM, 12), local(src, FORE, 12), local(src, HAND, 12)
+    A12 = add(sh_p12, qrot(sh_q12, a12[0]))
+    aq12 = qmul(sh_q12, a12[1]); E12 = add(A12, qrot(aq12, f12[0]))
+    H12 = add(E12, qrot(qmul(aq12, f12[1]), h12[0]))
+    reach = (norm(sub(E12, A12)) + norm(sub(H12, E12))) * TOUCH_REACH
+    # the landing point V = cam + dir * t (view axes); the plan P = cam + (V - cam - T) / S per axis (TOUCH_MAP);
+    # solve t so the planned hand is `reach` from the shoulder
+    inv = lambda v: tuple((v[i] - TOUCH_MAP[i][1]) / TOUCH_MAP[i][0] for i in range(3))
+    u = tuple(dirv_e[i] / TOUCH_MAP[i][0] for i in range(3))
+    c_ = sub(add(cam, inv((0.0, 0.0, 0.0))), A12)
+    qa, qb, qc = dot(u, u), 2 * dot(c_, u), dot(c_, c_) - reach * reach
+    disc = qb * qb - 4 * qa * qc
+    t = (-qb + math.sqrt(disc)) / (2 * qa) if disc > 0 else max(10.0, -qb / (2 * qa))
+    G = add(cam, inv(mul(dirv_e, t)))
+    qp = qmul((0.0, 0.0, math.sin(ar / 2), math.cos(ar / 2)), (0.0, -math.sin(er / 2), 0.0, math.cos(er / 2)))
+    GQ = qmul(qp, path_q[W_FULL + 1])
+    R, RQ = path_h[0], path_q[0]
+    out.append(f"TOUCH {name}: elev {TOUCH_ELEV:+.0f} az {TOUCH_AZIM:+.0f}, lands {t:.1f} cm from the eye, plan rel cam {tuple(round(x, 1) for x in sub(G, cam))}")
+    path = f"{DIR}/{name}"
+    if not EAL.does_asset_exist(path):
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, grab)
+    seq = unreal.load_asset(path)
+    keys = {b: ([], [], []) for b in (ARM, FORE, HAND)}
+    for k in range(nkeys):
+        if k <= 12:
+            bw, T0, Q0, T1, Q1 = smooth(k / 12), R, RQ, G, GQ
+        elif k <= 20:
+            bw, T0, Q0, T1, Q1 = 1.0, G, GQ, G, GQ
+        elif k <= 36:
+            bw, T0, Q0, T1, Q1 = smooth((k - 20) / 16), G, GQ, R, RQ
+        else:
+            bw, T0, Q0, T1, Q1 = 1.0, R, RQ, R, RQ
+        T = add(T0, mul(sub(T1, T0), bw))
+        hq = slerp(Q0, Q1, bw)
+        sh_p, sh_q = cs(src, SHOULDER, k)
+        a_l, f_l, h_l = local(src, ARM, k), local(src, FORE, k), local(src, HAND, k)
+        a_q = qmul(sh_q, a_l[1]); A = add(sh_p, qrot(sh_q, a_l[0]))
+        f_q = qmul(a_q, f_l[1]); E = add(A, qrot(a_q, f_l[0]))
+        H = add(E, qrot(f_q, h_l[0]))
+        l1, l2 = norm(sub(E, A)), norm(sub(H, E))
+        to_t = sub(T, A)
+        d = max(abs(l1 - l2) + 0.01, min((l1 + l2) * TOUCH_REACH, norm(to_t)))
+        dirv = unit(to_t)
+        a = (l1 * l1 - l2 * l2 + d * d) / (2 * d)
+        h = math.sqrt(max(l1 * l1 - a * a, 0.0))
+        hint = sub(E, A)
+        pole = sub(hint, mul(dirv, dot(hint, dirv)))
+        pole = unit(pole) if norm(pole) > 1e-6 else unit(cross(dirv, (0.0, 0.0, 1.0)))
+        E2 = add(A, add(mul(dirv, a), mul(pole, h)))
+        T2 = add(A, mul(dirv, d))
+        r1 = q_between(sub(E, A), sub(E2, A))
+        a_q2 = qmul(r1, a_q)
+        r2 = q_between(qrot(r1, sub(H, E)), sub(T2, E2))
+        f_q2 = qmul(r2, qmul(r1, f_q))
+        for b, lq, l in ((ARM, qmul(qinv(sh_q), a_q2), a_l), (FORE, qmul(qinv(a_q2), f_q2), f_l), (HAND, qmul(qinv(f_q2), hq), h_l)):
+            keys[b][0].append(unreal.Vector(*l[0]))
+            keys[b][1].append(unreal.Quat(*lq))
+            keys[b][2].append(unreal.Vector(*l[2]))
+        if k in (12,):
+            rel = sub(T2, cam)
+            out.append(f"TOUCH {name} k{k:02d} hand rel cam ({rel[0]:.1f},{rel[1]:.1f},{rel[2]:.1f}) reach {min(norm(to_t), (l1 + l2) * TOUCH_REACH):.1f}/{l1 + l2:.1f}")
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot touch", True)
+    for b, (pos, rot, scl) in keys.items():
+        ctrl.set_bone_track_keys(b, pos, rot, scl, True)
+    ctrl.close_bracket(True)
+    for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
+        AL.remove_animation_notify_events_by_track(seq, tn)
+    track = "ImmLoot"
+    if track not in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
+        AL.add_animation_notify_track(seq, track, unreal.LinearColor(0.2, 0.8, 0.2, 1.0))
+    hand = None
+    for e in AL.get_animation_notify_events(unreal.load_asset(MONT)):
+        if e.notify is not None and e.notify.get_class().get_name() == "AnimNotify_HandIK":
+            hand = e.notify.get_editor_property("hand_to_apply")
+    hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
+    for t, end in ((0.035907, None), (1.2, 1.0)):
+        new = AL.add_animation_notify_event(seq, track, t, hik)
+        new.set_editor_property("hand_to_apply", hand)
+        if end is not None:
+            new.set_editor_property("end_value", end)
+    cname = "left_hand_curve"
+    if cname in [str(c) for c in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]:
+        AL.remove_curve(seq, cname, False)
+    AL.add_curve(seq, cname, unreal.RawCurveTrackTypes.RCT_FLOAT, False)
+    AL.add_float_curve_keys(seq, cname, [0.0, 0.17, 1.1, 1.3, seq.get_play_length()], [0.0, 1.0, 1.0, 0.0, 0.0])
+    out.append(f"TOUCH {name}: len {seq.get_play_length():.2f} s, notifies {len(AL.get_animation_notify_events(seq))}, "
+               f"curves {[str(c) for c in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]}, "
+               f"saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
 
 
 try:
@@ -540,7 +675,19 @@ try:
             new.set_editor_property("end_value", end)
         out.append(f"HandIK at {t}: hand {new.get_editor_property('hand_to_apply')} end {new.get_editor_property('end_value')}")
     out.append(f"notifies now: {[str(x) for x in AL.get_animation_notify_event_names(seq)]}")
+    # 2026-10-10 f: left_hand_curve like the game's own left-hand gestures. On rifles with an underbarrel idle type the
+    # weapon layer replaces the left arm by the GripIdle pose weighted by 1 - this curve (WeaponUnderbarrelIdleLayer),
+    # so without it the grab plays but the hand stays on the grip (probe: hand at the grip through the whole montage
+    # while the curve-carrying touch assets moved it; tester: "loose items broken, the hand doesn't go fully out")
+    cname = "left_hand_curve"
+    if cname in [str(c) for c in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]:
+        AL.remove_curve(seq, cname, False)
+    AL.add_curve(seq, cname, unreal.RawCurveTrackTypes.RCT_FLOAT, False)
+    AL.add_float_curve_keys(seq, cname, [0.0, 0.17, 1.15, 1.4, seq.get_play_length()], [0.0, 1.0, 1.0, 0.0, 0.0])
+    out.append(f"curves: {[str(c) for c in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]}")
     out.append(f"saved: {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
+    if ARGS.get("TOUCH", "1") == "1":
+        build_touch(src, seq, path_h, path_q, nkeys)
     if ARGS.get("BH", "1") == "1":
         build_bh_reach_table(src, seq, tgt_rot, nkeys)   # build 12 (build_bh_table = checkpoint-b11)
     if ARGS.get("AR", "1") == "1":

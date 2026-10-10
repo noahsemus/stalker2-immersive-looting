@@ -40,6 +40,16 @@ harness on 2026-10-09.
   paks unchanged (`zonekit/builds/v0.1.0/`, GitHub pre-release). Unused `AM_ImmLoot_Grab` and the probe-only nodes
   are still in it (harmless). Nexus page not created yet.
 
+- 2026-10-10 rc-1.0.0 (Noah: "nice. new release candidate, tentative 1.0.0"; paks in `zonekit/builds/rc-1.0.0/`):
+  corpse / stash touch: our `IMC_ImmLoot` (the player's own interact keys, copied at runtime) swallows the interact
+  while a corpse / stash is in sight; the press plays the touch, holds the hand out at 0.6 s, then injects the game's
+  interact (window opens); on close the montage plays on (armed) or back (empty hands). Armed = 25 short assets
+  `AS_ImmLoot_Touch0..24` (hand toward the body's pelvis / stash centre, picked by its direction in view axes: with a
+  weapon the arm rig follows the view). `AS_ImmLoot_Grab` carries `left_hand_curve` (rifles with an underbarrel idle
+  pin the left hand otherwise). Noah confirmed with a rifle: body touch + return, loose items. Not tested yet: PLAN.md
+  matrix rows 2-9 (other weapons / bare-hands touch, detector, skips, spam, mutant corpses, take-all / nothing, hold-F
+  drag, gamepad / rebinds, coexistence, save/load).
+
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
   `CoreVariables.cfg:888-889`), visual in `MeshComponent`; pickup is instant and has no BP-visible "item added" event.
