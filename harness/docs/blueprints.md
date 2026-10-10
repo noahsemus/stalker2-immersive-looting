@@ -18,11 +18,21 @@ of 20-200 nodes (event graphs and anim graphs).
 4. They compile and save; read it back with `export_t3d.py` to verify (the export lists deleted-but-not-GC'd nodes
    too: trust each graph's `Nodes(n)` list).
 
-Call `graph.layout_tree()` before writing (the readable one; `layout()` is a plain column grid that the tester found
-harder to follow). It first clones every pure node that feeds more than one pin (pure nodes are evaluated per use
-anyway), then, per comment box, runs the exec chain left to right on a row with each exec node's data inputs as a
-small tree directly to its left; Branch / Sequence extra outputs open rows below; boxes are stacked and resized.
-Hand-placed coordinates only need to put each exec node inside the right box. Put `NodeComment` labels and comment boxes in the generated text (see `collaboration.md`). Keep mod-specific
+**Readable paste layout (tester-approved, Looting 2026-10-10: "best layout so far"):** call `graph.layout_tree()`
+before writing. It
+- clones every pure node that feeds more than one pin (pure nodes are re-evaluated per use anyway), so each data
+  input sits right next to the node that uses it;
+- inside each comment box runs the exec chain left to right on a row, each exec node's data inputs as a small tree
+  directly to its left; Branch false / Sequence then_1.. open rows below; chains longer than `max_row` wrap;
+- places the boxes along the flow: a box entered from another box sits to its right, boxes fed by one box are
+  stacked in the order of the pins that feed them, unfed boxes (events) start new groups; boxes are resized to fit.
+Generator rules that keep it readable: put every exec node inside a comment box (hand coordinates only choose the
+box; an input event and its chain need a box of their own), and never wire one exec output (a cast's `As X`, a
+spawn's `Return Value`) to many places: store it in a variable right after the exec node and read the variable at
+each use (`self_get` creates one getter per use), or the wires fan out across the whole graph. `layout()` (a plain
+column grid) is kept only for comparison; it was harder to follow.
+
+Put `NodeComment` labels and comment boxes in the generated text (see `collaboration.md`). Keep mod-specific
 generators in the mod's `zonekit/tools/gen_*.py`; lift reusable node builders into `bp_graph.py` here.
 
 - **Delegate binding pastes fine**: `K2Node_AddDelegate` (`DelegateReference=(MemberParent=<class>,MemberName=...)`,
