@@ -8,8 +8,10 @@
 local TAG = "[ImmLootProbe] "
 local FIELDS = { "NPickups", "NReaches", "NSkips", "SkipBits", "NFly", "NRecover", "Reaching", "ItemArmed",
                  "InvOpen", "LootKind", "Took", "NLootOpen", "NLootTook", "StartPW", "CurPW", "StartLW", "CurLW",
-                 "StartMoney", "CurMoney" }
+                 "StartMoney", "CurMoney", "GrabFwd", "GrabRight", "GrabUp", "FovS", "TanFOVv", "PlayRate" }
 local actor = nil
+local pawn = nil
+local last_ticks, last_look = -1, ""
 local last = {}
 local ticks = 0
 
@@ -39,6 +41,8 @@ LoopAsync(200, function()
                 if actor then
                     last = {}
                     log("actor found: " .. actor:GetFullName())
+                    pawn = FindFirstOf("BP_Stalker2Character_C")
+                    if pawn and pawn:IsValid() then log("pawn: " .. pawn:GetFullName()) else pawn = nil end
                 end
             end
             return
@@ -55,6 +59,31 @@ LoopAsync(200, function()
             parts[#parts + 1] = f .. "=" .. v
         end
         if changed then log(table.concat(parts, " ")) end
+        -- once a second: is the graph ticking, and what does the game say we look at
+        if ticks % 5 == 0 then
+            local look = ""
+            if not (pawn and pawn:IsValid()) and ticks % 25 == 0 then
+                pawn = FindFirstOf("BP_Stalker2Character_C")
+                if pawn and pawn:IsValid() then log("pawn: " .. pawn:GetFullName()) else pawn = nil end
+            end
+            if pawn and pawn:IsValid() then
+                local function q(fn)
+                    local ok, r = pcall(function() return pawn[fn](pawn) end)
+                    if not ok then return "err" end
+                    if type(r) == "userdata" then return obj_name(r) end
+                    return tostring(r)
+                end
+                look = "target=" .. q("GetInteractionTarget") .. " actor=" .. q("GetInteractedActor") ..
+                       " comp=" .. q("GetInteractedComponent") .. " inProgress=" .. q("IsInteractionInProgress") ..
+                       " backpack=" .. q("IsUsingBackpack")
+            end
+            local t = tonumber(tostring(actor.NTicks)) or -1
+            if look ~= last_look or ticks % 25 == 0 then
+                log("ticks/s=" .. tostring(last_ticks >= 0 and (t - last_ticks) or "?") .. " " .. look)
+                last_look = look
+            end
+            last_ticks = t
+        end
     end)
     return false
 end)

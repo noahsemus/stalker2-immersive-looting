@@ -112,19 +112,21 @@ ACTOR_VARS = [
     ("Fly", unreal.Actor.static_class(), None), ("FlyFrom", "vector", None), ("FlyStart", "real", None),
     ("FlyDur", "real", 0.5), ("FlyAttached", "bool", None),
     # settings (montage seconds; real seconds = montage seconds / PlayRate)
-    ("PlayRate", "real", 1.4), ("GrabTime", "real", 0.569), ("PocketTime", "real", 0.80),
+    ("PlayRate", "real", 1.15), ("GrabTime", "real", 0.569), ("PocketTime", "real", 0.80),
     ("IKOnTime", "real", 1.179), ("SeenWindow", "real", 0.3),
-    ("PendingReach", "bool", None), ("PendingCopy", "bool", None),
+    ("GrabMontage", unreal.AnimMontage.static_class(), None), ("PendingReach", "bool", None), ("PendingCopy", "bool", None),
     # loot window (corpse / stash)
     ("InvIMC", unreal.InputMappingContext.static_class(), None), ("InvOpen", "bool", None), ("OpenAt", "real", None),
     ("InvGoneAt", "real", -1.0), ("LootTarget", unreal.InteractionComponent.static_class(), None),
-    ("LootKind", "int", None), ("Took", "bool", None),
+    ("LootObj", unreal.Object.static_class(), None), ("LootKind", "int", None), ("Took", "bool", None),
     ("PWText", W_TEXT, None), ("LWText", W_TEXT, None), ("InvView", unreal.UserWidget.static_class(), None),
     ("StartPW", "real", None), ("StartLW", "real", None), ("StartMoney", "real", None),
     ("CurPW", "real", None), ("CurLW", "real", None), ("CurMoney", "real", None),
     # counters for the dev probe
     ("NPickups", "int", None), ("NReaches", "int", None), ("NSkips", "int", None), ("NRecover", "int", None),
     ("NFly", "int", None), ("SkipBits", "int", None), ("NLootOpen", "int", None), ("NLootTook", "int", None),
+    ("NTicks", "int", None), ("GrabFwd", "real", None), ("GrabRight", "real", None), ("GrabUp", "real", None),
+    ("FovS", "real", None), ("TanFOVv", "real", None), ("FovOn", "real", None),
 ]
 
 try:
