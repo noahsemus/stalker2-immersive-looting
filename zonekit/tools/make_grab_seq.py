@@ -335,6 +335,24 @@ def build_bh_reach_table(src, rifle_seq, tgt_rot, nkeys, base_path=None, name=No
     tracks = [str(t) for t in AL.get_animation_track_names(src)]
     cache = {k: {b: local(src, b, k) for b in tracks} for k in range(min(SEG2, nkeys))}
     nseg = len(ELEVS) * len(DISTS) * len(AZIMS)
+    fopen, _ = door_fingers(src)                                         # build 26: the use reach's open hand
+    frest = {b: local(base, b, 0)[1] for b in FINGERS}                   # the empty-handed rest
+    # build 26b (tester: "the hand doesn't clasp down to actually grab the item like it does when using an item"): the
+    # grip of a use animation that holds a bottle (water, frame 0: fingers curled 407 deg in all vs 250 for the vanilla
+    # grab), closing as the item arrives (it is pulled in at frames 12-16)
+    _gs = unreal.load_asset("/Game/_STALKER2/Animations/Player/AnimSequences/Items/Water/AS_fp_water_use")
+    fgrip = {b: local(_gs, b, 0)[1] for b in FINGERS}
+
+    def grasp(b, f):
+        if f <= 12:
+            return slerp(frest[b], fopen[b], finger_open(min(f, 10)))
+        if f <= 15:
+            return slerp(fopen[b], fgrip[b], smoother((f - 12) / 3))
+        if f <= 27:
+            return fgrip[b]
+        if f <= 39:
+            return slerp(fgrip[b], frest[b], smoother((f - 27) / 12))
+        return frest[b]
     keys = {b: ([], [], []) for b in tracks}
     for ie, elev in enumerate(ELEVS):
       for dd in DISTS:
@@ -386,6 +404,10 @@ def build_bh_reach_table(src, rifle_seq, tgt_rot, nkeys, base_path=None, name=No
                 r2 = q_between(qrot(r1, sub(H, E)), sub(T2, E2))
                 f_q2 = qmul(r2, qmul(r1, f_q))
                 solved = {ARM: qmul(qinv(sh_q), a_q2), FORE: qmul(qinv(a_q2), f_q2), HAND: qmul(qinv(f_q2), hq)}
+                if not name.endswith("AR"):
+                    for b in FINGERS:
+                        if b in c:
+                            solved[b] = grasp(b, f)
                 for b in tracks:
                     l = c[b]
                     keys[b][0].append(unreal.Vector(*l[0]))
@@ -496,9 +518,11 @@ def finger_w(mode, f):
     """(open weight, fist weight) at frame f. Push: open from 10, through the stroke, relaxed by 48. Pull: open by 12,
     a fist at the door 14-20, held through the pull, relaxed by 50."""
     ramp = lambda a, b: min(1.0, max(0.0, (f - a) / float(b - a)))
-    if mode == "push":
-        return (smooth(ramp(0, 10)) * (1.0 - smooth(ramp(30, 48))), 0.0)
-    return (smooth(ramp(0, 12)), smooth(ramp(14, 20)) * (1.0 - smooth(ramp(36, 50))))
+    if mode == "push":      # build 23: open by 6 (the stroke starts there)
+        return (smooth(ramp(0, 6)) * (1.0 - smooth(ramp(26, 40))), 0.0)
+    # build 23: the pull's schedule moved (at the handle by 8, held at 12, drawn back 12-26) and the fist came at 14-20,
+    # after the pull had started: open 0-5, a fist 5-9 (grabbing the handle), held through the pull, relaxed by 42
+    return (smooth(ramp(0, 5)), smooth(ramp(5, 9)) * (1.0 - smooth(ramp(28, 42))))
 
 
 def finger_q(rest_q, opens, fists, b, wo, wf):
@@ -531,6 +555,7 @@ def door_sched(mode, R, N, G, PB):
     return ((0, 8, R, G), (8, 12, G, G), (12, 26, G, PB), (26, 42, PB, R))   # pull: at the door by 8 (pause at 12)   # cm along the sight line
 
 
+DOOR_ROLL = 20.0                                                 # build 23: deg, the hand turned to the right
 DOOR_BH_ELEV, DOOR_BH_AZIM, DOOR_BH_DIST = -30.0, -30.0, 34.0   # the shoulder is ~19 cm behind the eye: 52 cm of arm reaches ~30 cm ahead   # body frame, from the eye
 
 
@@ -551,6 +576,8 @@ def build_bh_door(src, rifle_seq, tgt_rot, nkeys, mode, name):
     vf = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
     qp = qmul((0.0, 0.0, math.sin(ar / 2), math.cos(ar / 2)), (0.0, -math.sin(er / 2), 0.0, math.cos(er / 2)))
     GQ = slerp(qmul(qp, tgt_rot[13]), palm_q(src, vf), 0.5) if mode == "push" else qmul(qp, tgt_rot[13])
+    th = math.radians(-DOOR_ROLL) / 2                    # build 23: turned clockwise (as seen from behind) about the reach
+    GQ = qmul((vf[0] * math.sin(th), vf[1] * math.sin(th), vf[2] * math.sin(th), math.cos(th)), GQ)
     opens, fists = door_fingers(src)
     G = add(cam, mul(vf, DOOR_BH_DIST))
     N = sub(G, mul(vf, DOOR_PUSH_STROKE))
@@ -816,7 +843,7 @@ def finger_open(f):
     return 1.0 - smoother((f - 10) / 3)
 
 
-def build_use_table(src, tgt_rot, nkeys, base, name, template):
+def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, lower_deg=0.0, max_dist=None):
     sp_p, sp_q = cs(base, "jnt_spine_03", 0)
     cam, _ = cs(base, "jnt_camera", 0)
     cam_ar, _ = cs(src, "jnt_camera", 0)
@@ -845,6 +872,9 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template):
             qp = qmul((0.0, 0.0, math.sin(ar / 2), math.cos(ar / 2)), (0.0, -math.sin(er / 2), 0.0, math.cos(er / 2)))
             GQp = qmul(qp, GQ)
             item = add(cam, mul(dirv_e, dd))
+            if lower_deg or max_dist:          # build 30, the pickup table: where the use reach's hand ends
+                el2 = er - math.radians(lower_deg)
+                item = add(cam, mul((math.cos(el2) * math.cos(ar), math.cos(el2) * math.sin(ar), math.sin(el2)), min(dd, max_dist or dd)))
             vf = dirv_e
             vu = (-math.sin(er) * math.cos(ar), -math.sin(er) * math.sin(ar), math.cos(er))
             vr = cross(vu, vf)
@@ -893,9 +923,10 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template):
                     errs.append(norm(sub(add(T2, qrot(hq, wpn)), sub(item, bias))))
     nseg = len(ELEVS) * len(DISTS) * len(AZIMS)
     total = nseg * SEG2
-    path = f"{USE_DIR}/{name}"
+    out_dir = out_dir or USE_DIR
+    path = f"{out_dir}/{name}"
     if not EAL.does_asset_exist(path):
-        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, USE_DIR, template)
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, out_dir, template)
     seq = unreal.load_asset(path)
     ctrl = seq.get_editor_property("controller")
     ctrl.open_bracket("ImmLoot use reach (additive)", True)
@@ -925,6 +956,43 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template):
     out.append(f"USE {name} (base {base.get_name()}): tracks {[str(t) for t in AL.get_animation_track_names(seq)]}, len {seq.get_play_length():.1f} s, "
                f"additive {seq.get_editor_property('additive_anim_type')}, rest hand rel eye {tuple(round(x - c, 1) for x, c in zip(R, cam))}, "
                f"grab error max {max(errs):.1f} cm (beyond reach: arm out toward it), saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
+
+
+def build_pick_pose():
+    """build 30: the vodka use animation's first frame as a 2-frame pose, with jnt_camera and jnt_root from the
+    empty-handed idle (the held use animation moved the camera: jnt_camera is a child of the root)."""
+    vod = unreal.load_asset(USE_ROOT + "Vodka/AS_fp_vodka_use")
+    idle = unreal.load_asset(BASE_BH)
+    name = "AS_ImmLoot_PickPose"
+    path = f"{DIR}/{name}"
+    if not EAL.does_asset_exist(path):
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, unreal.load_asset(f"{DIR}/{NAME_BH}"))
+    seq = unreal.load_asset(path)
+    tracks = [str(t) for t in AL.get_animation_track_names(vod)]
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot pick pose", True)
+    ctrl.remove_all_bone_tracks(True)
+    ctrl.remove_all_curves_of_type(unreal.RawCurveTrackTypes.RCT_FLOAT, True)
+    ctrl.set_frame_rate(unreal.FrameRate(30, 1), True)
+    ctrl.set_number_of_frames(unreal.FrameNumber(90), True)    # 3 s, constant (played, not paused)
+    # build 30c (tester: "the camera moves up slightly, like on tippy toes; no grab shows"; probe: our reach played but
+    # the hand stayed 60-85 cm below the eye). The camera follows the head (the player AnimBP copies a virtual camera bone
+    # onto jnt_camera at the end), and the use animation's torso is lower and bent (hips 4 cm lower, spine / neck / head
+    # turned): the view rose and the arms sat low. Now the idle's legs, hips, spine, neck, head, camera and root with the
+    # use animation's shoulders, arms, hands and fingers (and its item / IK bones).
+    ARMS = ("_clavicle", "_shoulder", "_arm", "_hand", "_elbow", "_weapon", "ik_hand", "root_weapon")
+    for b in tracks:
+        l = local(vod if any(k in b for k in ARMS) else idle, b, 0)
+        if hasattr(ctrl, "add_bone_track"):
+            ctrl.add_bone_track(b, True)
+        else:
+            ctrl.add_bone_curve(b, True)
+        ctrl.set_bone_track_keys(b, [unreal.Vector(*l[0])] * 91, [unreal.Quat(*l[1])] * 91, [unreal.Vector(*l[2])] * 91, True)
+    ctrl.close_bracket(True)
+    for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
+        AL.remove_animation_notify_events_by_track(seq, tn)
+    seq.set_editor_property("additive_anim_type", unreal.AdditiveAnimationType.AAT_NONE)
+    out.append(f"PICKPOSE {name}: {len(tracks)} tracks, len {seq.get_play_length():.3f} s, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
 
 
 def build_use_tables(src, tgt_rot, nkeys):
@@ -1047,6 +1115,10 @@ try:
         build_doors(src, seq, path_h, path_q, nkeys, tgt_rot)
     if ARGS.get("BH", "1") == "1":
         build_bh_reach_table(src, seq, tgt_rot, nkeys)   # build 12 (build_bh_table = checkpoint-b11)
+    if ARGS.get("PICKPOSE", "0") == "1":   # build 30: the pickup in our own use pose
+        build_pick_pose()
+        build_use_table(src, tgt_rot, nkeys, unreal.load_asset(f"{DIR}/AS_ImmLoot_PickPose"), "AS_ImmLoot_PickReach",
+                        unreal.load_asset(f"{DIR}/{NAME_BH}"), out_dir=DIR, lower_deg=7.0, max_dist=45.0)
     if ARGS.get("USE", "0") == "1":
         build_use_tables(src, tgt_rot, nkeys)
     if ARGS.get("AR", "0") == "1":   # the rifle table never showed over a rifle (no left_hand_curve then); deleted for v1.0.0

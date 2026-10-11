@@ -46,3 +46,5 @@
 /ImmersiveLooting/Runtime/Use/AS_ImmLoot_MG_fp_vodka_use
 /ImmersiveLooting/Runtime/Use/AS_ImmLoot_MG_fp_water_use
 /ImmersiveLooting/Runtime/Use/AS_ImmLoot_UseAny
+/ImmersiveLooting/Runtime/AS_ImmLoot_PickPose
+/ImmersiveLooting/Runtime/AS_ImmLoot_PickReach
