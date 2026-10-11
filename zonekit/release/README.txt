@@ -1,4 +1,4 @@
-Immersive Looting v1.1.0 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
+Immersive Looting v1.1.1 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
 When you pick something up, Skif reaches out with his left hand, takes it and pockets it,
 instead of the item just vanishing. Looting a body or a stash, he reaches out and touches
 it first. No UE4SS required.
@@ -51,6 +51,8 @@ COMPATIBILITY
 Source and build instructions: https://github.com/noahsemus/stalker2-immersive-looting
 
 CHANGES
+  1.1.1  Holding the interact key to use an item shows the hand grab again (1.1.0 sent the
+         hand off screen, so the use looked vanilla).
   1.1.0  New empty-hands pickup: the hand reaches to where the item is, standing and
          crouched, closes around it and holds it in the palm. Pickups that played no
          animation now play it. Stashes (the blue boxes and others) open reliably, and

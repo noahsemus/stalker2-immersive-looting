@@ -77,6 +77,12 @@ harness on 2026-10-09.
   (with its strafe counter-turn attempt, no visible effect); `zonekit/paste/BP_ImmLootActor.txt` / the generator already
   hold the untested build 55. Open: the hand swings while strafing during a pickup.
 
+- 2026-10-11 v1.1.1 released (Noah: "finally. cut the release"): hold-to-use showed no hand in 1.1.0. Cause: build
+  28's `SelectString` node named `KismetStringLibrary` (it lives in `KismetMathLibrary`); the paste silently dropped
+  it, the per-item use table path was empty and every hold-to-use played `AS_ImmLoot_UseAny`, whose reach lands off
+  screen on other items' use poses. Fixed by loading the per-item table directly (checkpoint wiring). Also: the
+  pickup-only item-copy changes (builds 26-48) gated off the use reach (`pick_bh`), the strafe experiments block off.
+
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
   `CoreVariables.cfg:888-889`), visual in `MeshComponent`; pickup is instant and has no BP-visible "item added" event.

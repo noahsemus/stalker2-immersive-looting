@@ -232,6 +232,13 @@ def b_not(x, y, a):
     return n["ReturnValue"]
 
 
+def pick_bh(x, y):
+    """v1.1.1: the empty-hands PICKUP (GrabBH and not a hold-to-use reach). Builds 26-48 gated their pickup-only item
+    copy changes on GrabBH alone, which the use reach also sets: the use's copy stopped following the hand (v1.1.0:
+    hold F looked vanilla). The use keeps the checkpoint-holduse behaviour."""
+    return b_and(x + 100, y, self_get("GrabBH", "bool", x - 100, y), b_not(x, y + 70, self_get("UseMode", "bool", x - 200, y + 70)))
+
+
 def d_op(member, x, y, a, b=None, b_const="0.0", ret=RD, a_const="0.0"):
     n = kml(member, x, y, [D("A", a_const), D("B", b_const), ret])
     if a is not None:
@@ -1152,12 +1159,11 @@ g.link(self_get("UseMont", "object", UX - 800, UY + 450, sub=MONT), _un["Object"
 _p1 = _concat(UX - 400, UY + 450, None, a_lit="/ImmersiveLooting/Runtime/Use/AS_ImmLoot_", b=_un["ReturnValue"])
 _p2 = _concat(UX - 250, UY + 520, _p1, b_lit=".AS_ImmLoot_")
 _p3 = _concat(UX - 100, UY + 590, _p2, b=_un["ReturnValue"])
-_p4 = lib_pure(KSTR, "KismetStringLibrary", "SelectString", UX - 50, UY + 700,
-               [("A", "string", dict(extra='DefaultValue="/ImmersiveLooting/Runtime/AS_ImmLoot_PickReach.AS_ImmLoot_PickReach",')), ("B", "string"), ("bPickA", "bool", dict(extra='DefaultValue="false",')),
-                ("ReturnValue", "string", dict(out=True))])
-g.link(_p3, _p4["B"])
-g.link(self_get("PickUse", "bool", UX - 250, UY + 800), _p4["bPickA"])
-_ld1 = _load_by_path(UX, UY, _p4["ReturnValue"], "this use animation's table (a pickup: AS_ImmLoot_PickReach)")
+# v1.1.1: build 28's SelectString (picking AS_ImmLoot_PickReach for its use-pose pickups) named KismetStringLibrary,
+# which has no SelectString (it is in KismetMathLibrary): the paste dropped the node, the path was empty, and every hold
+# to use since build 28 played AS_ImmLoot_UseAny instead of the item's own table (v1.1.0: the hand reached off screen).
+# Back to the checkpoint-holduse wiring (the use-pose pickups are gone).
+_ld1 = _load_by_path(UX, UY, _p3, "this use animation's table")
 g.link(_bu3["then"], _ld1["execute"])
 g.link(_pk_last["then"], _ld1["execute"])   # build 28: the pickup goes the use reach's way
 _anyp = lib_pure(KSTR, "KismetStringLibrary", "Concat_StrStr", UX + 200, UY + 700,
@@ -2216,7 +2222,7 @@ _bsel = kml("SelectVector", X3 - 800, Y3 + 950, [("A", "struct", dict(sub=VEC)),
                                                ("ReturnValue", "struct", dict(sub=VEC, out=True))])
 g.link(_palm["ReturnValue"], _bsel["A"])
 g.link(_bone_w, _bsel["B"])
-g.link(self_get("GrabBH", "bool", X3 - 1000, Y3 + 1200), _bsel["bPickA"])
+g.link(pick_bh(X3 - 1000, Y3 + 1200), _bsel["bPickA"])
 bone = _bsel["ReturnValue"]
 cl_, cf_, cr_, cu_, cfov = cam_basis(X3 - 1500, Y3 + 1100)
 tan_v = kml("DegTan", X3 - 700, Y3 + 1300, [D("A"), RD])
@@ -2302,7 +2308,7 @@ _sv5 = kml("SelectVector", X3 + 450, Y3 + 450, [("A", "struct", dict(sub=VEC)), 
                                                ("bPickA", "bool", dict(extra='DefaultValue="false",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
 g.link(held_pos, _sv5["A"])
 g.link(bone, _sv5["B"])
-g.link(self_get("GrabBH", "bool", X3 + 250, Y3 + 550), _sv5["bPickA"])
+g.link(pick_bh(X3 + 250, Y3 + 550), _sv5["bPickA"])
 g.link(_sv5["ReturnValue"], ve["B"])   # build 26: empty hands: its centre to the hand as drawn
 g.link(alpha, ve["Alpha"])
 pos = ve["ReturnValue"]
@@ -2348,7 +2354,7 @@ chain(sl, *trs, *trw, scp)
 bat = branch(X3 + 1300, Y3 + 250, "reached the hand, not parented yet? (with a weapon; empty hands: held as drawn, below)",
              b_and(X3 + 1150, Y3 + 450, d_op("GreaterEqual_DoubleDouble", X3 + 950, Y3 + 450, alpha, b_const="1.0", ret=RB),
                    b_not(X3 + 950, Y3 + 550, attached(X3 + 750, Y3 + 550)),
-                   b_not(X3 + 950, Y3 + 620, self_get("GrabBH", "bool", X3 + 750, Y3 + 620))))
+                   b_not(X3 + 950, Y3 + 620, pick_bh(X3 + 750, Y3 + 620))))
 g.link(sq3["then_1"], bat["execute"])
 RULE = EN("/Script/Engine.EAttachmentRule")
 att = member_call(ACTOR, "K2_AttachToComponent", X3 + 1600, Y3 + 250, fly(X3 + 1450, Y3 + 450), "parent to the left hand", [
@@ -2379,7 +2385,7 @@ pr.append(self_set("FlyAttached", "bool", X3 + 3100, Y3 + 250, "", default="true
 chain(att, *pr)
 _pt = kml("SelectFloat", X3 + 500, Y3 + 1000, [D("A", "1.2"), D("B"), ("bPickA", "bool", dict(extra='DefaultValue="false",')), RD])
 g.link(self_get("PocketTime", "real", X3 + 300, Y3 + 1050, subcat="double"), _pt["B"])
-g.link(self_get("GrabBH", "bool", X3 + 300, Y3 + 1120), _pt["bPickA"])   # build 38: empty hands: when the hand is down
+g.link(pick_bh(X3 + 300, Y3 + 1120), _pt["bPickA"])   # build 38: empty hands: when the hand is down
 pocket = d_op("GreaterEqual_DoubleDouble", X3 + 700, Y3 + 850, montage_time_since_reach(X3 + 500, Y3 + 850),
               _pt["ReturnValue"], ret=RB)   # build 28: a pickup in the use pose: when the hand is back down
 stale = d_op("Greater_DoubleDouble", X3 + 700, Y3 + 1050, el, b_const="3.0", ret=RB)
@@ -2387,7 +2393,7 @@ bp = branch(X3 + 1250, Y3 + 600, "pocketed? (or stuck for 3 s)", b_or(X3 + 1050,
 g.link(sq3["then_2"], bp["execute"])
 #   build 26, empty hands: at the grab its turn relative to the hand is kept; from then on it turns with the hand
 _bh1 = branch(X3 + 1500, Y3 + 3300, "empty hands, at the hand, not held yet? keep its turn relative to the hand",
-              b_and(X3 + 1400, Y3 + 3500, self_get("GrabBH", "bool", X3 + 1200, Y3 + 3350), b_not(X3 + 1200, Y3 + 3420, self_get("FlyHeld", "bool", X3 + 1000, Y3 + 3420)),
+              b_and(X3 + 1400, Y3 + 3500, pick_bh(X3 + 1200, Y3 + 3350), b_not(X3 + 1200, Y3 + 3420, self_get("FlyHeld", "bool", X3 + 1000, Y3 + 3420)),
                     d_op("GreaterEqual_DoubleDouble", X3 + 1200, Y3 + 3500, alpha, b_const="1.0", ret=RB)))
 _sq5 = sequence(X3 + 1100, Y3 + 3200, "build 26: held copy", 2)
 g.link(sq3["then_3"], _sq5["execute"])
@@ -2402,7 +2408,7 @@ chain(_bh1, set_from("FlyRel", "struct", X3 + 1800, Y3 + 3300, _frel["ReturnValu
       *[set_from(v, "real", X3 + 2400 + 300 * k, Y3 + 3300, vop("Dot_VectorVector", X3 + 2300 + 300 * k, Y3 + 3450, hrel, ax, ret_sub="real"),
                  "hand as drawn at the grab (probe)" if k == 0 else "", subcat="double") for k, (v, ax) in enumerate((("GrabFwd", cf_), ("GrabRight", cr_), ("GrabUp", cu_)))],
       set_from("GrabPitch", "real", X3 + 3300, Y3 + 3300, _cbr["Pitch"], "view pitch at the grab (probe)", subcat="double"))
-_bh2 = branch(X3 + 1500, Y3 + 3900, "empty hands? it turns into the hand (during the pull) and with it", self_get("GrabBH", "bool", X3 + 1300, Y3 + 4000))
+_bh2 = branch(X3 + 1500, Y3 + 3900, "empty hands? it turns into the hand (during the pull) and with it", pick_bh(X3 + 1300, Y3 + 4000))
 g.link(_sq5["then_1"], _bh2["execute"])
 _sar = member_call(ACTOR, "K2_SetActorRotation", X3 + 1900, Y3 + 3900, fly(X3 + 1700, Y3 + 4000), "turns with the hand",
                    [("NewRotation", "struct", dict(sub=ROT)), B("bTeleportPhysics", "true"), RB])
@@ -2962,7 +2968,7 @@ _twon = b_and(TWX - 300, TWY + 200, self_get("GrabBH", "bool", TWX - 500, TWY + 
               b_not(TWX - 400, TWY + 350, self_get("UseMode", "bool", TWX - 600, TWY + 350)), b_not(TWX - 400, TWY + 420, self_get("LootReach", "bool", TWX - 600, TWY + 420)),
               b_not(TWX - 400, TWY + 490, self_get("DoorTouch", "bool", TWX - 600, TWY + 490)))
 _btw = branch(TWX, TWY, "our empty-hands pickup playing? keep it aimed through the body's turn", _twon)
-g.link(sqhx["then_7"], _btw["execute"])
+# g.link(sqhx["then_7"], _btw["execute"])   # v1.1.1: the strafe experiments (builds 47-55, no visible effect) are off until the strafe fix is built
 _dyaw = kml("NormalizeAxis", TWX - 100, TWY + 600, [D("Angle"), RD])
 g.link(d_op("Subtract_DoubleDouble", TWX - 250, TWY + 600, _sh_yaw(TWX - 400, TWY + 700), ar("AimShYaw0", TWX - 400, TWY + 800)), _dyaw["Angle"])
 _az_now = d_op("Subtract_DoubleDouble", TWX + 50, TWY + 650, self_get("ItemAzim", "real", TWX - 100, TWY + 750, subcat="double"), _dyaw["ReturnValue"])
