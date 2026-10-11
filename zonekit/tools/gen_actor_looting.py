@@ -565,9 +565,18 @@ _spm.pin("SpawnTransform", "struct", sub=XFORM)
 _spm.pin("CollisionHandlingOverride", "byte", sub=EN("/Script/Engine.ESpawnActorCollisionHandlingMethod"), extra='DefaultValue="AlwaysSpawn",')
 _spm.pin("TransformScaleMethod", "byte", sub=EN("/Script/Engine.ESpawnActorScaleMethod"), adv=True, extra='DefaultValue="MultiplyWithRoot",')
 _spm.pin("Owner", "object", sub=ACTOR, adv=True)
-g.link(_ldc["ReturnValue"], _spm["Class"])
+# (compile, build 15: "Actor Class Reference is not compatible with Object Class Reference": the loaded class is cast)
+_ccast = exec_pins(Node(g, BG + "K2Node_ClassDynamicCast", nm("K2Node_ClassDynamicCast"), X0 + 2550, Y0 - 150, "an actor class",
+                        ["TargetType=" + ACTOR]))
+_ccast.pin("CastFailed", "exec", out=True)
+_ccast.pin("Class", "class", sub=OBJ)
+_ccast.pin("AsActor", "class", sub=ACTOR, out=True)
+_ccast.pin("bSuccess", "bool", out=True)
+g.link(_ldc["ReturnValue"], _ccast["Class"])
+g.link(_ccast["AsActor"], _spm["Class"])
 g.link(member_pure(ACTOR, "GetTransform", X0 + 2500, Y0 + 400, self_ref(X0 + 2300, Y0 + 450), [("ReturnValue", "struct", dict(sub=XFORM, out=True))])["ReturnValue"], _spm["SpawnTransform"])
-g.link(_bvc["then"], _spm["execute"])
+g.link(_bvc["then"], _ccast["execute"])
+g.link(_ccast["then"], _spm["execute"])
 g.link(imc_c["then"], sim0["execute"])
 
 # ---- 1: picked up? -> pending reach with a copy ----
@@ -2072,7 +2081,7 @@ def _set_vis(x, y, comp_pin, on, comment):
 
 _held7 = d_op("GreaterEqual_DoubleDouble", X7 + 500, Y7 + 1400,
               d_op("Subtract_DoubleDouble", X7 + 300, Y7 + 1400, now(X7 + 100, Y7 + 1400),
-                   self_get("InteractPressAt", "real", X7 + 100, Y7 + 1460, subcat="double")), b_const="0.15", ret=RB)
+                   self_get("InteractPressAt", "real", X7 + 100, Y7 + 1460, subcat="double")), b_const="0.42", ret=RB)   # tester: the prompt fills (nearly) completely first
 # still looked at: seen by the tracking step within 0.15 s (the game's target or our trace), not only our trace
 _eq7 = {"ReturnValue": d_op("Less_DoubleDouble", X7 + 500, Y7 + 1550,
                             d_op("Subtract_DoubleDouble", X7 + 300, Y7 + 1550, now(X7 + 100, Y7 + 1550),
