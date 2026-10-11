@@ -478,15 +478,17 @@ g.link(_cen["ReturnValue"], trc["End"])
 g.link(_mka["Array"], trc["ActorsToIgnore"])
 bhr = lib_pure(GS, "GameplayStatics", "BreakHitResult", 1700, 1000, [("Hit", "struct", dict(sub=HIT)),
                                                                      ("HitActor", "object", dict(sub=ACTOR, out=True)),
-                                                                     ("HitComponent", "object", dict(sub=PRIM, out=True))])
+                                                                     ("HitComponent", "object", dict(sub=PRIM, out=True)),
+                                                                     ("Location", "struct", dict(sub=VEC, out=True))])
 bhr.pins["Hit"].ref = True
 bhr.pins["Hit"].const = True
 g.link(trc["OutHit"], bhr["Hit"])
 sla = set_from("LookActor", "object", 1900, 800, bhr["HitActor"], "under the crosshair", sub=ACTOR)
 slk = set_from("LookComp", "object", 2200, 800, bhr["HitComponent"], "", sub=PRIM)
 g.link(spl["then"], trc["execute"])
-chain(trc, sla, slk)
-g.link(slk["then"], sq["execute"])
+slp = set_from("LookPoint", "struct", 2500, 800, bhr["Location"], "the point it hit (doors)", sub=VEC)
+chain(trc, sla, slk, slp)
+g.link(slp["then"], sq["execute"])
 mesh = other_get(CHAR, "Mesh", "object", 700, 300, as_pc, sub=SKC)
 anim = member_pure(SKC, "GetAnimInstance", 950, 300, mesh, [("ReturnValue", "object", dict(sub=ANIMI, out=True))])["ReturnValue"]
 
@@ -569,6 +571,10 @@ conds = [
     ("detector", obj_q("IsDetectorInHands", SX, SY + 560, as_pc)),
     ("binoculars", obj_q("IsBinocularsInHands", SX, SY + 640, as_pc)),
     ("disabled", b_not(SX + 200, SY + 720, self_get("Enabled", "bool", SX, SY + 720))),
+    ("use", b_and(SX + 240, SY + 880, self_get("KeyHeld", "bool", SX, SY + 860),
+                  d_op("GreaterEqual_DoubleDouble", SX + 100, SY + 940,
+                       d_op("Subtract_DoubleDouble", SX - 100, SY + 940, now(SX - 300, SY + 940),
+                            self_get("InteractPressAt", "real", SX - 300, SY + 1000, subcat="double")), b_const="0.3", ret=RB))),
 ]
 skip = b_or(SX + 600, SY, *[c for _, c in conds])
 bits = None
@@ -588,7 +594,7 @@ for k, (_, c) in enumerate(conds + [("lefthandbusy", obj_q("IsLeftHandBusy", SX,
         g.link(sel["ReturnValue"], add["B"])
         bits = add["ReturnValue"]
 sbits = set_from("SkipBits", "int", X1 + 900, Y1, bits, "why (probe): 1 sprint 2 aim 4 action 8 left-hand montage "
-                 "16 dialog 32 cutscene 64 detector 128 binoculars 256 disabled 512 IsLeftHandBusy (info)")
+                 "16 dialog 32 cutscene 64 detector 128 binoculars 256 disabled 512 use (hold F) 1024 IsLeftHandBusy (info)")
 g.link(spr["then"], sbits["execute"])
 brs = branch(X1 + 1250, Y1, "skip? (vanilla pickup, no reach)", skip)
 g.link(sbits["then"], brs["execute"])
@@ -1125,7 +1131,7 @@ def tap_active(x, y, on, comment):
     return b["execute"], [c["then"], b["else"]]
 
 
-sqt = sequence(XT, YT, "touch steps", 7)
+sqt = sequence(XT, YT, "touch steps", 8)
 g.link(sq5["then_4"], sqt["execute"])
 
 #   T0: idle and window closed: is what we look at a corpse / stash? (re-evaluated every tick)
@@ -1218,6 +1224,7 @@ held = b_and(XT + 200, YT + 2350, self_get("LootPaused", "bool", XT, YT + 2300),
                   self_get("TouchHoldBeforeOpen", "real", XT, YT + 2600, subcat="double"), ret=RB))
 bt1 = branch(XT + 400, YT + 1800, "reached (or 2 s) after a tap? open the window now",
              b_and(XT + 300, YT + 2100, int_eq(XT + 100, YT + 2200, tstate(XT - 100, YT + 2200), 2),
+                   b_not(XT + 100, YT + 2150, self_get("DoorTouch", "bool", XT - 100, YT + 2150)),   # doors: no window
                    b_not(XT + 100, YT + 2280, self_get("InvOpen", "bool", XT - 100, YT + 2280)),
                    b_or(XT + 300, YT + 2300, held, late)))
 g.link(sqt["then_1"], bt1["execute"])
@@ -1377,11 +1384,47 @@ g.link(brel["then"], btap["execute"])
 g.link(btap["then"], tr[0]["execute"])
 g.link(btap["else"], self_set("TouchState", "int", XT + 800, YT + 5100, "idle (vanilla handled the hold)", default="0")["execute"])
 
+#   T7 (doors): the touch faster than a loot touch; held DoorHold s at the touch frame, then back (same as after a loot
+#   window); a door touch whose reach never started (skipped) or ended is cleared
+sq7d = sequence(XT + 300, YT + 9000, "door steps", 3)
+g.link(sqt["then_7"], sq7d["execute"])
+dtc = lambda x, y: self_get("DoorTouch", "bool", x, y)
+bsp = branch(XT + 600, YT + 9000, "door touch playing, not sped up yet?",
+             b_and(XT + 500, YT + 9200, dtc(XT + 300, YT + 9200), b_not(XT + 300, YT + 9270, self_get("DoorSped", "bool", XT + 100, YT + 9270)),
+                   grab_active(XT + 300, YT + 9340)))
+g.link(sq7d["then_0"], bsp["execute"])
+msr = member_call(ANIMI, "Montage_SetPlayRate", XT + 900, YT + 9000, anim, "faster: the hand meets the swinging door", [
+    ("Montage", "object", dict(sub=MONT)), ("NewPlayRate", "real", dict(subcat="float", extra='DefaultValue="1.000000",'))])
+msr.pins["Montage"].const = True
+g.link(self_get("GrabMontage", "object", XT + 700, YT + 9200, sub=MONT), msr["Montage"])
+g.link(d_op("Multiply_DoubleDouble", XT + 700, YT + 9300, self_get("PlayRate", "real", XT + 500, YT + 9300, subcat="double"),
+            self_get("DoorRate", "real", XT + 500, YT + 9380, subcat="double")), msr["NewPlayRate"])
+g.link(bsp["then"], msr["execute"])
+g.link(msr["then"], self_set("DoorSped", "bool", XT + 1200, YT + 9000, "", default="true")["execute"])
+bdh = branch(XT + 600, YT + 9500, "door touch held long enough at the door? bring the hand back",
+             b_and(XT + 500, YT + 9700, dtc(XT + 300, YT + 9700), self_get("LootPaused", "bool", XT + 300, YT + 9770),
+                   d_op("GreaterEqual_DoubleDouble", XT + 300, YT + 9850,
+                        d_op("Subtract_DoubleDouble", XT + 100, YT + 9850, now(XT - 100, YT + 9850), self_get("PausedAt", "real", XT - 100, YT + 9930, subcat="double")),
+                        self_get("DoorHold", "real", XT + 100, YT + 9990, subcat="double"), ret=RB)))
+g.link(sq7d["then_1"], bdh["execute"])
+sdf = self_set("DoorTouch", "bool", XT + 900, YT + 9500, "", default="false")
+g.link(bdh["then"], sdf["execute"])
+g.link(sdf["then"], brv["execute"])   # the same hand return as after a loot window
+bdx = branch(XT + 600, YT + 10100, "door touch, but no reach out (skipped / ended)?",
+             b_and(XT + 500, YT + 10300, dtc(XT + 300, YT + 10300), b_not(XT + 300, YT + 10370, self_get("PendingReach", "bool", XT + 100, YT + 10370)),
+                   b_not(XT + 300, YT + 10440, self_get("LootReach", "bool", XT + 100, YT + 10440))))
+g.link(sq7d["then_2"], bdx["execute"])
+chain_x = [self_set("DoorTouch", "bool", XT + 900, YT + 10100, "", default="false"),
+           self_set("TouchState", "int", XT + 1200, YT + 10100, "idle", default="0")]
+g.link(bdx["then"], chain_x[0]["execute"])
+chain(*chain_x)
+
 #   T6: the player's interact keys polled: pressed / released this tick (no mapping context, no input on this actor)
 PCC = cls("/Script/Engine.PlayerController")
 kd0 = self_set("KeyDown", "bool", XT + 400, YT + 5800, "this tick", default="false")
 ku0 = self_set("KeyUp", "bool", XT + 700, YT + 5800, "", default="false")
-chain(kd0, ku0)
+kh0 = self_set("KeyHeld", "bool", XT + 1000, YT + 5650, "", default="false")
+chain(kd0, ku0, kh0)
 g.link(sqt["then_6"], kd0["execute"])
 qk = member_pure(EISI, "QueryKeysMappedToAction", XT + 700, YT + 6100, subt["ReturnValue"], [
     ("Action", "object", dict(sub=IA_CLS, extra=f'DefaultObject="{IA_INTERACT}",')), ("ReturnValue", "struct", dict(sub=KEY, out=True))])
@@ -1398,12 +1441,21 @@ fek.pin("Array Element", "struct", sub=KEY, out=True)
 fek.pin("Array Index", "int", out=True)
 fek.pin("Completed", "exec", out=True)
 g.link(qk["ReturnValue"], fek["Array"])
-g.link(ku0["then"], fek["Exec"])
+g.link(kh0["then"], fek["Exec"])
 _jp = member_pure(PCC, "WasInputKeyJustPressed", XT + 1200, YT + 6100, gpc_t["ReturnValue"], [("Key", "struct", dict(sub=KEY)), RB])
 g.link(fek["Array Element"], _jp["Key"])
 bjp = branch(XT + 1400, YT + 5800, "just pressed?", _jp["ReturnValue"])
-g.link(fek["LoopBody"], bjp["execute"])
-g.link(bjp["then"], self_set("KeyDown", "bool", XT + 1700, YT + 5800, "", default="true")["execute"])
+_kdn = member_pure(PCC, "IsInputKeyDown", XT + 1200, YT + 6500, gpc_t["ReturnValue"], [("Key", "struct", dict(sub=KEY)), RB])
+g.link(fek["Array Element"], _kdn["Key"])
+bkh = branch(XT + 1250, YT + 5500, "held?", _kdn["ReturnValue"])
+g.link(fek["LoopBody"], bkh["execute"])
+_skh = self_set("KeyHeld", "bool", XT + 1450, YT + 5450, "", default="true")
+g.link(bkh["then"], _skh["execute"])
+g.link(_skh["then"], bjp["execute"])
+g.link(bkh["else"], bjp["execute"])
+_skd = self_set("KeyDown", "bool", XT + 1700, YT + 5800, "", default="true")
+g.link(bjp["then"], _skd["execute"])
+g.link(_skd["then"], set_from("InteractPressAt", "real", XT + 2000, YT + 5650, now(XT + 1850, YT + 5550), "pressed at", subcat="double")["execute"])
 _jr = member_pure(PCC, "WasInputKeyJustReleased", XT + 1200, YT + 6300, gpc_t["ReturnValue"], [("Key", "struct", dict(sub=KEY)), RB])
 g.link(fek["Array Element"], _jr["Key"])
 bjr = branch(XT + 1400, YT + 6100, "just released?", _jr["ReturnValue"])
@@ -1412,6 +1464,60 @@ g.link(bjr["then"], self_set("KeyUp", "bool", XT + 1700, YT + 6100, "", default=
 bkd = branch(XT + 2000, YT + 5800, "pressed this tick?", self_get("KeyDown", "bool", XT + 1800, YT + 6000))
 g.link(fek["Completed"], bkd["execute"])
 g.link(bkd["then"], bpress["execute"])
+# ---- doors (1.0.2, tester: "play the hand animation when opening and closing doors"; peeking (hold) the same) ----
+# The game opens / closes / peeks the door itself at the press; we never touch its input. At the press, if the game's
+# interaction target belongs to a door (its class name has "Door"), the touch reaches toward the point of the door under the crosshair
+# (else the leaf's centre), holds a moment and comes back (armed: plays on onto the grip; empty hands: back along its
+# path), faster than a loot touch (DoorRate) so the hand meets the door as it starts to swing.
+XD, YD = XT, YT + 7000
+g.box("EdGraphNode_Comment_918", XD - 400, YD - 400, 6400, 3200, "Doors: the hand reaches for the door at the press (open, close, peek)")
+_dow = self_get("LookActor", "object", XD - 300, YD + 300, sub=ACTOR)   # probe 1.0.2: the game's interaction target was empty at doors
+_dcm = lib_pure(GS, "GameplayStatics", "GetPlayerCameraManager", XD - 500, YD + 600,
+                [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)),
+                 ("PlayerIndex", "int", dict(extra='DefaultValue="0",')), ("ReturnValue", "object", dict(sub=PCM, out=True))])["ReturnValue"]
+_dcl = member_pure(PCM, "GetCameraLocation", XD - 300, YD + 600, _dcm, [("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+_dds = kml("Vector_Distance", XD - 100, YD + 600, [("V1", "struct", dict(sub=VEC)), ("V2", "struct", dict(sub=VEC)), RD])
+g.link(self_get("LookPoint", "struct", XD - 300, YD + 700, sub=VEC), _dds["V1"])
+g.link(_dcl, _dds["V2"])
+_dnear = d_op("Less_DoubleDouble", XD + 100, YD + 600, _dds["ReturnValue"], b_const="250.0", ret=RB)
+# every door Blueprint (BP_DoorView = native DoorView, BP_Stalker2Door / BP_Stalker2PhysicsDoor / BP_InteractableDoor... =
+# plain Actors) has "Door" in its class name; the padlock (BP_Stalker2Padlock) does not
+_dcn = lib_pure(KSL, "KismetSystemLibrary", "GetClassDisplayName", XD + 100, YD + 400, [("Class", "class", dict(sub=OBJ)), ("ReturnValue", "string", dict(out=True))])
+_doc = lib_pure(GS, "GameplayStatics", "GetObjectClass", XD - 100, YD + 400, [("Object", "object", dict(sub=OBJ)), ("ReturnValue", "class", dict(sub=OBJ, out=True))])
+g.link(_dow, _doc["Object"])
+g.link(_doc["ReturnValue"], _dcn["Class"])
+_dcc = lib_pure(cls("/Script/Engine.KismetStringLibrary"), "KismetStringLibrary", "Contains", XD + 300, YD + 400,
+                [("SearchIn", "string"), ("Substring", "string", dict(extra='DefaultValue="Door",')),
+                 ("bUseCase", "bool", dict(extra='DefaultValue="false",')), ("bSearchFromEnd", "bool", dict(extra='DefaultValue="false",')), RB])
+g.link(_dcn["ReturnValue"], _dcc["SearchIn"])
+cdr = branch(XD + 200, YD, "a door under the crosshair, within reach?", b_and(XD + 150, YD + 300, is_valid(XD - 100, YD + 300, _dow), _dcc["ReturnValue"], _dnear))
+bdo = branch(XD - 100, YD, "no corpse / stash press: doors on, idle?",
+             b_and(XD - 200, YD + 150, self_get("TouchDoors", "bool", XD - 400, YD + 150), self_get("Enabled", "bool", XD - 400, YD + 220),
+                   int_eq(XD - 400, YD + 290, tstate(XD - 600, YD + 290), 0)))
+g.link(bpress["else"], bdo["execute"])
+g.link(bdo["then"], cdr["execute"])
+sdt = self_set("DoorTouch", "bool", XD + 500, YD, "a door touch", default="true")
+sds = self_set("DoorSped", "bool", XD + 800, YD, "", default="false")
+g.link(cdr["then"], sdt["execute"])
+chain(sdt, sds)
+#     target: the point the crosshair is on if it is on this door, else the door's bounds centre
+_neqd = kml("EqualEqual_ObjectObject", XD + 900, YD + 300, [("A", "object", dict(sub=OBJ)), ("B", "object", dict(sub=OBJ)), RB])
+g.link(self_get("LookActor", "object", XD + 700, YD + 300, sub=ACTOR), _neqd["A"])
+g.link(_dow, _neqd["B"])
+bdp = branch(XD + 1100, YD, "crosshair on this door?", _neqd["ReturnValue"])
+g.link(sds["then"], bdp["execute"])
+sdc1 = set_from("ItemCenter", "struct", XD + 1400, YD - 150, self_get("LookPoint", "struct", XD + 1200, YD - 250, sub=VEC), "reach target = the point on the door", sub=VEC)
+_ab = member_pure(ACTOR, "GetActorBounds", XD + 1400, YD + 300, _dow, [
+    B("bOnlyCollidingComponents"), ("Origin", "struct", dict(sub=VEC, out=True)), ("BoxExtent", "struct", dict(sub=VEC, out=True)),
+    B("bIncludeFromChildActors")])
+sdc2 = set_from("ItemCenter", "struct", XD + 1700, YD + 150, _ab["Origin"], "reach target = the door's centre", sub=VEC)
+g.link(bdp["then"], sdc1["execute"])
+g.link(bdp["else"], sdc2["execute"])
+nd = inc("NDoor", XD + 1700, YD, "count door touches")
+g.link(sdc1["then"], nd["execute"])
+g.link(sdc2["then"], nd["execute"])
+#     the touch chain from its second step: pending reach, touch mode, TouchState 2, then the asset for the direction
+g.link(nd["then"], tr[1]["execute"])
 bku = branch(XT + 2300, YT + 5800, "released this tick?", self_get("KeyUp", "bool", XT + 2100, YT + 6000))
 g.link(bkd["else"], bku["execute"])
 g.link(bku["then"], brel["execute"])
