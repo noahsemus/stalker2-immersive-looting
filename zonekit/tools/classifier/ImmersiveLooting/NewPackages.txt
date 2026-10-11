@@ -50,3 +50,7 @@
 /ImmersiveLooting/Runtime/AS_ImmLoot_PickReach
 /ImmersiveLooting/Runtime/AS_ImmLoot_GrabBHAdd
 /ImmersiveLooting/Runtime/AS_ImmLoot_GrabBHAddCrouch
+/ImmersiveLooting/Runtime/AS_ImmLoot_Twist
+/ImmersiveLooting/Runtime/AS_ImmLoot_ArmHold
+/ImmersiveLooting/Runtime/T_ImmLoot_MCMHeader
+/ImmersiveLooting/Runtime/T_ImmLoot_MCMCatHeader

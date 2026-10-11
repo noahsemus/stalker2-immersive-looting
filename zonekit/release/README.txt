@@ -1,4 +1,4 @@
-Immersive Looting v1.0.1 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
+Immersive Looting v1.1.0 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
 When you pick something up, Skif reaches out with his left hand, takes it and pockets it,
 instead of the item just vanishing. Looting a body or a stash, he reaches out and touches
 it first. No UE4SS required.
@@ -30,6 +30,12 @@ WHAT IT DOES
     the stash, then the loot window opens. Close it and the hand comes back (onto the
     weapon, or to rest with empty hands). Holding the key picks up and carries a body
     exactly as in vanilla (no touch animation).
+  - Holding the interact key on a food, drink or medicine item uses it as in vanilla: Skif
+    first takes it with his hand, then plays the game's own use animation.
+  - Doors: Skif pushes a door open with his open hand or pulls it with his fist.
+  - Optional Mod Configuration Menu (MCM) setting "Body and stash animation": switch the
+    touch on bodies, crates and bags off (their loot window then opens at once, as in
+    vanilla). The mod works without MCM installed.
   - No reach (vanilla pickup) while sprinting, aiming, reloading, in dialogue or cutscenes,
     or with a detector or binoculars in hand.
   - Artifacts and mutant parts keep their own vanilla animations.
@@ -44,6 +50,12 @@ COMPATIBILITY
 Source and build instructions: https://github.com/noahsemus/stalker2-immersive-looting
 
 CHANGES
+  1.1.0  New empty-hands pickup: the hand reaches to where the item is, standing and
+         crouched, closes around it and holds it in the palm. Pickups that played no
+         animation now play it. Stashes (the blue boxes and others) open reliably, and
+         the hand reaches toward the stash. Door push / pull. Hold the interact key to use
+         an item, with the grab first. Optional MCM toggle for the body / stash touch.
+         Known: strafing during a pickup still swings the hand (being worked on).
   1.0.1  Carrying bodies works again: holding the interact key on a body picks it up as in
          vanilla (1.0.0 turned every hold into a tap). The loot window on bodies and stashes
          opens sooner.

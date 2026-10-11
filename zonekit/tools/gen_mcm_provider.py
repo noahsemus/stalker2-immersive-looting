@@ -167,5 +167,12 @@ out = []
 for l_ in (ev_r, reg, add, ev_d, dft, ev_a, get):
     out += l_.text()
 out += g.text()
+# the example's header pictures are not shipped (MCM showed white behind its white text): our own copies
+# (duplicated from MCM_ModExample1, in the main plugin: harmless without MCM)
+HEADERS = {"/MCM_ModExample1/MCM_Header09.MCM_Header09": "/ImmersiveLooting/Runtime/T_ImmLoot_MCMHeader.T_ImmLoot_MCMHeader",
+           "/MCM_ModExample1/MCM_CatHeader12.MCM_CatHeader12": "/ImmersiveLooting/Runtime/T_ImmLoot_MCMCatHeader.T_ImmLoot_MCMCatHeader"}
+for a_, b_ in HEADERS.items():
+    out = [l_.replace(a_, b_) for l_ in out]
+assert not any("/MCM_ModExample1/" in l_ for l_ in out)
 write(sys.argv[2], out)
 print("ok", len(g.nodes) + 7, "nodes")

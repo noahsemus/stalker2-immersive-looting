@@ -92,6 +92,7 @@ FOREACH = ("MacroGraphReference=(MacroGraph=\"/Script/Engine.EdGraph'/Engine/Edi
 GET_TIP = 'PinToolTip="Retrieves the value of the variable, can use instead of a separate Get node",'
 
 g = Graph()
+g.untangle_limit = 0   # 2026-10-11: the editor ran out of memory deleting the 4100-node graph (cloned shared trees)
 seq = [0]
 
 
@@ -909,6 +910,48 @@ _sv("AimA", _to_mesh(AX + 500, Y2_, member_pure(SKC, "GetSocketLocation", AX + 3
                                                 [("InSocketName", "name", dict(extra='DefaultValue="jnt_l_arm",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]), 2, "the live arm root")
 # build 37 (tester: on tables "the hand goes too close to the centre and up; it needs to be lower on the screen"): the
 # hand's line from the camera is turned ~8 deg down and ~4.5 deg left of the item (it lands below-left of it)
+_shx = member_pure(SKC, "GetSocketTransform", AX + 600, Y2_ + 600, mesh,
+                   [("InSocketName", "name", dict(extra='DefaultValue="jnt_l_shoulder",')),
+                    ("TransformSpace", "byte", dict(sub=EN("/Script/Engine.ERelativeTransformSpace"), extra='DefaultValue="RTS_Component",')),
+                    ("ReturnValue", "struct", dict(sub=XFORM, out=True))])["ReturnValue"]
+
+
+def _sh_yaw_b(x, y, bone, axis="1.000000,0.000000,0.000000"):
+    t = member_pure(SKC, "GetSocketTransform", x - 300, y, mesh,
+                    [("InSocketName", "name", dict(extra=f'DefaultValue="{bone}",')),
+                     ("TransformSpace", "byte", dict(sub=EN("/Script/Engine.ERelativeTransformSpace"), extra='DefaultValue="RTS_Component",')),
+                     ("ReturnValue", "struct", dict(sub=XFORM, out=True))])["ReturnValue"]
+    ax = kml("TransformDirection", x - 150, y, [("T", "struct", dict(sub=XFORM)), ("Direction", "struct", dict(sub=VEC, extra=f'DefaultValue="{axis}",')),
+                                               ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+    g.link(t, ax["T"])
+    bv = kml("BreakVector", x, y, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
+                                   ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
+    g.link(ax["ReturnValue"], bv["InVec"])
+    yw = kml("DegAtan2", x + 150, y, [D("Y"), D("X"), RD])
+    g.link(bv["Y"], yw["Y"])
+    g.link(bv["X"], yw["X"])
+    return yw["ReturnValue"]
+
+
+def _sh_yaw(x, y):
+    """yaw (deg, component space) of the live left shoulder's X axis"""
+    t = member_pure(SKC, "GetSocketTransform", x - 300, y, mesh,
+                    [("InSocketName", "name", dict(extra='DefaultValue="jnt_l_shoulder",')),
+                     ("TransformSpace", "byte", dict(sub=EN("/Script/Engine.ERelativeTransformSpace"), extra='DefaultValue="RTS_Component",')),
+                     ("ReturnValue", "struct", dict(sub=XFORM, out=True))])["ReturnValue"]
+    ax = kml("TransformDirection", x - 150, y, [("T", "struct", dict(sub=XFORM)), ("Direction", "struct", dict(sub=VEC, extra='DefaultValue="1.000000,0.000000,0.000000",')),
+                                               ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+    g.link(t, ax["T"])
+    bv = kml("BreakVector", x, y, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
+                                   ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
+    g.link(ax["ReturnValue"], bv["InVec"])
+    yw = kml("DegAtan2", x + 150, y, [D("Y"), D("X"), RD])
+    g.link(bv["Y"], yw["Y"])
+    g.link(bv["X"], yw["X"])
+    return yw["ReturnValue"]
+
+
+_sr("AimShYaw0", _sh_yaw(AX + 750, Y2_ + 700), 2, "the left shoulder's yaw at the grab start (build 47)")
 _sv("AimD", _norm(AX + 950, Y2_, vop("Add_VectorVector", AX + 850, Y2_, _norm(AX + 750, Y2_ - 80, vop("Subtract_VectorVector", AX + 650, Y2_, av("AimP", AX + 500, Y2_ + 80), av("AimC", AX + 500, Y2_ + 150))),
                                      _vec(AX + 700, Y2_ + 200, (0.0, -0.08, -0.14)))), 3, "camera -> item, turned a little down and left")
 _sv("AimOC", vop("Subtract_VectorVector", AX + 1050, Y2_, av("AimC", AX + 900, Y2_ + 80), av("AimA", AX + 900, Y2_ + 150)), 4)
@@ -970,7 +1013,17 @@ _stand = d_op("Greater_DoubleDouble", X1 + 2000, Y1 + 1300, _cbv["Z"], b_const="
 # build 42: crouched the hand landed 47 deg below the view centre ("grabbing their crotch"; standing lands at -8..-13): +38
 _elc = kml("SelectFloat", X1 + 2150, Y1 + 1300, [D("A", "-16.0"), D("B", "38.0"), ("bPickA", "bool", dict(extra='DefaultValue="false",')), RD])
 g.link(_stand, _elc["bPickA"])
-_el_u = _pick_view(X1 + 2350, Y1 + 1250, _vel["ReturnValue"], d_op("Add_DoubleDouble", X1 + 2250, Y1 + 1250, _sp_el["ReturnValue"], _elc["ReturnValue"]))
+# build 48 (tester: crouched, the stash touch "went up toward the top of the screen"; probe: crouched, the +38 correction
+# fitted at floor pitches put a stash in front (pitch -32) far up). Crouched pickups land at screen = index - view pitch - 37
+# (builds 41-43, pitch -50..-65), so crouched the elevation index is simply the view pitch + 27 (= 10 deg below the centre)
+_el_cr = d_op("Subtract_DoubleDouble", X1 + 2250, Y1 + 1400, d_op("Add_DoubleDouble", X1 + 2100, Y1 + 1400, _vpitch["ReturnValue"], b_const="27.0"),
+              d_op("Multiply_DoubleDouble", X1 + 2150, Y1 + 1470, d_op("FMax", X1 + 2100, Y1 + 1470, d_op("Add_DoubleDouble", X1 + 1950, Y1 + 1470, _vpitch["ReturnValue"], b_const="45.0"), b_const="0.0"), b_const="1.8"))   # build 49/50
+_el_st = d_op("Add_DoubleDouble", X1 + 2250, Y1 + 1250, _sp_el["ReturnValue"], b_const="-16.0")
+_elsel = kml("SelectFloat", X1 + 2300, Y1 + 1320, [D("A"), D("B"), ("bPickA", "bool", dict(extra='DefaultValue="false",')), RD])
+g.link(_el_st, _elsel["A"])
+g.link(_el_cr, _elsel["B"])
+g.link(_stand, _elsel["bPickA"])
+_el_u = _pick_view(X1 + 2350, Y1 + 1250, _vel["ReturnValue"], _elsel["ReturnValue"])
 _dist_u = _pick_view(X1 + 2350, Y1 + 1400, _vds["ReturnValue"], _sp_d["ReturnValue"])
 # build 41: standing +4 ("slightly too far right" at +8); build 43: crouched -25 (build 42 crouched landed 23 deg right of
 # the centre, standing lands 4-7 deg left)
@@ -996,7 +1049,21 @@ def _imad(x, y, a, mul_const, b):
     return ad["ReturnValue"]
 
 
-_sum = {"ReturnValue": _imad(X1 + 3100, Y1 + 800, _imad(X1 + 2950, Y1 + 700, _ie, 3, _id), 5, _ia)}
+_sum_use = _imad(X1 + 3100, Y1 + 800, _imad(X1 + 2950, Y1 + 700, _ie, 3, _id), 5, _ia)
+
+
+def _pick_seg(x, y, el_pin, az_pin):
+    """build 47: the pickup tables: 8 elevations (15 deg) x 19 azimuths (-30..+60, 5 deg), distance 60 only."""
+    return _imad(x + 300, y, _bin(x, y, el_pin, "80.0", "15.0", 7), 19, _bin(x, y + 150, az_pin, "30.0", "5.0", 18))
+
+
+_sum_pick = _pick_seg(X1 + 2700, Y1 + 1300, _el_u, _az_u)
+_sumsel = kml("SelectInt", X1 + 3250, Y1 + 900, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="0",')),
+                                                ("bPickA", "bool", dict(extra='DefaultValue="false",')), ("ReturnValue", "int", dict(out=True))])
+g.link(_sum_use, _sumsel["A"])
+g.link(_sum_pick, _sumsel["B"])
+g.link(self_get("UseMode", "bool", X1 + 3050, Y1 + 1000), _sumsel["bPickA"])
+_sum = {"ReturnValue": _sumsel["ReturnValue"]}
 _cv = kml("Conv_IntToDouble", X1 + 3250, Y1 + 750, [("InInt", "int"), RD])
 g.link(_sum["ReturnValue"], _cv["InInt"])
 seg_start = d_op("Multiply_DoubleDouble", X1 + 3400, Y1 + 750, _cv["ReturnValue"], b_const="1.5")
@@ -2227,7 +2294,10 @@ g.link(_ixb["Scale"], _mt["Scale"])
 _off = kml("TransformLocation", X3 + 700, Y3 + 2800, [("T", "struct", dict(sub=XFORM)), ("Location", "struct", dict(sub=VEC)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
 g.link(_mt["ReturnValue"], _off["T"])
 g.link(_cz["ReturnValue"], _off["Location"])
-held_pos = vop("Subtract_VectorVector", X3 + 900, Y3 + 2700, hand, _off["ReturnValue"])
+_crr = kml("SelectFloat", X3 + 700, Y3 + 2900, [D("A", "0.0"), D("B", "5.0"), ("bPickA", "bool", dict(extra='DefaultValue="false",')), RD])
+g.link(self_get("AimStand", "bool", X3 + 500, Y3 + 2950), _crr["bPickA"])
+_crv = vop("Multiply_VectorFloat", X3 + 850, Y3 + 2850, cr_, _crr["ReturnValue"], b_cat="real", b_sub="None", b_subcat="double")
+held_pos = vop("Add_VectorVector", X3 + 1000, Y3 + 2750, vop("Subtract_VectorVector", X3 + 900, Y3 + 2700, hand, _off["ReturnValue"]), _crv)   # build 48: crouched +5 cm right
 _sv5 = kml("SelectVector", X3 + 450, Y3 + 450, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)),
                                                ("bPickA", "bool", dict(extra='DefaultValue="false",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
 g.link(held_pos, _sv5["A"])
@@ -2885,6 +2955,135 @@ g.link(_bgd["then"], member_call(ACTOR, "K2_DestroyActor", X7 + 1600, Y7 + 6100,
 
 # (builds 36-37, the game's left-hand IK driven through WeaponData.WeaponMesh: removed. 36: with empty hands there is no
 #  weapon mesh to move; 37: WeaponData's members are read-only to Blueprints ("Make Anim Player Weapon Data" has no pins))
+
+TWX, TWY = X7 + 4000, Y7 + 13000
+g.box("EdGraphNode_Comment_936", TWX - 600, TWY - 300, 4200, 1300, "Build 47: strafing turns the body; the pickup's segment is re-picked every tick by the shoulder's turn (the hand stays on the item)")
+_twon = b_and(TWX - 300, TWY + 200, self_get("GrabBH", "bool", TWX - 500, TWY + 150), grab_active(TWX - 500, TWY + 250),
+              b_not(TWX - 400, TWY + 350, self_get("UseMode", "bool", TWX - 600, TWY + 350)), b_not(TWX - 400, TWY + 420, self_get("LootReach", "bool", TWX - 600, TWY + 420)),
+              b_not(TWX - 400, TWY + 490, self_get("DoorTouch", "bool", TWX - 600, TWY + 490)))
+_btw = branch(TWX, TWY, "our empty-hands pickup playing? keep it aimed through the body's turn", _twon)
+g.link(sqhx["then_7"], _btw["execute"])
+_dyaw = kml("NormalizeAxis", TWX - 100, TWY + 600, [D("Angle"), RD])
+g.link(d_op("Subtract_DoubleDouble", TWX - 250, TWY + 600, _sh_yaw(TWX - 400, TWY + 700), ar("AimShYaw0", TWX - 400, TWY + 800)), _dyaw["Angle"])
+_az_now = d_op("Subtract_DoubleDouble", TWX + 50, TWY + 650, self_get("ItemAzim", "real", TWX - 100, TWY + 750, subcat="double"), _dyaw["ReturnValue"])
+_seg_now = _pick_seg(TWX + 200, TWY + 600, self_get("ItemElev", "real", TWX + 50, TWY + 550, subcat="double"), _az_now)
+_cvn = kml("Conv_IntToDouble", TWX + 550, TWY + 600, [("InInt", "int"), RD])
+g.link(_seg_now, _cvn["InInt"])
+_segst = d_op("Multiply_DoubleDouble", TWX + 700, TWY + 600, _cvn["ReturnValue"], b_const="1.5")
+_stw = set_from("TwYaw", "real", TWX + 300, TWY, _dyaw["ReturnValue"], "the shoulder's turn since the grab started (probe)", subcat="double")
+g.link(_btw["then"], _stw["execute"])
+_dif = d_op("Subtract_DoubleDouble", TWX + 850, TWY + 450, _segst, self_get("SegStart", "real", TWX + 700, TWY + 500, subcat="double"))
+_abs = kml("Abs", TWX + 950, TWY + 450, [D("A"), RD])
+g.link(_dif, _abs["A"])
+_bsw = branch(TWX + 600, TWY, "another segment now? jump to it (same time in the segment)", d_op("Greater_DoubleDouble", TWX + 1100, TWY + 450, _abs["ReturnValue"], b_const="0.01", ret=RB))
+# g.link(_stw["then"], _bsw["execute"])   # build 49: off (build 48 probe: the shoulder turned only 0-3 deg while strafing)
+_hrel_t = vop("Subtract_VectorVector", TWX + 400, TWY - 400, hand, cl_)
+_vel = member_pure(ACTOR, "GetVelocity", TWX + 400, TWY - 600, as_pc, [("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+_crot = member_pure(PCM, "GetCameraRotation", TWX + 200, TWY - 800, lib_pure(GS, "GameplayStatics", "GetPlayerCameraManager", TWX, TWY - 800,
+            [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)), ("PlayerIndex", "int", dict(extra='DefaultValue="0",')), ("ReturnValue", "object", dict(sub=PCM, out=True))])["ReturnValue"],
+            [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"]
+_crb = kml("BreakRotator", TWX + 400, TWY - 800, [("InRot", "struct", dict(sub=ROT)), ("Roll", "real", dict(subcat="float", out=True)),
+                                                 ("Pitch", "real", dict(subcat="float", out=True)), ("Yaw", "real", dict(subcat="float", out=True))])
+g.link(_crot, _crb["InRot"])
+_arot = member_pure(ACTOR, "K2_GetActorRotation", TWX + 200, TWY - 1000, as_pc, [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"]
+_arb = kml("BreakRotator", TWX + 400, TWY - 1000, [("InRot", "struct", dict(sub=ROT)), ("Roll", "real", dict(subcat="float", out=True)),
+                                                  ("Pitch", "real", dict(subcat="float", out=True)), ("Yaw", "real", dict(subcat="float", out=True))])
+g.link(_arot, _arb["InRot"])
+_mrel = member_pure(SC_, "K2_GetComponentRotation", TWX + 200, TWY - 1200, mesh, [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"]
+_mrb = kml("BreakRotator", TWX + 400, TWY - 1200, [("InRot", "struct", dict(sub=ROT)), ("Roll", "real", dict(subcat="float", out=True)),
+                                                  ("Pitch", "real", dict(subcat="float", out=True)), ("Yaw", "real", dict(subcat="float", out=True))])
+g.link(_mrel, _mrb["InRot"])
+_logs = [("HandF", vop("Dot_VectorVector", TWX + 600, TWY - 400, _hrel_t, cf_, ret_sub="real")),
+         ("HandR", vop("Dot_VectorVector", TWX + 600, TWY - 330, _hrel_t, cr_, ret_sub="real")),
+         ("HandU", vop("Dot_VectorVector", TWX + 600, TWY - 260, _hrel_t, cu_, ret_sub="real")),
+         ("VelR", vop("Dot_VectorVector", TWX + 600, TWY - 600, _vel, cr_, ret_sub="real")),
+         ("CamRoll", _crb["Roll"]), ("CamYawRel", d_op("Subtract_DoubleDouble", TWX + 600, TWY - 900, _crb["Yaw"], _arb["Yaw"])),
+         ("MeshYawRel", d_op("Subtract_DoubleDouble", TWX + 600, TWY - 1100, _mrb["Yaw"], _arb["Yaw"]))]
+_lg = [set_from(v, "real", TWX + 700 + 300 * k, TWY - 200, pin, "per tick while grabbing (probe)" if k == 0 else "", subcat="double") for k, (v, pin) in enumerate(_logs)]
+g.link(_stw["then"], _lg[0]["execute"])
+chain(*_lg)
+# build 49b (tester: "the camera doesn't tilt; it's the body that rotates and the arm rotates with the body"): the shoulder
+# measure was in the body's own space, so the body's turn never showed. Now, as ImmersiveCampfires pins the seated body: the
+# body mesh keeps the rotation it had (relative to the player) when the grab started, every tick while the grab plays
+_bpin = branch(TWX + 2900, TWY - 200, "first tick of this grab? remember the body's rotation", b_not(TWX + 2800, TWY, self_get("BodyPinned", "bool", TWX + 2600, TWY)))
+g.link(_lg[-1]["then"], _bpin["execute"])
+_brt = kml("BreakTransform", TWX + 3000, TWY - 300, [("InTransform", "struct", dict(sub=XFORM)), ("Location", "struct", dict(sub=VEC, out=True)),
+                                                    ("Rotation", "struct", dict(sub=ROT, out=True)), ("Scale", "struct", dict(sub=VEC, out=True))])
+g.link(member_pure(SC_, "GetRelativeTransform", TWX + 2850, TWY - 300, mesh, [("ReturnValue", "struct", dict(sub=XFORM, out=True))])["ReturnValue"], _brt["InTransform"])
+_srr = set_from("BodyRel0", "struct", TWX + 3200, TWY - 400, _brt["Rotation"], "the body's rotation relative to the player", sub=ROT)
+g.link(_bpin["then"], _srr["execute"])
+_spn = self_set("BodyPinned", "bool", TWX + 3500, TWY - 400, "", default="true")
+g.link(_srr["then"], _spn["execute"])
+# build 50 (build 49 probe while strafing: the body mesh and the camera never turn (0 deg), but the shoulder turned 60-86 deg
+# INSIDE the walk / strafe animation, the arm with it). The hips' turn since the grab started is measured every tick and the
+# upper body (jnt_spine_01 up) turned back by as much: AS_ImmLoot_Twist in DeathSlot, its frame = the turn
+_hip_yaw = lambda x, y: _sh_yaw_b(x, y, "jnt_spine_03", axis="0.119700,-0.992800,0.000000")
+_shy0 = set_from("HipYaw0", "real", TWX + 3800, TWY - 600, _hip_yaw(TWX + 3600, TWY - 800), "the hips' yaw at the grab start", subcat="double")
+_mtw = member_call(ANIMI, "PlaySlotAnimationAsDynamicMontage", TWX + 4100, TWY - 600, anim, "the upper-body counter-turn (DeathSlot, after FullBody)", [
+    ("Asset", "object", dict(sub=ANIMSEQB, extra='DefaultObject="/ImmersiveLooting/Runtime/AS_ImmLoot_Twist.AS_ImmLoot_Twist",')),
+    ("SlotNodeName", "name", dict(extra='DefaultValue="DefaultSlot",')),   # build 55: the counter-turn again (the game files: strafing = a mesh-space turn of the whole body)
+    ("BlendInTime", "real", dict(subcat="float", extra='DefaultValue="0.150000",')),
+    ("BlendOutTime", "real", dict(subcat="float", extra='DefaultValue="0.200000",')),
+    ("InPlayRate", "real", dict(subcat="float", extra='DefaultValue="0.000100",')),
+    ("LoopCount", "int", dict(extra='DefaultValue="1",')),
+    ("BlendOutTriggerTime", "real", dict(subcat="float", extra='DefaultValue="-1.000000",')),
+    ("InTimeToStartMontageAt", "real", dict(subcat="float", extra='DefaultValue="3.000000",')),
+    ("ReturnValue", "object", dict(sub=MONT, out=True))])
+_stm = set_from("TwistMont", "object", TWX + 4400, TWY - 600, _mtw["ReturnValue"], "", sub=MONT)
+_sok = set_from("TwistOk", "bool", TWX + 4700, TWY - 600, is_valid(TWX + 4600, TWY - 450, _mtw["ReturnValue"]), "the counter-turn started? (probe)")
+_spn_then = _spn["then"]
+for _q in list(_spn_then.links):
+    _spn_then.links.remove(_q); _q.links.remove(_spn_then)
+_bhst = branch(TWX + 4000, TWY - 900, "standing? hold the left arm at rest under the pickup", self_get("AimStand", "bool", TWX + 3800, TWY - 800))
+chain(_spn, _shy0, self_set("TwistApplied", "real", TWX + 3950, TWY - 750, "", default="0.0", subcat="double"))
+g.link([n_ for n_ in g.nodes if n_.klass.endswith("K2Node_VariableSet") and n_.pins.get("TwistApplied") is not None][0]["then"], _bhst["execute"])
+g.link(_bhst["then"], _mtw["execute"])
+chain(_mtw, _stm, _sok)
+_srl = member_call(SC_, "K2_SetRelativeRotation", TWX + 3800, TWY - 200, mesh, "held there (the strafe does not turn it)", [
+    ("NewRotation", "struct", dict(sub=ROT)), B("bSweep"), ("SweepHitResult", "struct", dict(sub=HIT, out=True)), B("bTeleport", "true")])
+g.link(self_get("BodyRel0", "struct", TWX + 3600, TWY, sub=ROT), _srl["NewRotation"])
+g.link(_sok["then"], _srl["execute"])   # build 50: after the counter-turn started
+g.link(_bhst["else"], _mtw["execute"])   # build 55: crouched too
+g.link(_bpin["else"], _srl["execute"])
+_hd = kml("NormalizeAxis", TWX + 4000, TWY + 300, [D("Angle"), RD])
+_shrest = kml("SelectFloat", TWX + 3700, TWY + 550, [D("A", "82.0"), D("B", "86.0"), ("bPickA", "bool", dict(extra='DefaultValue="false",')), RD])
+g.link(self_get("AimStand", "bool", TWX + 3500, TWY + 600), _shrest["bPickA"])
+# build 55: the shoulder's turn from its RESTING angle (standing ~82 deg in game, 84.9 in fp_bh_idle_stand; crouched 86.8),
+# not from the grab's start: a grab started mid-strafe is corrected too
+g.link(d_op("Subtract_DoubleDouble", TWX + 3850, TWY + 300, _sh_yaw(TWX + 3700, TWY + 400), _shrest["ReturnValue"]), _hd["Angle"])
+_twpos = kml("FClamp", TWX + 4300, TWY + 300, [D("Value"), D("Min", "0.0"), D("Max", "6.0"), RD])
+_phi = kml("FClamp", TWX + 4100, TWY + 450, [D("Value"), D("Min", "-90.0"), D("Max", "90.0"), RD])
+g.link(d_op("Subtract_DoubleDouble", TWX + 3950, TWY + 450, self_get("TwistApplied", "real", TWX + 3800, TWY + 500, subcat="double"), _hd["ReturnValue"]), _phi["Value"])
+g.link(d_op("Divide_DoubleDouble", TWX + 4250, TWY + 300, d_op("Add_DoubleDouble", TWX + 4150, TWY + 350, _phi["ReturnValue"], b_const="90.0"), b_const="30.0"), _twpos["Value"])
+_mtsp = member_call(ANIMI, "Montage_SetPosition", TWX + 4500, TWY - 200, anim, "the upper body turned back by the hips' turn", [
+    ("Montage", "object", dict(sub=MONT)), ("NewPosition", "real", dict(subcat="float"))])
+g.link(self_get("TwistMont", "object", TWX + 4300, TWY - 100, sub=MONT), _mtsp["Montage"])
+g.link(_twpos["ReturnValue"], _mtsp["NewPosition"])
+_btv = branch(TWX + 4300, TWY - 400, "the counter-turn playing? (with no montage SetPosition would move every montage)",
+              is_valid(TWX + 4200, TWY - 250, self_get("TwistMont", "object", TWX + 4000, TWY - 250, sub=MONT)))
+g.link(_srl["then"], _btv["execute"])
+g.link(_btv["then"], _mtsp["execute"])
+chain(_mtsp, set_from("HipTurn", "real", TWX + 4800, TWY - 200, _hd["ReturnValue"], "the upper body's measured turn since the start (probe)", subcat="double"),
+      set_from("TwistApplied", "real", TWX + 5100, TWY - 200, _phi["ReturnValue"], "the counter-turn now applied", subcat="double"))
+#   grab over: forget it (the game turns the body as before)
+_bunp = branch(TWX + 300, TWY + 1100, "pinned and the grab over? let the body go", self_get("BodyPinned", "bool", TWX + 100, TWY + 1200))
+g.link(_btw["else"], _bunp["execute"])
+_bpf = self_set("BodyPinned", "bool", TWX + 600, TWY + 1100, "", default="false")
+g.link(_bunp["then"], _bpf["execute"])
+_mtst = member_call(ANIMI, "Montage_Stop", TWX + 900, TWY + 1100, anim, "the counter-turn goes", [
+    ("InBlendOutTime", "real", dict(subcat="float", extra='DefaultValue="0.200000",')), ("Montage", "object", dict(sub=MONT))])
+g.link(self_get("TwistMont", "object", TWX + 700, TWY + 1250, sub=MONT), _mtst["Montage"])
+g.link(_bpf["then"], _mtst["execute"])
+_gpos = member_pure(ANIMI, "Montage_GetPosition", TWX + 900, TWY + 300, anim, [("Montage", "object", dict(sub=MONT)), ("ReturnValue", "real", dict(subcat="float", out=True))])
+_gpos.pins["Montage"].const = True
+g.link(self_get("GrabMontage", "object", TWX + 700, TWY + 300, sub=MONT), _gpos["Montage"])
+_newp = d_op("Add_DoubleDouble", TWX + 1150, TWY + 250, _segst, d_op("Subtract_DoubleDouble", TWX + 1050, TWY + 300, _gpos["ReturnValue"], self_get("SegStart", "real", TWX + 900, TWY + 380, subcat="double")))
+_msp = member_call(ANIMI, "Montage_SetPosition", TWX + 1300, TWY, anim, "the same moment of the reach, another direction", [
+    ("Montage", "object", dict(sub=MONT)), ("NewPosition", "real", dict(subcat="float"))])
+g.link(self_get("GrabMontage", "object", TWX + 1100, TWY + 150, sub=MONT), _msp["Montage"])
+g.link(_newp, _msp["NewPosition"])
+g.link(_bsw["then"], _msp["execute"])
+chain(_msp, set_from("SegStart", "real", TWX + 1600, TWY, _segst, "", subcat="double"), inc("NTwSwitch", TWX + 1900, TWY, "count (probe)"))
 
 # build 35: the aim steps run first in the reach (brs.else -> Aim* -> reach steps)
 _brs_else = brs["else"]

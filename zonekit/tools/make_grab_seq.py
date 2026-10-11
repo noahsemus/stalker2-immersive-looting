@@ -853,7 +853,8 @@ def finger_open(f):
     return 1.0 - smoother((f - 10) / 3)
 
 
-def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, lower_deg=0.0, max_dist=None, grip_seq=None, azims=None, finger_base=None, hand_roll=0.0):
+def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, lower_deg=0.0, max_dist=None, grip_seq=None, azims=None, finger_base=None, hand_roll=0.0, dists=None):
+    dists_ = dists or DISTS
     azims_ = azims or AZIMS
     sp_p, sp_q = cs(base, "jnt_spine_03", 0)
     cam, _ = cs(base, "jnt_camera", 0)
@@ -878,7 +879,7 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, low
     fgrip_ = {b: local(grip_seq, b, 0)[1] for b in FINGERS} if grip_seq not in (None, "src") else None
     out.append(f"{name}: table arm root (from the eye) {tuple(round(x - c, 2) for x, c in zip(A, cam))} abs {tuple(round(x, 2) for x in A)}, reach {l1 + l2:.2f}")
     for ie, elev in enumerate(ELEVS):
-      for dd in DISTS:
+      for dd in dists_:
         for az in azims_:
             er, ar = math.radians(elev), math.radians(az)
             dirv_e = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
@@ -955,7 +956,7 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, low
                     keys[b][2].append(unreal.Vector(*l[2]))
                 if f == 12:
                     errs.append(norm(sub(add(T2, qrot(hq, wpn)), sub(item, bias))))
-    nseg = len(ELEVS) * len(DISTS) * len(AZIMS)
+    nseg = len(ELEVS) * len(dists_) * len(azims_)
     total = nseg * SEG2
     out_dir = out_dir or USE_DIR
     path = f"{out_dir}/{name}"
@@ -1027,6 +1028,81 @@ def build_pick_pose():
         AL.remove_animation_notify_events_by_track(seq, tn)
     seq.set_editor_property("additive_anim_type", unreal.AdditiveAnimationType.AAT_NONE)
     out.append(f"PICKPOSE {name}: {len(tracks)} tracks, len {seq.get_play_length():.3f} s, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
+
+
+def build_twist():
+    """build 50: AS_ImmLoot_Twist, additive (local space, reference = frame 90): frame 90 + phi turns the upper body
+    (jnt_spine_01 and everything above it) by phi degrees about the vertical, -90..+90. Played in DeathSlot (after
+    FullBody), frame set every tick to cancel the strafe's turn of the hips."""
+    base = unreal.load_asset(BASE_BH)
+    hp, hq = cs(base, "jnt_hips", 0)
+    sl = local(base, "jnt_spine_01", 0)
+    name = "AS_ImmLoot_Twist"
+    path = f"{DIR}/{name}"
+    if not EAL.does_asset_exist(path):
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, unreal.load_asset(f"{DIR}/{NAME_BH}"))
+    seq = unreal.load_asset(path)
+    rots = []
+    for i in range(181):
+        ph = math.radians(i - 90) / 2
+        rz = (0.0, 0.0, math.sin(ph), math.cos(ph))
+        d = qmul(qmul(qinv(hq), rz), hq)              # the turn about the component vertical, in the hips' frame
+        rots.append(unreal.Quat(*qmul(d, sl[1])))
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot twist", True)
+    ctrl.remove_all_bone_tracks(True)
+    ctrl.remove_all_curves_of_type(unreal.RawCurveTrackTypes.RCT_FLOAT, True)
+    ctrl.set_frame_rate(unreal.FrameRate(30, 1), True)
+    ctrl.set_number_of_frames(unreal.FrameNumber(180), True)
+    if hasattr(ctrl, "add_bone_track"):
+        ctrl.add_bone_track("jnt_spine_01", True)
+    else:
+        ctrl.add_bone_curve("jnt_spine_01", True)
+    ctrl.set_bone_track_keys("jnt_spine_01", [unreal.Vector(*sl[0])] * 181, rots, [unreal.Vector(*sl[2])] * 181, True)
+    ctrl.close_bracket(True)
+    for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
+        AL.remove_animation_notify_events_by_track(seq, tn)
+    seq.set_editor_property("additive_anim_type", unreal.AdditiveAnimationType.AAT_LOCAL_SPACE_BASE)
+    seq.set_editor_property("ref_pose_type", unreal.AdditiveBasePoseType.ABPT_LOCAL_ANIM_FRAME)
+    seq.set_editor_property("ref_frame_index", 90)
+    out.append(f"TWIST {name}: len {seq.get_play_length():.2f} s, ref frame {seq.get_editor_property('ref_frame_index')}, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
+
+
+def build_arm_hold():
+    """build 54: AS_ImmLoot_ArmHold, NOT additive, 3 s constant: the left shoulder, arm, forearm, hand and fingers of the
+    empty-handed idle (fp_bh_idle_stand frame 0). Played in the LeftHand slot under our FullBody pickup: the strafe
+    animation's own left-arm swing (build 53 probe: the left shoulder turned +-75 deg while the spine did not turn at all)
+    is replaced by the rest pose our pickup table was built on, so the table lands as built."""
+    base = unreal.load_asset(BASE_BH)
+    name = "AS_ImmLoot_ArmHold"
+    path = f"{DIR}/{name}"
+    if not EAL.does_asset_exist(path):
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, unreal.load_asset(f"{DIR}/{NAME_BH}"))
+    seq = unreal.load_asset(path)
+    bones = [SHOULDER, ARM, FORE, HAND, "jnt_l_weapon"] + FINGERS + [b for b in ("jnt_l_arm_roll", "jnt_l_fore_arm_roll", "jnt_l_elbow") if True]
+    tracks_b = [str(t) for t in AL.get_animation_track_names(base)]
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot arm hold", True)
+    ctrl.remove_all_bone_tracks(True)
+    ctrl.remove_all_curves_of_type(unreal.RawCurveTrackTypes.RCT_FLOAT, True)
+    ctrl.set_frame_rate(unreal.FrameRate(30, 1), True)
+    ctrl.set_number_of_frames(unreal.FrameNumber(90), True)
+    n = 0
+    for b in bones:
+        if b not in tracks_b:
+            continue
+        l = local(base, b, 0)
+        if hasattr(ctrl, "add_bone_curve"):
+            ctrl.add_bone_curve(b, True)
+        else:
+            ctrl.add_bone_track(b, True)
+        ctrl.set_bone_track_keys(b, [unreal.Vector(*l[0])] * 91, [unreal.Quat(*l[1])] * 91, [unreal.Vector(*l[2])] * 91, True)
+        n += 1
+    ctrl.close_bracket(True)
+    for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
+        AL.remove_animation_notify_events_by_track(seq, tn)
+    seq.set_editor_property("additive_anim_type", unreal.AdditiveAnimationType.AAT_NONE)
+    out.append(f"ARMHOLD {name}: {n} tracks, len {seq.get_play_length():.2f} s, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
 
 
 def build_use_tables(src, tgt_rot, nkeys):
@@ -1151,13 +1227,17 @@ try:
         build_bh_reach_table(src, seq, tgt_rot, nkeys)   # build 12 (build_bh_table = checkpoint-b11)
     if ARGS.get("PICKADD", "0") == "1":    # build 38
         build_use_table(src, tgt_rot, nkeys, unreal.load_asset(BASE_BH), "AS_ImmLoot_GrabBHAdd", unreal.load_asset(f"{DIR}/{NAME_BH}"),
-                        out_dir=DIR, grip_seq="src", azims=[-15, 0, 15, 30, 45])   # build 39; build 42: the vanilla grab's fingers
+                        out_dir=DIR, grip_seq="src", azims=list(range(-30, 61, 5)), dists=[60])   # build 39; build 42: the vanilla grab's fingers
+    if ARGS.get("ARMHOLD", "0") == "1":
+        build_arm_hold()
+    if ARGS.get("TWIST", "0") == "1":
+        build_twist()
     if ARGS.get("PICKCROUCH", "0") == "1":    # build 41: crouched, its own rest pose (the stand table's delta barely moved the
         # crouched arm: build 40 probe, the hand ended where it started)
         build_use_table(src, tgt_rot, nkeys, unreal.load_asset("/Game/_STALKER2/Animations/Player/AnimSequences/bh/crouch/fp_bh_idle_crouch"),
                         "AS_ImmLoot_GrabBHAddCrouch", unreal.load_asset(f"{DIR}/{NAME_BH}"), out_dir=DIR,
-                        grip_seq="src", azims=[-15, 0, 15, 30, 45], finger_base=unreal.load_asset(BASE_BH),
-                        hand_roll=-70.0)   # build 45 (tester: crouched "rotate clockwise so the back of the hand faces up, now it faces left")   # build 42/44: the vanilla grab's fingers, from the standing rest
+                        grip_seq="src", azims=list(range(-30, 61, 5)), dists=[60], finger_base=unreal.load_asset(BASE_BH),
+                        hand_roll=-35.0)   # build 46: -35 (tester: -70 "too far", the item clipped); build 45 (tester: crouched "rotate clockwise so the back of the hand faces up, now it faces left")   # build 42/44: the vanilla grab's fingers, from the standing rest
     if ARGS.get("PICKPOSE", "0") == "1":   # build 30: the pickup in our own use pose
         build_pick_pose()
         build_use_table(src, tgt_rot, nkeys, unreal.load_asset(f"{DIR}/AS_ImmLoot_PickPose"), "AS_ImmLoot_PickReach",
