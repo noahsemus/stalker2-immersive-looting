@@ -109,58 +109,59 @@ common = {"ModID": MOD_ID, "SettingID": SETTING, "SettingHoverText": HOVER, "Aut
 
 # RegisterMCMSettings
 ev_r = Lifted(EX, P + "K2Node_Event_6", "K2Node_Event_901", 0, 0)
-reg = Lifted(EX, P + "K2Node_Message_55", "K2Node_Message_901", 400, 0, defaults(common))
-add = Lifted(EX, P + "K2Node_Message_0", "K2Node_Message_902", 1100, 0, defaults({"ModID": MOD_ID}))
+reg = Lifted(EX, P + "K2Node_Message_55", "K2Node_Message_901", 700, 0, defaults(common))
+add = Lifted(EX, P + "K2Node_Message_0", "K2Node_Message_902", 1300, 0, defaults({"ModID": MOD_ID}))
 link(ev_r, "then", reg, "execute")
 link(ev_r, "BPI MCM API", reg, "self")
 link(reg, "then", add, "execute")
 link(ev_r, "BPI MCM API", add, "self")
-xlink(reg, "BoolValue", self_get("TouchBodies", "bool", 200, 300)["TouchBodies"])
-xlink(reg, "ComboBoxOptions", make_str_array(200, 400)["Array"])
-sr = self_set("Registered", "bool", 1500, 0, "registered (Apply may write now)", default="true")
+xlink(reg, "BoolValue", self_get("TouchBodies", "bool", 350, 500)["TouchBodies"])
+xlink(reg, "ComboBoxOptions", make_str_array(350, 650)["Array"])
+sr = self_set("Registered", "bool", 1750, 0, "registered (Apply may write now)", default="true")
 xlink(add, "then", sr["execute"])
 
 # RegisterMCMDefaultSettings
-ev_d = Lifted(EX, P + "K2Node_Event_9", "K2Node_Event_902", 0, 900)
-dft = Lifted(EX, P + "K2Node_Message_31", "K2Node_Message_903", 400, 900, defaults(dict(common, BoolValue="true")))
+ev_d = Lifted(EX, P + "K2Node_Event_9", "K2Node_Event_902", 0, 1300)
+dft = Lifted(EX, P + "K2Node_Message_31", "K2Node_Message_903", 700, 1300, defaults(dict(common, BoolValue="true")))
 link(ev_d, "then", dft, "execute")
 link(ev_d, "BPI MCM API", dft, "self")
 for l_ in list(dft.lines):
     pass
-xlink(dft, "ComboBoxOptions", make_str_array(200, 1300)["Array"])
+xlink(dft, "ComboBoxOptions", make_str_array(350, 1950)["Array"])
 
 # ApplyMCMSettings
-ev_a = Lifted(EX, P + "K2Node_Event_7", "K2Node_Event_903", 0, 1800)
-br = branch(300, 1800, "registered? (else an unknown setting reads false)")
+ev_a = Lifted(EX, P + "K2Node_Event_7", "K2Node_Event_903", 0, 2600)
+br = branch(350, 2600, "registered? (else an unknown setting reads false)")
 xlink(ev_a, "then", br["execute"])
-g.link(self_get("Registered", "bool", 100, 2000)["Registered"], br["Condition"])
-get = Lifted(EX, P + "K2Node_Message_66", "K2Node_Message_904", 600, 1800, defaults({"ModID": MOD_ID, "SettingID": SETTING}))
+g.link(self_get("Registered", "bool", 150, 2800)["Registered"], br["Condition"])
+get = Lifted(EX, P + "K2Node_Message_66", "K2Node_Message_904", 700, 2600, defaults({"ModID": MOD_ID, "SettingID": SETTING}))
 xlink(get, "execute", br["then"])
 link(ev_a, "BPI MCM API", get, "self")
-st = self_set("TouchBodies", "bool", 1100, 1800, "the setting")
+st = self_set("TouchBodies", "bool", 1250, 2600, "the setting")
 xlink(get, "then", st["execute"])
 xlink(get, "BoolValue", st["TouchBodies"])
-gaoc = Node(g, BG + "K2Node_CallFunction", nm("K2Node_CallFunction"), 1400, 2100, "the running loot actor",
-            [f'FunctionReference=(MemberParent={GS},MemberName="GetActorOfClass")'])
+gaoc = exec_pins(Node(g, BG + "K2Node_CallFunction", nm("K2Node_CallFunction"), 1600, 2600, "the running loot actor (an exec node in UE5)",
+            [f'FunctionReference=(MemberParent={GS},MemberName="GetActorOfClass")']))
 gaoc.pin("self", "object", sub=GS, hidden=True, extra='DefaultObject="/Script/Engine.Default__GameplayStatics",' + TGT)
 gaoc.pin("WorldContextObject", "object", sub=OBJ, hidden=True)
 gaoc.pin("ActorClass", "class", sub=cls("/Script/Engine.Actor"), extra=f'DefaultObject="/ImmersiveLooting/Runtime/BP_ImmLootActor.BP_ImmLootActor_C",')
 gaoc.pin("ReturnValue", "object", sub=ACT, out=True)
-cast = exec_pins(Node(g, BG + "K2Node_DynamicCast", nm("K2Node_DynamicCast"), 1700, 1800, "", ["TargetType=" + ACT]))
+cast = exec_pins(Node(g, BG + "K2Node_DynamicCast", nm("K2Node_DynamicCast"), 2000, 2600, "", ["TargetType=" + ACT]))
 cast.pin("CastFailed", "exec", out=True)
 cast.pin("Object", "object", sub=OBJ)
 cast.pin("AsBP Imm Loot Actor", "object", sub=ACT, out=True)
 cast.pin("bSuccess", "bool", out=True)
 g.link(gaoc["ReturnValue"], cast["Object"])
-g.link(st["then"], cast["execute"])
-sa = exec_pins(Node(g, BG + "K2Node_VariableSet", nm("K2Node_VariableSet"), 2050, 1800, "into the loot actor",
+g.link(st["then"], gaoc["execute"])
+g.link(gaoc["then"], cast["execute"])
+sa = exec_pins(Node(g, BG + "K2Node_VariableSet", nm("K2Node_VariableSet"), 2400, 2600, "into the loot actor",
                     [f'VariableReference=(MemberParent={ACT},MemberName="TouchBodies")']))
 sa.pin("TouchBodies", "bool")
 sa.pin("Output_Get", "bool", out=True)
 sa.pin("self", "object", sub=ACT, extra=TGT)
 g.link(cast["then"], sa["execute"])
 g.link(cast["AsBP Imm Loot Actor"], sa["self"])
-g.link(self_get("TouchBodies", "bool", 1850, 2100)["TouchBodies"], sa["TouchBodies"])
+g.link(self_get("TouchBodies", "bool", 2200, 2900)["TouchBodies"], sa["TouchBodies"])
 
 out = []
 for l_ in (ev_r, reg, add, ev_d, dft, ev_a, get):

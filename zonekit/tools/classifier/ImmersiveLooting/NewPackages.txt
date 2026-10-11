@@ -32,5 +32,4 @@
 /ImmersiveLooting/Runtime/AS_ImmLoot_DoorPull
 /ImmersiveLooting/Runtime/AS_ImmLoot_DoorPushBH
 /ImmersiveLooting/Runtime/AS_ImmLoot_DoorPullBH
-/ImmersiveLooting/Input/IA_ImmLootInteract
-/ImmersiveLooting/Input/IMC_ImmLoot
+/ImmersiveLooting/Runtime/BP_ImmLootMCM

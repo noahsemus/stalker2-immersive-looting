@@ -486,8 +486,9 @@ def door_fingers(src):
     goes out, makes a fist as if grabbing, and pulls"): open and fist finger rotations (left hand locals)."""
     op = unreal.load_asset(OPEN_SEQ)
     opens = {b: local(op, b, OPEN_K)[1] for b in FINGERS}
-    for j in ("01", "02", "03"):                                       # build 11: "the pinky's curled": straight like the ring
-        opens[f"jnt_l_hand_pinky_{j}"] = opens[f"jnt_l_hand_ring_{j}"]
+    for j in ("01", "02", "03"):        # builds 11 / 16: "ring finger and pinky still not up": straight like the middle finger
+        opens[f"jnt_l_hand_ring_{j}"] = opens[f"jnt_l_hand_middle_{j}"]
+        opens[f"jnt_l_hand_pinky_{j}"] = opens[f"jnt_l_hand_middle_{j}"]
     return (opens, {b: local(src, b, FIST_K)[1] for b in FINGERS})
 
 
