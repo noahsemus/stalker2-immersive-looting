@@ -33,9 +33,10 @@ WHAT IT DOES
   - Holding the interact key on a food, drink or medicine item uses it as in vanilla: Skif
     first takes it with his hand, then plays the game's own use animation.
   - Doors: Skif pushes a door open with his open hand or pulls it with his fist.
-  - Optional Mod Configuration Menu (MCM) setting "Body and stash animation": switch the
+  - Optional Mod Configuration Menu (MCM) settings: "Body and stash animation" switches the
     touch on bodies, crates and bags off (their loot window then opens at once, as in
-    vanilla). The mod works without MCM installed.
+    vanilla); "Door animation" switches the door push / pull off. The mod works without MCM
+    installed.
   - No reach (vanilla pickup) while sprinting, aiming, reloading, in dialogue or cutscenes,
     or with a detector or binoculars in hand.
   - Artifacts and mutant parts keep their own vanilla animations.
@@ -54,7 +55,8 @@ CHANGES
          crouched, closes around it and holds it in the palm. Pickups that played no
          animation now play it. Stashes (the blue boxes and others) open reliably, and
          the hand reaches toward the stash. Door push / pull. Hold the interact key to use
-         an item, with the grab first. Optional MCM toggle for the body / stash touch.
+         an item, with the grab first. Optional MCM toggles for the body / stash touch and
+         for doors.
          Known: strafing during a pickup still swings the hand (being worked on).
   1.0.1  Carrying bodies works again: holding the interact key on a body picks it up as in
          vanilla (1.0.0 turned every hold into a tap). The loot window on bodies and stashes

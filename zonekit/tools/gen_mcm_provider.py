@@ -2,11 +2,12 @@
 
 BP_ImmLootMCM implements /ModConfigurationMenu/BPI_MCM_SettingsProvider (Class Settings -> Interfaces; the stub plugin
 from MCM's modder package must be in <kit>/Stalker2/Mods). MCM's manager finds it (GetAllActorsWithInterface) and calls:
-  RegisterMCMSettings(api)        -> RegisterModSetting "Immersive Looting" / "Body and stash animation" (Bool, the
-                                     current value; a value MCM already saved wins), AddUniqueModID, Registered = true
-  RegisterMCMDefaultSettings(api) -> RegisterDefaultModSetting (Bool, true)
+  RegisterMCMSettings(api)        -> RegisterModSetting "Immersive Looting" / "Body and stash animation" and / "Door
+                                     animation" (Bool, the current values; a value MCM already saved wins),
+                                     AddUniqueModID, Registered = true
+  RegisterMCMDefaultSettings(api) -> RegisterDefaultModSetting (Bool, true) for both
   ApplyMCMSettings(api)           -> (only once registered: another mod's click would read an unknown setting as false)
-                                     GetModSetting -> TouchBodies -> into the running BP_ImmLootActor
+                                     GetModSetting x2 -> TouchBodies / TouchDoors -> into the running BP_ImmLootActor
 The MCM nodes (interface events, the (Message) calls) are lifted from MCM's own example (MCM_ModExample1, exported with
 harness/tools/editor/export_t3d.py): their pin formats must match the interface exactly.
 The provider is spawned by BP_ImmLootActor through a soft class path, so the main mod never imports MCM and loads
@@ -31,6 +32,8 @@ KSL = cls("/Script/Engine.KismetSystemLibrary")
 MOD_ID = "Immersive Looting"
 SETTING = "Body and stash animation"
 HOVER = "Skif's hand touches bodies, crates and bags before the loot window opens. Off: they open at once, as in vanilla. Loose items keep their animation."
+SETTING2 = "Door animation"
+HOVER2 = "Skif's hand reaches for the door when you open, close or peek through it. Off: doors behave as in vanilla."
 P = "BP_MCM_ModExample1.BP_MCM_ModExample1:EventGraph."
 
 g = Graph()
@@ -111,9 +114,14 @@ common = {"ModID": MOD_ID, "SettingID": SETTING, "SettingHoverText": HOVER, "Aut
 ev_r = Lifted(EX, P + "K2Node_Event_6", "K2Node_Event_901", 0, 0)
 reg = Lifted(EX, P + "K2Node_Message_55", "K2Node_Message_901", 700, 0, defaults(common))
 add = Lifted(EX, P + "K2Node_Message_0", "K2Node_Message_902", 1300, 0, defaults({"ModID": MOD_ID}))
+reg2 = Lifted(EX, P + "K2Node_Message_55", "K2Node_Message_905", 1000, 0, defaults(dict(common, SettingID=SETTING2, SettingHoverText=HOVER2)))
 link(ev_r, "then", reg, "execute")
 link(ev_r, "BPI MCM API", reg, "self")
-link(reg, "then", add, "execute")
+link(reg, "then", reg2, "execute")
+link(ev_r, "BPI MCM API", reg2, "self")
+link(reg2, "then", add, "execute")
+xlink(reg2, "BoolValue", self_get("TouchDoors", "bool", 650, 500)["TouchDoors"])
+xlink(reg2, "ComboBoxOptions", make_str_array(650, 650)["Array"])
 link(ev_r, "BPI MCM API", add, "self")
 xlink(reg, "BoolValue", self_get("TouchBodies", "bool", 350, 500)["TouchBodies"])
 xlink(reg, "ComboBoxOptions", make_str_array(350, 650)["Array"])
@@ -123,8 +131,12 @@ xlink(add, "then", sr["execute"])
 # RegisterMCMDefaultSettings
 ev_d = Lifted(EX, P + "K2Node_Event_9", "K2Node_Event_902", 0, 1300)
 dft = Lifted(EX, P + "K2Node_Message_31", "K2Node_Message_903", 700, 1300, defaults(dict(common, BoolValue="true")))
+dft2 = Lifted(EX, P + "K2Node_Message_31", "K2Node_Message_906", 1100, 1300, defaults(dict(common, SettingID=SETTING2, SettingHoverText=HOVER2, BoolValue="true")))
 link(ev_d, "then", dft, "execute")
 link(ev_d, "BPI MCM API", dft, "self")
+link(dft, "then", dft2, "execute")
+link(ev_d, "BPI MCM API", dft2, "self")
+xlink(dft2, "ComboBoxOptions", make_str_array(750, 1950)["Array"])
 for l_ in list(dft.lines):
     pass
 xlink(dft, "ComboBoxOptions", make_str_array(350, 1950)["Array"])
@@ -152,7 +164,13 @@ cast.pin("Object", "object", sub=OBJ)
 cast.pin("AsBP Imm Loot Actor", "object", sub=ACT, out=True)
 cast.pin("bSuccess", "bool", out=True)
 g.link(gaoc["ReturnValue"], cast["Object"])
-g.link(st["then"], gaoc["execute"])
+get2 = Lifted(EX, P + "K2Node_Message_66", "K2Node_Message_907", 1300, 2900, defaults({"ModID": MOD_ID, "SettingID": SETTING2}))
+xlink(get2, "execute", st["then"])
+link(ev_a, "BPI MCM API", get2, "self")
+st2 = self_set("TouchDoors", "bool", 1700, 2900, "the door setting")
+xlink(get2, "then", st2["execute"])
+xlink(get2, "BoolValue", st2["TouchDoors"])
+g.link(st2["then"], gaoc["execute"])
 g.link(gaoc["then"], cast["execute"])
 sa = exec_pins(Node(g, BG + "K2Node_VariableSet", nm("K2Node_VariableSet"), 2400, 2600, "into the loot actor",
                     [f'VariableReference=(MemberParent={ACT},MemberName="TouchBodies")']))
@@ -162,9 +180,17 @@ sa.pin("self", "object", sub=ACT, extra=TGT)
 g.link(cast["then"], sa["execute"])
 g.link(cast["AsBP Imm Loot Actor"], sa["self"])
 g.link(self_get("TouchBodies", "bool", 2200, 2900)["TouchBodies"], sa["TouchBodies"])
+sa2 = exec_pins(Node(g, BG + "K2Node_VariableSet", nm("K2Node_VariableSet"), 2700, 2600, "",
+                     [f'VariableReference=(MemberParent={ACT},MemberName="TouchDoors")']))
+sa2.pin("TouchDoors", "bool")
+sa2.pin("Output_Get", "bool", out=True)
+sa2.pin("self", "object", sub=ACT, extra=TGT)
+g.link(sa["then"], sa2["execute"])
+g.link(cast["AsBP Imm Loot Actor"], sa2["self"])
+g.link(self_get("TouchDoors", "bool", 2500, 2900)["TouchDoors"], sa2["TouchDoors"])
 
 out = []
-for l_ in (ev_r, reg, add, ev_d, dft, ev_a, get):
+for l_ in (ev_r, reg, reg2, add, ev_d, dft, dft2, ev_a, get, get2):
     out += l_.text()
 out += g.text()
 # the example's header pictures are not shipped (MCM showed white behind its white text): our own copies
@@ -175,4 +201,4 @@ for a_, b_ in HEADERS.items():
     out = [l_.replace(a_, b_) for l_ in out]
 assert not any("/MCM_ModExample1/" in l_ for l_ in out)
 write(sys.argv[2], out)
-print("ok", len(g.nodes) + 7, "nodes")
+print("ok", len(g.nodes) + 10, "nodes")

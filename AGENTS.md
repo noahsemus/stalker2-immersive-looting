@@ -72,7 +72,7 @@ harness on 2026-10-09.
 - 2026-10-11 v1.1.0 released (Noah: "looks good. cut the release", a tentative release for the stash fixes): doors
   (push / pull), hold-to-use (checkpoint-holduse), stash / loose-item detection fixes, the new empty-hands pickup
   (FullBody local-additive tables `AS_ImmLoot_GrabBHAdd` / `...Crouch`, aimed standing and crouched, 1.0.0 fingers, item
-  in the palm), MCM toggle (`BP_ImmLootMCM`, header pictures `T_ImmLoot_MCMHeader` / `T_ImmLoot_MCMCatHeader`: the
+  in the palm), MCM toggles for body / stash touch and doors (`BP_ImmLootMCM` -> actor `TouchBodies` / `TouchDoors`; header pictures `T_ImmLoot_MCMHeader` / `T_ImmLoot_MCMCatHeader`: the
   example's own were not shipped = white box behind white text). Released actor graph = the build Noah last tested
   (with its strafe counter-turn attempt, no visible effect); `zonekit/paste/BP_ImmLootActor.txt` / the generator already
   hold the untested build 55. Open: the hand swings while strafing during a pickup.
