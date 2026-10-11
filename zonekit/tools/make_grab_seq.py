@@ -471,14 +471,123 @@ TOUCH_REACH = 0.95                     # of the arm length: fully out, not locke
 
 
 DOOR_ELEV, DOOR_AZIM = -12.0, -14.0   # doors (tester): the hand stays in the lower left of the screen, one fixed direction
-DOOR_PUSH_STROKE, DOOR_PULL_STROKE, DOOR_PULL_DROP = 9.0, 12.0, 10.0   # cm along the sight line
+DOOR_PUSH_STROKE, DOOR_PULL_STROKE, DOOR_PULL_DROP = 14.0, 18.0, 10.0
 
 
-def build_doors(src, grab, path_h, path_q, nkeys):
+def door_sched(mode, R, N, G, PB):
+    """(from frame, to frame, from point, to point), 30 fps. Push: out to just short of the door by 14, a 0.4 s forward
+    stroke 14-26 (the Blueprint pauses at 26 = 0.867 s), held to 30, back by 48. Pull: out to the door by 16, held to 22
+    (pause at 22 = 0.733 s), drawn back and down 22-36, back to rest by 50."""
+    if mode == "push":
+        return ((0, 14, R, N), (14, 26, N, G), (26, 30, G, G), (30, 48, G, R))
+    return ((0, 16, R, G), (16, 22, G, G), (22, 36, G, PB), (36, 50, PB, R))   # cm along the sight line
+
+
+DOOR_BH_ELEV, DOOR_BH_AZIM, DOOR_BH_DIST = -18.0, -22.0, 34.0   # the shoulder is ~19 cm behind the eye: 52 cm of arm reaches ~30 cm ahead   # body frame, from the eye
+
+
+def build_bh_door(src, rifle_seq, tgt_rot, nkeys, mode, name):
+    """Empty hands (build 9, tester: "no difference between open and close" unarmed: the reach table segment was used):
+    the reach-table solve (body frame, BH idle rest pose) with the door schedule, one 50-frame segment."""
+    NF = 51
+    base = unreal.load_asset(BASE_BH)
+    sp_p, sp_q = cs(base, "jnt_spine_03", 0)
+    cam, _ = cs(base, "jnt_camera", 0)
+    ba, bf, bh = local(base, ARM, 0), local(base, FORE, 0), local(base, HAND, 0)
+    bsh = local(base, SHOULDER, 0)
+    rq_sh = qmul(sp_q, bsh[1]); rp_sh = add(sp_p, qrot(sp_q, bsh[0]))
+    rq_a = qmul(rq_sh, ba[1]); RA = add(rp_sh, qrot(rq_sh, ba[0]))
+    rq_f = qmul(rq_a, bf[1]); RE = add(RA, qrot(rq_a, bf[0]))
+    RQ = qmul(rq_f, bh[1]); R = add(RE, qrot(rq_f, bh[0]))
+    er, ar = math.radians(DOOR_BH_ELEV), math.radians(DOOR_BH_AZIM)
+    vf = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
+    qp = qmul((0.0, 0.0, math.sin(ar / 2), math.cos(ar / 2)), (0.0, -math.sin(er / 2), 0.0, math.cos(er / 2)))
+    GQ = qmul(qp, tgt_rot[13])
+    G = add(cam, mul(vf, DOOR_BH_DIST))
+    N = sub(G, mul(vf, DOOR_PUSH_STROKE))
+    PB = sub(sub(G, mul(vf, DOOR_PULL_STROKE)), (0.0, 0.0, DOOR_PULL_DROP))
+    sched = door_sched(mode, R, N, G, PB)
+    path = f"{DIR}/{name}"
+    if not EAL.does_asset_exist(path):
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, rifle_seq)
+    seq = unreal.load_asset(path)
+    tracks = [str(tr) for tr in AL.get_animation_track_names(src)]
+    cache = {k: {b: local(src, b, k) for b in tracks} for k in range(min(NF, nkeys))}
+    keys = {b: ([], [], []) for b in tracks}
+    for f in range(NF):
+        k = min(f, nkeys - 1)
+        bw, T0, Q0, T1, Q1 = 1.0, R, RQ, R, RQ
+        for f0, f1, P0, P1 in sched:
+            if f0 <= f <= f1:
+                bw, T0, T1 = smooth((f - f0) / max(f1 - f0, 1)), P0, P1
+                Q0, Q1 = (RQ if P0 is R else GQ), (RQ if P1 is R else GQ)
+                break
+        T = add(T0, mul(sub(T1, T0), bw))
+        hq = slerp(Q0, Q1, bw)
+        c = cache[0]          # the rest pose throughout (the vanilla grab's shoulder moves back 6 cm at frames 20-30)
+        sh_l = c[SHOULDER]
+        sh_q = qmul(sp_q, sh_l[1]); sh_p = add(sp_p, qrot(sp_q, sh_l[0]))
+        a_l, f_l, h_l = c[ARM], c[FORE], c[HAND]
+        a_q = qmul(sh_q, ba[1]); A = add(sh_p, qrot(sh_q, a_l[0]))
+        f_q = qmul(a_q, bf[1]); E = add(A, qrot(a_q, f_l[0]))
+        H = add(E, qrot(f_q, h_l[0]))
+        l1, l2 = norm(sub(E, A)), norm(sub(H, E))
+        to_t = sub(T, A)
+        d = max(abs(l1 - l2) + 0.01, min((l1 + l2) * 0.97, norm(to_t)))
+        dv = unit(to_t)
+        a = (l1 * l1 - l2 * l2 + d * d) / (2 * d)
+        h = math.sqrt(max(l1 * l1 - a * a, 0.0))
+        hint = sub(E, A)
+        pole = sub(hint, mul(dv, dot(hint, dv)))
+        pole = unit(pole) if norm(pole) > 1e-6 else unit(cross(dv, (0.0, 0.0, 1.0)))
+        E2 = add(A, add(mul(dv, a), mul(pole, h)))
+        T2 = add(A, mul(dv, d))
+        r1 = q_between(sub(E, A), sub(E2, A))
+        a_q2 = qmul(r1, a_q)
+        r2 = q_between(qrot(r1, sub(H, E)), sub(T2, E2))
+        f_q2 = qmul(r2, qmul(r1, f_q))
+        solved = {ARM: qmul(qinv(sh_q), a_q2), FORE: qmul(qinv(a_q2), f_q2), HAND: qmul(qinv(f_q2), hq)}
+        for b in tracks:
+            l = c[b]
+            keys[b][0].append(unreal.Vector(*l[0]))
+            keys[b][1].append(unreal.Quat(*(solved[b] if b in solved else l[1])))
+            keys[b][2].append(unreal.Vector(*l[2]))
+        if f in (14, 16, 26, 36):
+            out.append(f"BHDOOR {name} f{f} hand rel eye {tuple(round(x, 1) for x in sub(T2, cam))} target {tuple(round(x, 1) for x in sub(T, cam))} need {norm(to_t):.1f} reach {l1 + l2:.1f} shoulder {tuple(round(x, 1) for x in sub(A, cam))}")
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot door, empty hands", True)
+    ctrl.set_frame_rate(unreal.FrameRate(30, 1), True)
+    ctrl.set_number_of_frames(unreal.FrameNumber(NF - 1), True)
+    for b, (pos, rot, scl) in keys.items():
+        ctrl.set_bone_track_keys(b, pos, rot, scl, True)
+    ctrl.close_bracket(True)
+    for tn in [str(x) for x in AL.get_animation_notify_track_names(seq)]:
+        AL.remove_animation_notify_events_by_track(seq, tn)
+    track = "ImmLoot"
+    if track not in [str(x) for x in AL.get_animation_notify_track_names(seq)]:
+        AL.add_animation_notify_track(seq, track, unreal.LinearColor(0.2, 0.8, 0.2, 1.0))
+    hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
+    hand_enum = None
+    for e in AL.get_animation_notify_events(unreal.load_asset(MONT)):
+        if e.notify is not None and e.notify.get_class().get_name() == "AnimNotify_HandIK":
+            hand_enum = e.notify.get_editor_property("hand_to_apply")
+    for tt in (0.02, 0.3, 0.6, 0.9, 1.2, 1.5):
+        n = AL.add_animation_notify_event(seq, track, tt, hik)
+        n.set_editor_property("hand_to_apply", hand_enum)
+        n.set_editor_property("blend_time", 0.05)
+    for cn in [str(x) for x in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]:
+        AL.remove_curve(seq, cn, False)
+    out.append(f"BHDOOR {name}: len {seq.get_play_length():.2f} s, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
+
+
+def build_doors(src, grab, path_h, path_q, nkeys, tgt_rot=None):
     """1.1 doors (tester: opening = a push, closing = a pull; the hand in the lower left quadrant, not toward the
     door): AS_ImmLoot_DoorPush / AS_ImmLoot_DoorPull, the touch asset form with their own schedules."""
     build_touch_one(src, grab, path_h, path_q, nkeys, "AS_ImmLoot_DoorPush", DOOR_ELEV, DOOR_AZIM, "push")
     build_touch_one(src, grab, path_h, path_q, nkeys, "AS_ImmLoot_DoorPull", DOOR_ELEV, DOOR_AZIM, "pull")
+    if tgt_rot is not None:
+        build_bh_door(src, grab, tgt_rot, nkeys, "push", "AS_ImmLoot_DoorPushBH")
+        build_bh_door(src, grab, tgt_rot, nkeys, "pull", "AS_ImmLoot_DoorPullBH")
 
 
 def build_touch(src, grab, path_h, path_q, nkeys):
@@ -536,12 +645,7 @@ def build_touch_one(src, grab, path_h, path_q, nkeys, name, TOUCH_ELEV, TOUCH_AZ
     seq = unreal.load_asset(path)
     keys = {b: ([], [], []) for b in (ARM, FORE, HAND)}
     # (from frame, to frame, from point, to point): the Blueprint pauses at 0.6 s (frame 18) for DoorHold / the window
-    if mode == "push":      # out to just short of the door by 12, a forward stroke 12-18 (pause there), held to 22, back by 40
-        sched = ((0, 12, R, N), (12, 18, N, G), (18, 22, G, G), (22, 40, G, R))
-    elif mode == "pull":    # out to the door by 14, held to 18 (pause), drawn back and down 18-28, back on the grip by 42
-        sched = ((0, 14, R, G), (14, 18, G, G), (18, 28, G, PB), (28, 42, PB, R))
-    else:
-        sched = ((0, 12, R, G), (12, 20, G, G), (20, 36, G, R))
+    sched = door_sched(mode, R, N, G, PB) if mode in ("push", "pull") else ((0, 12, R, G), (12, 20, G, G), (20, 36, G, R))
     qof = lambda P: RQ if P is R else GQ
     for k in range(nkeys):
         bw, T0, Q0, T1, Q1 = 1.0, R, RQ, R, RQ
@@ -593,7 +697,7 @@ def build_touch_one(src, grab, path_h, path_q, nkeys, name, TOUCH_ELEV, TOUCH_AZ
         if e.notify is not None and e.notify.get_class().get_name() == "AnimNotify_HandIK":
             hand = e.notify.get_editor_property("hand_to_apply")
     hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
-    for t, end in ((0.035907, None), ({"pull": 1.45, "push": 1.35}.get(mode, 1.2), 1.0)):
+    for t, end in ((0.035907, None), (1.55 if mode in ("push", "pull") else 1.2, 1.0)):
         new = AL.add_animation_notify_event(seq, track, t, hik)
         new.set_editor_property("hand_to_apply", hand)
         if end is not None:
@@ -710,7 +814,7 @@ try:
     if ARGS.get("TOUCH", "1") == "1":
         build_touch(src, seq, path_h, path_q, nkeys)
     if ARGS.get("DOOR", "1") == "1":
-        build_doors(src, seq, path_h, path_q, nkeys)
+        build_doors(src, seq, path_h, path_q, nkeys, tgt_rot)
     if ARGS.get("BH", "1") == "1":
         build_bh_reach_table(src, seq, tgt_rot, nkeys)   # build 12 (build_bh_table = checkpoint-b11)
     if ARGS.get("AR", "0") == "1":   # the rifle table never showed over a rifle (no left_hand_curve then); deleted for v1.0.0
