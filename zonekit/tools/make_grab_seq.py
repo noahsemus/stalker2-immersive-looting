@@ -525,9 +525,9 @@ def door_sched(mode, R, N, G, PB):
     """(from frame, to frame, from point, to point), 30 fps. Push: out to just short of the door by 14, a 0.4 s forward
     stroke 14-26 (the Blueprint pauses at 26 = 0.867 s), held to 30, back by 48. Pull: out to the door by 16, held to 22
     (pause at 22 = 0.733 s), drawn back and down 22-36, back to rest by 50."""
-    if mode == "push":
-        return ((0, 14, R, N), (14, 26, N, G), (26, 30, G, G), (30, 48, G, R))
-    return ((0, 16, R, G), (16, 22, G, G), (22, 36, G, PB), (36, 50, PB, R))   # cm along the sight line
+    if mode == "push":      # build 15 (tester: "plays mostly after the door opened"): out by 6, stroke 6-14 (pause at 14)
+        return ((0, 6, R, N), (6, 14, N, G), (14, 18, G, G), (18, 38, G, R))
+    return ((0, 8, R, G), (8, 12, G, G), (12, 26, G, PB), (26, 42, PB, R))   # pull: at the door by 8 (pause at 12)   # cm along the sight line
 
 
 DOOR_BH_ELEV, DOOR_BH_AZIM, DOOR_BH_DIST = -30.0, -30.0, 34.0   # the shoulder is ~19 cm behind the eye: 52 cm of arm reaches ~30 cm ahead   # body frame, from the eye
@@ -549,7 +549,7 @@ def build_bh_door(src, rifle_seq, tgt_rot, nkeys, mode, name):
     er, ar = math.radians(DOOR_BH_ELEV), math.radians(DOOR_BH_AZIM)
     vf = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
     qp = qmul((0.0, 0.0, math.sin(ar / 2), math.cos(ar / 2)), (0.0, -math.sin(er / 2), 0.0, math.cos(er / 2)))
-    GQ = palm_q(src, vf) if mode == "push" else qmul(qp, tgt_rot[13])
+    GQ = slerp(qmul(qp, tgt_rot[13]), palm_q(src, vf), 0.5) if mode == "push" else qmul(qp, tgt_rot[13])
     opens, fists = door_fingers(src)
     G = add(cam, mul(vf, DOOR_BH_DIST))
     N = sub(G, mul(vf, DOOR_PUSH_STROKE))
@@ -698,8 +698,8 @@ def build_touch_one(src, grab, path_h, path_q, nkeys, name, TOUCH_ELEV, TOUCH_AZ
     keys = {b: ([], [], []) for b in (ARM, FORE, HAND)}
     # (from frame, to frame, from point, to point): the Blueprint pauses at 0.6 s (frame 18) for DoorHold / the window
     sched = door_sched(mode, R, N, G, PB) if mode in ("push", "pull") else ((0, 12, R, G), (12, 20, G, G), (20, 36, G, R))
-    if mode == "push":
-        GQ = palm_q(src, dirv_e)
+    if mode == "push":      # build 15 (tester: "like breaking his wrist"): half way from the grab's hand to palm-forward
+        GQ = slerp(GQ, palm_q(src, dirv_e), 0.5)
     if mode in ("push", "pull"):
         opens, fists = door_fingers(src)
         for b in FINGERS:
@@ -762,7 +762,7 @@ def build_touch_one(src, grab, path_h, path_q, nkeys, name, TOUCH_ELEV, TOUCH_AZ
         if e.notify is not None and e.notify.get_class().get_name() == "AnimNotify_HandIK":
             hand = e.notify.get_editor_property("hand_to_apply")
     hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
-    for t, end in ((0.035907, None), (1.55 if mode in ("push", "pull") else 1.2, 1.0)):
+    for t, end in ((0.035907, None), ({"push": 1.27, "pull": 1.4}.get(mode, 1.2), 1.0)):
         new = AL.add_animation_notify_event(seq, track, t, hik)
         new.set_editor_property("hand_to_apply", hand)
         if end is not None:

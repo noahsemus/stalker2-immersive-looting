@@ -1,18 +1,25 @@
 {
-    "FileVersion":  3,
-    "Version":  1,
-    "VersionName":  "",
-    "CreatedByURL":  "",
-    "DocsURL":  "",
-    "MarketplaceURL":  "",
-    "SupportURL":  "",
-    "FriendlyName":  "ImmersiveLooting",
-    "Description":  "Skif reaches out with his left hand and takes the item when you loot, instead of it vanishing instantly.",
-    "Category":  "Game Features",
-    "CreatedBy":  "noahsemus",
-    "EnabledByDefault":  true,
-    "CanContainContent":  true,
-    "ExplicitlyLoaded":  true,
-    "BuiltInInitialFeatureState":  "Registered",
-    "Mod":  true
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "",
+    "CreatedByURL": "",
+    "DocsURL": "",
+    "MarketplaceURL": "",
+    "SupportURL": "",
+    "FriendlyName": "ImmersiveLooting",
+    "Description": "Skif reaches out with his left hand and takes the item when you loot, instead of it vanishing instantly.",
+    "Category": "Game Features",
+    "CreatedBy": "noahsemus",
+    "EnabledByDefault": true,
+    "CanContainContent": true,
+    "ExplicitlyLoaded": true,
+    "BuiltInInitialFeatureState": "Registered",
+    "Mod": true,
+    "Plugins": [
+        {
+            "Name": "ModConfigurationMenu",
+            "Enabled": true,
+            "Optional": true
+        }
+    ]
 }

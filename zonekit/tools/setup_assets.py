@@ -152,12 +152,12 @@ def make_input():
 
 try:
     log(f"mod mounted: {mount_mod()}")
-    make_input()  # 1.1: back (hold to use: our IMC swallows F while our grab plays); deleted 1.0.1h (unused since 1.0.1d; bisect: their presence vs the body carry)
+    # make_input()  # 1.1 build 15: not needed (hold to use works through the item's tap interaction); deleted 1.0.1h (unused since 1.0.1d; bisect: their presence vs the body carry)
     # make_grab()  # AM_ImmLoot_Grab (builds 1-3) deleted for v1.0.0: the sequences play as dynamic montages
     actor = make_bp(ACTOR, unreal.Actor)
     add_vars(actor, ACTOR, ACTOR_VARS)
     cdo = unreal.get_default_object(BEL.generated_class(actor))
-    cdo.set_editor_property("auto_receive_input", unreal.AutoReceiveInput.PLAYER0)   # 1.1: our action (hold to use, while our context is on); corpses: keys polled
+    cdo.set_editor_property("auto_receive_input", unreal.AutoReceiveInput.DISABLED)   # 1.1 build 15: no input of ours at all (keys polled)
     log(f"actor auto_receive_input = {cdo.get_editor_property('auto_receive_input')} saved={EAL.save_asset(ACTOR, only_if_is_dirty=False)}")
     sub = make_bp(SUBSYS, unreal.ModWorldSubsystem)
     add_vars(sub, SUBSYS, [("LootActor", BEL.generated_class(actor), None), ("SpawnAttempts", "int", None)])
