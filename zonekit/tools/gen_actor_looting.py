@@ -572,6 +572,7 @@ conds = [
     ("binoculars", obj_q("IsBinocularsInHands", SX, SY + 640, as_pc)),
     ("disabled", b_not(SX + 200, SY + 720, self_get("Enabled", "bool", SX, SY + 720))),
     ("use", b_and(SX + 240, SY + 880, self_get("KeyHeld", "bool", SX, SY + 860),
+                  b_not(SX + 100, SY + 900, self_get("LHMarked", "bool", SX - 100, SY + 900)),   # option B: the reach plays
                   d_op("GreaterEqual_DoubleDouble", SX + 100, SY + 940,
                        d_op("Subtract_DoubleDouble", SX - 100, SY + 940, now(SX - 300, SY + 940),
                             self_get("InteractPressAt", "real", SX - 300, SY + 1000, subcat="double")), b_const="0.3", ret=RB))),
@@ -1131,7 +1132,7 @@ def tap_active(x, y, on, comment):
     return b["execute"], [c["then"], b["else"]]
 
 
-sqt = sequence(XT, YT, "touch steps", 8)
+sqt = sequence(XT, YT, "touch steps", 9)
 g.link(sq5["then_4"], sqt["execute"])
 
 #   T0: idle and window closed: is what we look at a corpse / stash? (re-evaluated every tick)
@@ -1372,7 +1373,20 @@ for k in range(25):
     g.link(bk["then"], sa["execute"])
     if k == 24:
         g.link(bk["else"], sa["execute"])
+    _sa_all = globals().setdefault("_sa_all", [])
+    _sa_all.append(sa)
     prev = bk
+DOOR_PUSH = "/ImmersiveLooting/Runtime/AS_ImmLoot_DoorPush.AS_ImmLoot_DoorPush"
+DOOR_PULL = "/ImmersiveLooting/Runtime/AS_ImmLoot_DoorPull.AS_ImmLoot_DoorPull"
+bdov = branch(XT + 3800, YT + 3300, "a door? its own push / pull asset (lower left), not the bin's", self_get("DoorTouch", "bool", XT + 3600, YT + 3450))
+for sa_ in _sa_all:
+    g.link(sa_["then"], bdov["execute"])
+bdpl = branch(XT + 4100, YT + 3300, "closing (a pull)?", self_get("DoorPulling", "bool", XT + 3900, YT + 3450))
+g.link(bdov["then"], bdpl["execute"])
+for _ex, _asset, _xx in ((bdpl["then"], DOOR_PULL, 4400), (bdpl["else"], DOOR_PUSH, 4700)):
+    _sd = self_set("TouchAsset", "object", XT + _xx, YT + 3200, "door: pull" if _asset == DOOR_PULL else "door: push", sub=ANIMSEQB)
+    _sd.pins["TouchAsset"].extra = f'DefaultObject="{_asset}",'
+    g.link(_ex, _sd["execute"])
 
 #     released: a tap (shorter than HoldToDrag) starts the touch; a longer press was the game's hold (carry a body,
 #     vanilla: we never touch it): idle again
@@ -1418,6 +1432,49 @@ chain_x = [self_set("DoorTouch", "bool", XT + 900, YT + 10100, "", default="fals
            self_set("TouchState", "int", XT + 1200, YT + 10100, "idle", default="0")]
 g.link(bdx["then"], chain_x[0]["execute"])
 chain(*chain_x)
+
+#   T8 (option B): mark the left hand busy while F is held on a loose item (>= 0.15 s: a hold, not a tap), free it
+#   when our reach has the item (grab frame + 0.12 s), when the hold ended without a pickup, or after 3 s
+sq8 = sequence(XT + 300, YT + 11000, "left-hand steps (option B)", 2)
+g.link(sqt["then_8"], sq8["execute"])
+lhm = lambda x, y: self_get("LHMarked", "bool", x, y)
+_held = d_op("GreaterEqual_DoubleDouble", XT + 300, YT + 11300,
+             d_op("Subtract_DoubleDouble", XT + 100, YT + 11300, now(XT - 100, YT + 11300),
+                  self_get("InteractPressAt", "real", XT - 100, YT + 11380, subcat="double")), b_const="0.15", ret=RB)
+_eqi = kml("EqualEqual_ObjectObject", XT + 300, YT + 11450, [("A", "object", dict(sub=OBJ)), ("B", "object", dict(sub=OBJ)), RB])
+g.link(self_get("LookActor", "object", XT + 100, YT + 11450, sub=ACTOR), _eqi["A"])
+g.link(self_get("Item", "object", XT + 100, YT + 11520, sub=ACTOR), _eqi["B"])
+bmk = branch(XT + 600, YT + 11000, "F held on a loose item, left hand not marked, nothing of ours playing? mark it busy",
+             b_and(XT + 500, YT + 11200, b_not(XT + 300, YT + 11200, lhm(XT + 100, YT + 11200)),
+                   self_get("KeyHeld", "bool", XT + 300, YT + 11250), _held, self_get("ItemArmed", "bool", XT + 300, YT + 11380),
+                   is_valid(XT + 300, YT + 11420, self_get("Item", "object", XT + 100, YT + 11600, sub=ACTOR)), _eqi["ReturnValue"],
+                   b_not(XT + 300, YT + 11550, grab_active(XT + 100, YT + 11650)), int_eq(XT + 300, YT + 11700, tstate(XT + 100, YT + 11700), 0)))
+g.link(sq8["then_0"], bmk["execute"])
+rmv = member_call(PC, "RemoveLeftHandFromItemEnded", XT + 900, YT + 11000, as_pc, "left hand busy (the game holds its use animation)")
+g.link(bmk["then"], rmv["execute"])
+chain(rmv, self_set("LHMarked", "bool", XT + 1200, YT + 11000, "", default="true"),
+      set_from("LHMarkAt", "real", XT + 1500, YT + 11000, now(XT + 1350, YT + 11150), "", subcat="double"),
+      inc("NLHMark", XT + 1800, YT + 11000, "count (probe)"))
+_rs = lambda x, y: self_get("ReachStart", "real", x, y, subcat="double")
+_has = b_and(XT + 500, YT + 12000, grab_active(XT + 100, YT + 11950),
+             d_op("Greater_DoubleDouble", XT + 300, YT + 12050, _rs(XT + 100, YT + 12050), self_get("LHMarkAt", "real", XT + 100, YT + 12120, subcat="double"), ret=RB),
+             d_op("GreaterEqual_DoubleDouble", XT + 300, YT + 12200, now(XT + 100, YT + 12200),
+                  d_op("Add_DoubleDouble", XT + 200, YT + 12280, _rs(XT, YT + 12280),
+                       d_op("Add_DoubleDouble", XT + 100, YT + 12350,
+                            d_op("Divide_DoubleDouble", XT, YT + 12350, self_get("GrabTime", "real", XT - 200, YT + 12350, subcat="double"),
+                                 self_get("PlayRate", "real", XT - 200, YT + 12420, subcat="double")), b_const="0.12")), ret=RB))
+_gave_up = b_and(XT + 500, YT + 12500, b_not(XT + 300, YT + 12500, grab_active(XT + 100, YT + 12500)),
+                 b_not(XT + 300, YT + 12570, self_get("PendingReach", "bool", XT + 100, YT + 12570)),
+                 b_not(XT + 300, YT + 12640, self_get("KeyHeld", "bool", XT + 100, YT + 12640)))
+_late = d_op("Greater_DoubleDouble", XT + 500, YT + 12750,
+             d_op("Subtract_DoubleDouble", XT + 300, YT + 12750, now(XT + 100, YT + 12750), self_get("LHMarkAt", "real", XT + 100, YT + 12820, subcat="double")),
+             b_const="3.0", ret=RB)
+bfr = branch(XT + 600, YT + 11800, "marked, and our hand has the item (or the hold ended / 3 s)? free the left hand",
+             b_and(XT + 550, YT + 11950, lhm(XT + 350, YT + 11900), b_or(XT + 700, YT + 12100, _has, _gave_up, _late)))
+g.link(sq8["then_1"], bfr["execute"])
+rtn = member_call(PC, "ReturnLeftHandOnItemEnded", XT + 900, YT + 11800, as_pc, "left hand free (the game's use animation may play)")
+g.link(bfr["then"], rtn["execute"])
+chain(rtn, self_set("LHMarked", "bool", XT + 1200, YT + 11800, "", default="false"), inc("NLHReturn", XT + 1500, YT + 11800, "count (probe)"))
 
 #   T6: the player's interact keys polled: pressed / released this tick (no mapping context, no input on this actor)
 PCC = cls("/Script/Engine.PlayerController")
@@ -1500,22 +1557,43 @@ sdt = self_set("DoorTouch", "bool", XD + 500, YD, "a door touch", default="true"
 sds = self_set("DoorSped", "bool", XD + 800, YD, "", default="false")
 g.link(cdr["then"], sdt["execute"])
 chain(sdt, sds)
-#     target: the point the crosshair is on if it is on this door, else the door's bounds centre
-_neqd = kml("EqualEqual_ObjectObject", XD + 900, YD + 300, [("A", "object", dict(sub=OBJ)), ("B", "object", dict(sub=OBJ)), RB])
-g.link(self_get("LookActor", "object", XD + 700, YD + 300, sub=ACTOR), _neqd["A"])
-g.link(_dow, _neqd["B"])
-bdp = branch(XD + 1100, YD, "crosshair on this door?", _neqd["ReturnValue"])
-g.link(sds["then"], bdp["execute"])
-sdc1 = set_from("ItemCenter", "struct", XD + 1400, YD - 150, self_get("LookPoint", "struct", XD + 1200, YD - 250, sub=VEC), "reach target = the point on the door", sub=VEC)
-_ab = member_pure(ACTOR, "GetActorBounds", XD + 1400, YD + 300, _dow, [
-    B("bOnlyCollidingComponents"), ("Origin", "struct", dict(sub=VEC, out=True)), ("BoxExtent", "struct", dict(sub=VEC, out=True)),
-    B("bIncludeFromChildActors")])
-sdc2 = set_from("ItemCenter", "struct", XD + 1700, YD + 150, _ab["Origin"], "reach target = the door's centre", sub=VEC)
-g.link(bdp["then"], sdc1["execute"])
-g.link(bdp["else"], sdc2["execute"])
+#     1.1 (tester): the hand stays in the lower left of the screen (one fixed direction, not toward the door); opening
+#     = a push, closing = a pull. Open or closed: the leaf we look at (LookComp) turned away from its rest yaw.
+_rr = other_get(SC_, "RelativeRotation", "struct", XD + 900, YD + 400, self_get("LookComp", "object", XD + 700, YD + 400, sub=PRIM), sub=ROT)
+_rrb = kml("BreakRotator", XD + 1100, YD + 400, [("InRot", "struct", dict(sub=ROT)), ("Roll", "real", dict(subcat="float", out=True)),
+                                                ("Pitch", "real", dict(subcat="float", out=True)), ("Yaw", "real", dict(subcat="float", out=True))])
+g.link(_rr, _rrb["InRot"])
+sdy = set_from("DoorYaw", "real", XD + 1100, YD, _rrb["Yaw"], "the leaf's yaw (probe)", subcat="double")
+g.link(sds["then"], sdy["execute"])
+_ady = kml("Abs", XD + 1300, YD + 400, [D("A"), RD])
+g.link(self_get("DoorYaw", "real", XD + 1100, YD + 500, subcat="double"), _ady["A"])
+sdpl = set_from("DoorPulling", "bool", XD + 1400, YD, d_op("Greater_DoubleDouble", XD + 1500, YD + 400, _ady["ReturnValue"], b_const="10.0", ret=RB),
+                "open now? then this press closes it: a pull", )
+g.link(sdy["then"], sdpl["execute"])
+#     empty hands: the reach table aims at ItemCenter: a point ahead, lower left in view axes (camera + 55 fwd, 22 left, 20 down)
+_dcr = member_pure(PCM, "GetCameraRotation", XD + 1500, YD + 700, _dcm, [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"]
+_dax = []
+for k_, fn_ in enumerate(("GetForwardVector", "GetRightVector", "GetUpVector")):
+    n_ = kml(fn_, XD + 1700, YD + 700 + 100 * k_, [("InRot", "struct", dict(sub=ROT)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+    g.link(_dcr, n_["InRot"])
+    _dax.append(n_["ReturnValue"])
+def _vmc(x, y, v, c):
+    n = kml("Multiply_VectorFloat", x, y, [("A", "struct", dict(sub=VEC)), ("B", "real", dict(subcat="double", extra=f'DefaultValue="{c}",')),
+                                           ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+    g.link(v, n["A"])
+    return n["ReturnValue"]
+
+
+_dpt = vop("Add_VectorVector", XD + 2300, YD + 700, _dcl,
+           vop("Add_VectorVector", XD + 2100, YD + 750,
+               _vmc(XD + 1900, YD + 700, _dax[0], "55.0"),
+               vop("Add_VectorVector", XD + 2000, YD + 850,
+                   _vmc(XD + 1900, YD + 800, _dax[1], "-22.0"),
+                   _vmc(XD + 1900, YD + 900, _dax[2], "-20.0"))))
+sdc1 = set_from("ItemCenter", "struct", XD + 1700, YD, _dpt, "reach target: lower left ahead (empty hands)", sub=VEC)
+g.link(sdpl["then"], sdc1["execute"])
 nd = inc("NDoor", XD + 1700, YD, "count door touches")
 g.link(sdc1["then"], nd["execute"])
-g.link(sdc2["then"], nd["execute"])
 #     the touch chain from its second step: pending reach, touch mode, TouchState 2, then the asset for the direction
 g.link(nd["then"], tr[1]["execute"])
 bku = branch(XT + 2300, YT + 5800, "released this tick?", self_get("KeyUp", "bool", XT + 2100, YT + 6000))

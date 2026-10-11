@@ -28,3 +28,5 @@
 /ImmersiveLooting/Runtime/AS_ImmLoot_Touch19
 /ImmersiveLooting/Runtime/AS_ImmLoot_Touch20
 /ImmersiveLooting/Runtime/AS_ImmLoot_Touch21
+/ImmersiveLooting/Runtime/AS_ImmLoot_DoorPush
+/ImmersiveLooting/Runtime/AS_ImmLoot_DoorPull

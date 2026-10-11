@@ -103,7 +103,7 @@ def add_vars(bp, path, vars_):
 
 W_TEXT = unreal.load_class(None, "/Game/GameLite/FPS_Game/UIRemaster/CommonWidgets/W_Text.W_Text_C")
 ACTOR_VARS = [
-    ("Init", "bool", None), ("Enabled", "bool", True), ("TouchBodies", "bool", True), ("TouchDoors", "bool", True), ("KeyHeld", "bool", None), ("InteractPressAt", "real", -100.0), ("DoorTouch", "bool", None), ("DoorSped", "bool", None), ("DoorRate", "real", 1.6), ("DoorHold", "real", 0.08), ("NDoor", "int", None), ("LookPoint", "vector", None), ("Player", unreal.PC.static_class(), None),
+    ("Init", "bool", None), ("Enabled", "bool", True), ("TouchBodies", "bool", True), ("TouchDoors", "bool", True), ("KeyHeld", "bool", None), ("DoorYaw", "real", None), ("DoorPulling", "bool", None), ("LHMarked", "bool", None), ("LHMarkAt", "real", -100.0), ("NLHMark", "int", None), ("NLHReturn", "int", None), ("InteractPressAt", "real", -100.0), ("DoorTouch", "bool", None), ("DoorSped", "bool", None), ("DoorRate", "real", 1.6), ("DoorHold", "real", 0.08), ("NDoor", "int", None), ("LookPoint", "vector", None), ("Player", unreal.PC.static_class(), None),
     ("Item", unreal.Actor.static_class(), None), ("ItemComp", unreal.SceneComponent.static_class(), None),
     ("ItemMesh", unreal.StaticMesh.static_class(), None), ("ItemSkel", unreal.SkeletalMesh.static_class(), None),
     ("ItemSeen", "real", -100.0), ("ItemArmed", "bool", None), ("ItemXf", "transform", None),
