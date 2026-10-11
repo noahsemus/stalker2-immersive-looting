@@ -438,7 +438,7 @@ g.link(tick["then"], cast["execute"])
 spl = set_from("Player", "object", 500, 0, cast["AsPC"], "remember the player", sub=PC)
 g.link(cast["then"], spl["execute"])
 as_pc = self_get("Player", "object", 650, 300, sub=PC)
-sq = sequence(700, 0, "tick steps", 7)
+sq = sequence(700, 0, "tick steps", 8)
 # 1.0.1e: what the crosshair is on, by our own sphere trace from the camera (10 cm, 3.5 m, visibility, the player
 # ignored); LookActor / LookComp replace PC.GetInteractedActor / GetInteractionTarget / GetInteractedComponent
 _cmt = lib_pure(GS, "GameplayStatics", "GetPlayerCameraManager", 300, 900,
@@ -571,11 +571,6 @@ conds = [
     ("detector", obj_q("IsDetectorInHands", SX, SY + 560, as_pc)),
     ("binoculars", obj_q("IsBinocularsInHands", SX, SY + 640, as_pc)),
     ("disabled", b_not(SX + 200, SY + 720, self_get("Enabled", "bool", SX, SY + 720))),
-    ("use", b_and(SX + 240, SY + 880, self_get("KeyHeld", "bool", SX, SY + 860),
-                  b_not(SX + 100, SY + 900, self_get("LHMarked", "bool", SX - 100, SY + 900)),   # option B: the reach plays
-                  d_op("GreaterEqual_DoubleDouble", SX + 100, SY + 940,
-                       d_op("Subtract_DoubleDouble", SX - 100, SY + 940, now(SX - 300, SY + 940),
-                            self_get("InteractPressAt", "real", SX - 300, SY + 1000, subcat="double")), b_const="0.3", ret=RB))),
 ]
 skip = b_or(SX + 600, SY, *[c for _, c in conds])
 bits = None
@@ -595,7 +590,7 @@ for k, (_, c) in enumerate(conds + [("lefthandbusy", obj_q("IsLeftHandBusy", SX,
         g.link(sel["ReturnValue"], add["B"])
         bits = add["ReturnValue"]
 sbits = set_from("SkipBits", "int", X1 + 900, Y1, bits, "why (probe): 1 sprint 2 aim 4 action 8 left-hand montage "
-                 "16 dialog 32 cutscene 64 detector 128 binoculars 256 disabled 512 use (hold F) 1024 IsLeftHandBusy (info)")
+                 "16 dialog 32 cutscene 64 detector 128 binoculars 256 disabled 512 IsLeftHandBusy (info)")
 g.link(spr["then"], sbits["execute"])
 brs = branch(X1 + 1250, Y1, "skip? (vanilla pickup, no reach)", skip)
 g.link(sbits["then"], brs["execute"])
@@ -644,7 +639,9 @@ def play_grab(x, y, asset, comment):
 
 armed = obj_q("HasItemInMainHand", X1 + 2250, Y1 + 100, as_pc)
 bst = branch(X1 + 2450, Y1 + 150, "something in the main hand? (rifle-stance grab) else empty hands", armed)
-g.link(bm["else"], bst["execute"])
+bdt3 = branch(X1 + 2300, Y1 - 600, "a door touch? its push / pull asset (also with empty hands)", self_get("DoorTouch", "bool", X1 + 2100, Y1 - 500))
+g.link(bm["else"], bdt3["execute"])
+g.link(bdt3["else"], bst["execute"])
 mp = play_grab(X1 + 2750, Y1 - 50, GRAB_SEQ, "left-hand grab, armed")
 mpb = play_grab(X1 + 2750, Y1 + 350, GRAB_SEQ_BH, "left-hand grab, empty hands (segment for the view pitch)")
 # build 9: AS_ImmLoot_GrabBH is a table of 2 s segments, one per view pitch -75..+30 in 15 deg steps (the arm bones do
@@ -727,6 +724,7 @@ mpt = play_grab(X1 + 2750, Y1 - 450, TOUCH_SEQS[12], "left-hand touch, armed: ha
 mpt.pins["Asset"].extra = ""
 g.link(self_get("TouchAsset", "object", X1 + 2550, Y1 - 300, sub=ANIMSEQB), mpt["Asset"])
 g.link(blr["then"], mpt["execute"])
+g.link(bdt3["then"], mpt["execute"])
 sgm_t = set_from("GrabMontage", "object", X1 + 3100, Y1 - 450, mpt["ReturnValue"], "our montage", sub=MONT)
 ses_t = self_set("GrabBH", "bool", X1 + 3400, Y1 - 450, "", default="false")
 ses_t2 = self_set("SegStart", "real", X1 + 3700, Y1 - 450, "", default="0.0", subcat="double")
@@ -1132,7 +1130,7 @@ def tap_active(x, y, on, comment):
     return b["execute"], [c["then"], b["else"]]
 
 
-sqt = sequence(XT, YT, "touch steps", 9)
+sqt = sequence(XT, YT, "touch steps", 8)
 g.link(sq5["then_4"], sqt["execute"])
 
 #   T0: idle and window closed: is what we look at a corpse / stash? (re-evaluated every tick)
@@ -1433,49 +1431,6 @@ chain_x = [self_set("DoorTouch", "bool", XT + 900, YT + 10100, "", default="fals
 g.link(bdx["then"], chain_x[0]["execute"])
 chain(*chain_x)
 
-#   T8 (option B): mark the left hand busy while F is held on a loose item (>= 0.15 s: a hold, not a tap), free it
-#   when our reach has the item (grab frame + 0.12 s), when the hold ended without a pickup, or after 3 s
-sq8 = sequence(XT + 300, YT + 11000, "left-hand steps (option B)", 2)
-g.link(sqt["then_8"], sq8["execute"])
-lhm = lambda x, y: self_get("LHMarked", "bool", x, y)
-_held = d_op("GreaterEqual_DoubleDouble", XT + 300, YT + 11300,
-             d_op("Subtract_DoubleDouble", XT + 100, YT + 11300, now(XT - 100, YT + 11300),
-                  self_get("InteractPressAt", "real", XT - 100, YT + 11380, subcat="double")), b_const="0.15", ret=RB)
-_eqi = kml("EqualEqual_ObjectObject", XT + 300, YT + 11450, [("A", "object", dict(sub=OBJ)), ("B", "object", dict(sub=OBJ)), RB])
-g.link(self_get("LookActor", "object", XT + 100, YT + 11450, sub=ACTOR), _eqi["A"])
-g.link(self_get("Item", "object", XT + 100, YT + 11520, sub=ACTOR), _eqi["B"])
-bmk = branch(XT + 600, YT + 11000, "F held on a loose item, left hand not marked, nothing of ours playing? mark it busy",
-             b_and(XT + 500, YT + 11200, b_not(XT + 300, YT + 11200, lhm(XT + 100, YT + 11200)),
-                   self_get("KeyHeld", "bool", XT + 300, YT + 11250), _held, self_get("ItemArmed", "bool", XT + 300, YT + 11380),
-                   is_valid(XT + 300, YT + 11420, self_get("Item", "object", XT + 100, YT + 11600, sub=ACTOR)), _eqi["ReturnValue"],
-                   b_not(XT + 300, YT + 11550, grab_active(XT + 100, YT + 11650)), int_eq(XT + 300, YT + 11700, tstate(XT + 100, YT + 11700), 0)))
-g.link(sq8["then_0"], bmk["execute"])
-rmv = member_call(PC, "RemoveLeftHandFromItemEnded", XT + 900, YT + 11000, as_pc, "left hand busy (the game holds its use animation)")
-g.link(bmk["then"], rmv["execute"])
-chain(rmv, self_set("LHMarked", "bool", XT + 1200, YT + 11000, "", default="true"),
-      set_from("LHMarkAt", "real", XT + 1500, YT + 11000, now(XT + 1350, YT + 11150), "", subcat="double"),
-      inc("NLHMark", XT + 1800, YT + 11000, "count (probe)"))
-_rs = lambda x, y: self_get("ReachStart", "real", x, y, subcat="double")
-_has = b_and(XT + 500, YT + 12000, grab_active(XT + 100, YT + 11950),
-             d_op("Greater_DoubleDouble", XT + 300, YT + 12050, _rs(XT + 100, YT + 12050), self_get("LHMarkAt", "real", XT + 100, YT + 12120, subcat="double"), ret=RB),
-             d_op("GreaterEqual_DoubleDouble", XT + 300, YT + 12200, now(XT + 100, YT + 12200),
-                  d_op("Add_DoubleDouble", XT + 200, YT + 12280, _rs(XT, YT + 12280),
-                       d_op("Add_DoubleDouble", XT + 100, YT + 12350,
-                            d_op("Divide_DoubleDouble", XT, YT + 12350, self_get("GrabTime", "real", XT - 200, YT + 12350, subcat="double"),
-                                 self_get("PlayRate", "real", XT - 200, YT + 12420, subcat="double")), b_const="0.12")), ret=RB))
-_gave_up = b_and(XT + 500, YT + 12500, b_not(XT + 300, YT + 12500, grab_active(XT + 100, YT + 12500)),
-                 b_not(XT + 300, YT + 12570, self_get("PendingReach", "bool", XT + 100, YT + 12570)),
-                 b_not(XT + 300, YT + 12640, self_get("KeyHeld", "bool", XT + 100, YT + 12640)))
-_late = d_op("Greater_DoubleDouble", XT + 500, YT + 12750,
-             d_op("Subtract_DoubleDouble", XT + 300, YT + 12750, now(XT + 100, YT + 12750), self_get("LHMarkAt", "real", XT + 100, YT + 12820, subcat="double")),
-             b_const="3.0", ret=RB)
-bfr = branch(XT + 600, YT + 11800, "marked, and our hand has the item (or the hold ended / 3 s)? free the left hand",
-             b_and(XT + 550, YT + 11950, lhm(XT + 350, YT + 11900), b_or(XT + 700, YT + 12100, _has, _gave_up, _late)))
-g.link(sq8["then_1"], bfr["execute"])
-rtn = member_call(PC, "ReturnLeftHandOnItemEnded", XT + 900, YT + 11800, as_pc, "left hand free (the game's use animation may play)")
-g.link(bfr["then"], rtn["execute"])
-chain(rtn, self_set("LHMarked", "bool", XT + 1200, YT + 11800, "", default="false"), inc("NLHReturn", XT + 1500, YT + 11800, "count (probe)"))
-
 #   T6: the player's interact keys polled: pressed / released this tick (no mapping context, no input on this actor)
 PCC = cls("/Script/Engine.PlayerController")
 kd0 = self_set("KeyDown", "bool", XT + 400, YT + 5800, "this tick", default="false")
@@ -1588,9 +1543,9 @@ _dpt = vop("Add_VectorVector", XD + 2300, YD + 700, _dcl,
            vop("Add_VectorVector", XD + 2100, YD + 750,
                _vmc(XD + 1900, YD + 700, _dax[0], "55.0"),
                vop("Add_VectorVector", XD + 2000, YD + 850,
-                   _vmc(XD + 1900, YD + 800, _dax[1], "-22.0"),
-                   _vmc(XD + 1900, YD + 900, _dax[2], "-20.0"))))
-sdc1 = set_from("ItemCenter", "struct", XD + 1700, YD, _dpt, "reach target: lower left ahead (empty hands)", sub=VEC)
+                   _vmc(XD + 1900, YD + 800, _dax[1], "-14.0"),
+                   _vmc(XD + 1900, YD + 900, _dax[2], "-8.0"))))
+sdc1 = set_from("ItemCenter", "struct", XD + 1700, YD, _dpt, "reach target: lower left ahead (empty hands; 55 fwd, 14 left, 8 down)", sub=VEC)
 g.link(sdpl["then"], sdc1["execute"])
 nd = inc("NDoor", XD + 1700, YD, "count door touches")
 g.link(sdc1["then"], nd["execute"])
@@ -1912,5 +1867,117 @@ nrc = inc("NRecover", X4 + 1300, Y4, "count recoveries")
 g.link(mr["then"], nrc["execute"])
 
 g.layout_tree()
+# ---- 7 (1.0.2): "hold F to use" a loose item: the game starts the item's use animation (MainActionSlot) at the same
+#      moment our reach starts. Hold that animation paused until our hand has the item (grab frame + 0.12 s), then
+#      remove our copy and let the game's animation go on (its own item appears in the hand). Every montage the game
+#      starts is remembered via OnMontageStarted (bound per anim instance, as in ImmersiveCampfires); our own dynamic
+#      montages are named AnimMontage_<n> and ignored. Only for a pickup reach (our flying copy is out). ----
+X7, Y7 = 1200, 24000
+g.box("EdGraphNode_Comment_917", X7 - 400, Y7 - 400, 5200, 2800, "Hold F to use: the game's use animation waits until our hand has the item")
+sq7 = sequence(X7 - 200, Y7, "use-hold steps", 3)
+g.link(sq["then_7"], sq7["execute"])
+#   U0: bind OnMontageStarted on the current anim instance (once per instance)
+bv7 = is_valid(X7 + 100, Y7 + 250, anim)
+ne7 = kml("NotEqual_ObjectObject", X7 + 100, Y7 + 350, [("A", "object", dict(sub=OBJ)), ("B", "object", dict(sub=OBJ)), RB])
+g.link(anim, ne7["A"])
+g.link(self_get("BoundAnim", "object", X7 - 100, Y7 + 400, sub=ANIMI), ne7["B"])
+br7 = branch(X7 + 300, Y7, "anim instance not bound yet?", b_and(X7 + 250, Y7 + 300, bv7, ne7["ReturnValue"]))
+g.link(sq7["then_0"], br7["execute"])
+EVN = "OnGameMontageStarted"
+add7 = exec_pins(Node(g, BG + "K2Node_AddDelegate", nm("K2Node_AddDelegate"), X7 + 600, Y7, "bind: montage started",
+                      [f'DelegateReference=(MemberParent={ANIMI},MemberName="OnMontageStarted")']))
+add7.pin("self", "object", sub=ANIMI, extra='PinFriendlyName=NSLOCTEXT("K2Node", "BaseMCDelegateSelfPinName", "Target"),')
+add7.pin("Delegate", "delegate", extra='PinFriendlyName=NSLOCTEXT("K2Node", "PinFriendlyDelegatetName", "Event"),')
+add7.pins["Delegate"].member_ref = 'MemberParent="/Script/CoreUObject.Package' + "'/Script/Engine'" + '",MemberName="OnMontageStartedMCDelegate__DelegateSignature"'
+g.link(anim, add7["self"])
+g.link(br7["then"], add7["execute"])
+sb7 = set_from("BoundAnim", "object", X7 + 950, Y7, anim, "bound to this anim instance", sub=ANIMI)
+g.link(add7["then"], sb7["execute"])
+ev7 = Node(g, BG + "K2Node_CustomEvent", nm("K2Node_CustomEvent"), X7, Y7 + 700, "the game started a montage",
+           [f'CustomFunctionName="{EVN}"',
+            'CustomProperties UserDefinedPin (PinName="Montage",PinType=(PinCategory="object",PinSubCategoryObject=' + MONT + '),DesiredPinDirection=EGPD_Output)'])
+ev7.pin("OutputDelegate", "delegate", out=True)
+ev7.pins["OutputDelegate"].member_ref = f'MemberName="{EVN}",bSelfContext=True'
+ev7.pin("then", "exec", out=True)
+ev7.pin("Montage", "object", sub=MONT, out=True)
+g.link(ev7["OutputDelegate"], add7["Delegate"])
+on7 = lib_pure(KSL, "KismetSystemLibrary", "GetObjectName", X7 + 300, Y7 + 950, [("Object", "object", dict(sub=OBJ)), ("ReturnValue", "string", dict(out=True))])
+g.link(ev7["Montage"], on7["Object"])
+ours7 = lib_pure(cls("/Script/Engine.KismetStringLibrary"), "KismetStringLibrary", "StartsWith", X7 + 500, Y7 + 950,
+                 [("SourceString", "string"), ("InPrefix", "string", dict(extra='DefaultValue="AnimMontage",')),
+                  ("SearchCase", "byte", dict(sub=EN("/Script/CoreUObject.ESearchCase"), extra='DefaultValue="IgnoreCase",')), RB])
+g.link(on7["ReturnValue"], ours7["SourceString"])
+bg7 = branch(X7 + 400, Y7 + 700, "not one of ours (a dynamic montage)?", b_not(X7 + 700, Y7 + 900, ours7["ReturnValue"]))
+g.link(ev7["then"], bg7["execute"])
+sgm7 = set_from("GameMontage", "object", X7 + 700, Y7 + 700, ev7["Montage"], "the last montage the game started", sub=MONT)
+sga7 = set_from("GameMontageAt", "real", X7 + 1000, Y7 + 700, now(X7 + 850, Y7 + 900), "when", subcat="double")
+g.link(bg7["then"], sgm7["execute"])
+chain(sgm7, sga7)
+#   U1: a pickup reach is out (our copy too), before its grab frame, and the game started a montage within 0.4 s of
+#       it that still plays: hold that montage
+grab_at7 = d_op("Add_DoubleDouble", X7 + 500, Y7 + 1500, self_get("ReachStart", "real", X7 + 300, Y7 + 1500, subcat="double"),
+                d_op("Divide_DoubleDouble", X7 + 300, Y7 + 1580, self_get("GrabTime", "real", X7 + 100, Y7 + 1580, subcat="double"),
+                     self_get("PlayRate", "real", X7 + 100, Y7 + 1660, subcat="double")))
+gmv = lambda x, y: self_get("GameMontage", "object", x, y, sub=MONT)
+act7 = member_pure(ANIMI, "Montage_IsActive", X7 + 500, Y7 + 1300, anim, [("Montage", "object", dict(sub=MONT)), RB])
+act7.pins["Montage"].const = True
+g.link(gmv(X7 + 300, Y7 + 1300), act7["Montage"])
+abs7 = kml("Abs", X7 + 500, Y7 + 1400, [D("A"), RD])
+g.link(d_op("Subtract_DoubleDouble", X7 + 300, Y7 + 1400, self_get("GameMontageAt", "real", X7 + 100, Y7 + 1400, subcat="double"),
+            self_get("ReachStart", "real", X7 + 100, Y7 + 1460, subcat="double")), abs7["A"])
+near7 = d_op("Less_DoubleDouble", X7 + 700, Y7 + 1400, abs7["ReturnValue"], b_const="0.4", ret=RB)
+before7 = d_op("Less_DoubleDouble", X7 + 700, Y7 + 1500, now(X7 + 500, Y7 + 1600), grab_at7, ret=RB)
+bh7 = branch(X7 + 900, Y7 + 1100, "pickup reach out, the game's use animation just started? hold it",
+             b_and(X7 + 850, Y7 + 1300, b_not(X7 + 700, Y7 + 1200, self_get("UseHeld", "bool", X7 + 500, Y7 + 1200)),
+                   is_valid(X7 + 500, Y7 + 1250, self_get("Fly", "object", X7 + 300, Y7 + 1250, sub=ACTOR)),
+                   is_valid(X7 + 500, Y7 + 1350, gmv(X7 + 300, Y7 + 1350)), act7["ReturnValue"], near7, before7))
+g.link(sq7["then_1"], bh7["execute"])
+mp7 = member_call(ANIMI, "Montage_Pause", X7 + 1250, Y7 + 1100, anim, "hold the game's use animation", [("Montage", "object", dict(sub=MONT))])
+mp7.pins["Montage"].const = True
+g.link(gmv(X7 + 1050, Y7 + 1300), mp7["Montage"])
+g.link(bh7["then"], mp7["execute"])
+_nuh = inc("NUseHolds", X7 + 2150, Y7 + 1100, "count (probe)")
+chain(mp7, set_from("HeldUse", "object", X7 + 1550, Y7 + 1100, gmv(X7 + 1400, Y7 + 1300), "held", sub=MONT),
+      self_set("UseHeld", "bool", X7 + 1850, Y7 + 1100, "", default="true"), _nuh)
+_gp7 = member_pure(ANIMI, "Montage_GetPosition", X7 + 2300, Y7 + 1500, anim, [("Montage", "object", dict(sub=MONT)), ("ReturnValue", "real", dict(subcat="float", out=True))])
+_gp7.pins["Montage"].const = True
+g.link(self_get("GrabMontage", "object", X7 + 2100, Y7 + 1500, sub=MONT), _gp7["Montage"])
+bfb = branch(X7 + 2450, Y7 + 1100, "empty hands? (the reach table) else the rifle grab", self_get("GrabBH", "bool", X7 + 2300, Y7 + 1300))
+g.link(_nuh["then"], bfb["execute"])
+for _ex, _asset, _yy in ((bfb["then"], GRAB_SEQ_BH, 1000), (bfb["else"], GRAB_SEQ, 1300)):
+    _pf = play_grab(X7 + 2750, Y7 + _yy, _asset, "our reach again in FullBody, over the held use animation")
+    _pf.pins["SlotNodeName"].extra = 'DefaultValue="FullBody",'
+    _pf.pins["BlendInTime"].extra = 'DefaultValue="0.080000",'
+    _pf.pins["BlendOutTime"].extra = 'DefaultValue="0.250000",'
+    g.link(_gp7["ReturnValue"], _pf["InTimeToStartMontageAt"])
+    g.link(_ex, _pf["execute"])
+    g.link(_pf["then"], set_from("FBMontage", "object", X7 + 3100, Y7 + _yy, _pf["ReturnValue"], "the FullBody copy", sub=MONT)["execute"])
+#   U2: held, and our hand has the item (grab frame + 0.12 s), or our reach ended, or 1.5 s fail-safe: let it go on,
+#       and our copy goes (the game's own item is in its animation)
+rel7 = b_or(X7 + 850, Y7 + 2000,
+            d_op("GreaterEqual_DoubleDouble", X7 + 700, Y7 + 1900, now(X7 + 300, Y7 + 1900),
+                 d_op("Add_DoubleDouble", X7 + 500, Y7 + 1950, grab_at7, b_const="0.12"), ret=RB),
+            d_op("Greater_DoubleDouble", X7 + 700, Y7 + 2150,
+                 d_op("Subtract_DoubleDouble", X7 + 500, Y7 + 2150, now(X7 + 300, Y7 + 2150),
+                      self_get("ReachStart", "real", X7 + 300, Y7 + 2230, subcat="double")), b_const="1.5", ret=RB))
+br72 = branch(X7 + 900, Y7 + 1800, "use held and our hand has the item? let it go on",
+              b_and(X7 + 850, Y7 + 1900, self_get("UseHeld", "bool", X7 + 600, Y7 + 1850), rel7))
+g.link(sq7["then_2"], br72["execute"])
+mr7 = member_call(ANIMI, "Montage_Resume", X7 + 1250, Y7 + 1800, anim, "the game's use animation goes on", [("Montage", "object", dict(sub=MONT))])
+mr7.pins["Montage"].const = True
+g.link(self_get("HeldUse", "object", X7 + 1050, Y7 + 2000, sub=MONT), mr7["Montage"])
+g.link(br72["then"], mr7["execute"])
+su7 = self_set("UseHeld", "bool", X7 + 1550, Y7 + 1800, "", default="false")
+g.link(mr7["then"], su7["execute"])
+bfv7 = branch(X7 + 1850, Y7 + 1800, "our copy still out?", is_valid(X7 + 1700, Y7 + 2000, self_get("Fly", "object", X7 + 1500, Y7 + 2000, sub=ACTOR)))
+_ms7 = member_call(ANIMI, "Montage_Stop", X7 + 1700, Y7 + 1600, anim, "the FullBody copy blends out", [
+    ("InBlendOutTime", "real", dict(subcat="float", extra='DefaultValue="0.250000",')), ("Montage", "object", dict(sub=MONT))])
+_ms7.pins["Montage"].const = True
+g.link(self_get("FBMontage", "object", X7 + 1500, Y7 + 1700, sub=MONT), _ms7["Montage"])
+g.link(su7["then"], _ms7["execute"])
+g.link(_ms7["then"], bfv7["execute"])
+fd7 = member_call(ACTOR, "K2_DestroyActor", X7 + 2150, Y7 + 1800, self_get("Fly", "object", X7 + 1950, Y7 + 2000, sub=ACTOR), "remove it (the game shows its own)")
+g.link(bfv7["then"], fd7["execute"])
+
 write(sys.argv[1], g.text())
 print("ok", len(g.nodes), "nodes")
