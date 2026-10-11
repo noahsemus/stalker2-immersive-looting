@@ -52,6 +52,11 @@ class Node:
 class Graph:
     def __init__(self):
         self.nodes, self.extra, self.boxes = [], [], []
+        # untangle() clones a shared pure node once per consumer, and with it its whole input tree; deep shared trees
+        # (a camera basis feeding dozens of pins) multiply into thousands of nodes and an editor that runs out of
+        # memory deleting them. A number here = only pure nodes whose upstream pure tree has at most that many nodes
+        # are cloned; bigger shared trees stay one instance with several wires out. None = clone everything (old).
+        self.untangle_limit = None
 
     def link(self, a, b):
         a.links.append(b)
@@ -195,10 +200,24 @@ class Graph:
         so data inputs can sit right next to the node that uses them instead of sending wires across the graph."""
         counter = 60000
         changed = True
+
+        def tree_size(n, seen):
+            for p in n.pins.values():
+                if p.out:
+                    continue
+                for q in p.links:
+                    m = q.node
+                    if m not in seen and not self._is_exec(m):
+                        seen.add(m)
+                        tree_size(m, seen)
+            return len(seen)
+
         while changed:
             changed = False
             for n in list(self.nodes):
                 if self._is_exec(n):
+                    continue
+                if self.untangle_limit is not None and tree_size(n, set()) > self.untangle_limit:
                     continue
                 uses = [(p, q) for p in n.pins.values() if p.out for q in p.links]
                 for p, q in uses[1:]:
