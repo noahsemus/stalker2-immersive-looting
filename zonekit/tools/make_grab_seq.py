@@ -449,6 +449,16 @@ def build_bh_reach_table(src, rifle_seq, tgt_rot, nkeys, base_path=None, name=No
     # left-hand IK off, repeated through every segment (build 14: builds 10, 12, 13 all ended ~15 cm right of the
     # planned point whatever the target, as if still pulled to the grip; a single "off" at the start may be undone)
     for i in range(nseg):
+        if not name.endswith("AR") and ARGS.get("IKREACH", "1") == "1":
+            # build 36: the game's left-hand IK steers the hand onto the target (the Blueprint moves the weapon mesh's
+            # hand socket there): on, blending in over 0.3 s, from frame 2; off, blending out, at frame 28 (the pocket)
+            for t, end, bl in ((0.0, None, 0.05), (0.07, 1.0, 0.3), (0.93, None, 0.25)):
+                n = AL.add_animation_notify_event(seq, track, i * SEG2 / 30.0 + t, hik)
+                n.set_editor_property("hand_to_apply", hand_enum)
+                n.set_editor_property("blend_time", bl)
+                if end is not None:
+                    n.set_editor_property("end_value", end)
+            continue
         for t in (0.02, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1.05, 1.2):
             n = AL.add_animation_notify_event(seq, track, i * SEG2 / 30.0 + t, hik)
             n.set_editor_property("hand_to_apply", hand_enum)
@@ -843,7 +853,8 @@ def finger_open(f):
     return 1.0 - smoother((f - 10) / 3)
 
 
-def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, lower_deg=0.0, max_dist=None):
+def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, lower_deg=0.0, max_dist=None, grip_seq=None, azims=None, finger_base=None, hand_roll=0.0):
+    azims_ = azims or AZIMS
     sp_p, sp_q = cs(base, "jnt_spine_03", 0)
     cam, _ = cs(base, "jnt_camera", 0)
     cam_ar, _ = cs(src, "jnt_camera", 0)
@@ -862,15 +873,20 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, low
     errs = []
     fopen, _ = door_fingers(src)                        # an open, spread hand on the way out
     tracks_b = [str(t) for t in AL.get_animation_track_names(base)]
-    fbase = {b: local(base, b, 0) for b in FINGERS if b in tracks_b}   # the use animation's own grip (holds the item)
+    fbase = {b: local(finger_base or base, b, 0) for b in FINGERS if b in tracks_b}   # build 44: crouched, the standing rest fingers   # the use animation's own grip (holds the item)
     fk = {b: ([], [], []) for b in fbase}
+    fgrip_ = {b: local(grip_seq, b, 0)[1] for b in FINGERS} if grip_seq not in (None, "src") else None
+    out.append(f"{name}: table arm root (from the eye) {tuple(round(x - c, 2) for x, c in zip(A, cam))} abs {tuple(round(x, 2) for x in A)}, reach {l1 + l2:.2f}")
     for ie, elev in enumerate(ELEVS):
       for dd in DISTS:
-        for az in AZIMS:
+        for az in azims_:
             er, ar = math.radians(elev), math.radians(az)
             dirv_e = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
             qp = qmul((0.0, 0.0, math.sin(ar / 2), math.cos(ar / 2)), (0.0, -math.sin(er / 2), 0.0, math.cos(er / 2)))
             GQp = qmul(qp, GQ)
+            if hand_roll:                      # build 45: the hand turned about the reach direction (- = clockwise from behind)
+                th = math.radians(hand_roll) / 2
+                GQp = qmul((dirv_e[0] * math.sin(th), dirv_e[1] * math.sin(th), dirv_e[2] * math.sin(th), math.cos(th)), GQp)
             item = add(cam, mul(dirv_e, dd))
             if lower_deg or max_dist:          # build 30, the pickup table: where the use reach's hand ends
                 el2 = er - math.radians(lower_deg)
@@ -895,8 +911,26 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, low
                     T, hq = R, RQ
                 fo = finger_open(f)
                 for b in FINGERS:
-                    if b in fbase:
-                        fk[b][1].append(unreal.Quat(*slerp(fbase[b][1], fopen[b], fo)))
+                    if b not in fbase:
+                        continue
+                    if grip_seq == "src":       # build 42 (tester: "go back to the 1.0.0 version of the hand closing"):
+                        # the vanilla grab's own fingers frame by frame, blended in from / out to the rest fingers (build 43:
+                        # frame 0 must BE the rest fingers - the additive's reference - or every finger twists: "spaghetti")
+                        wf = smoother(f / 4) if f < 4 else (1.0 if f <= 34 else 1.0 - smoother((f - 34) / 8))
+                        fq = slerp(fbase[b][1], local(src, b, min(f, nkeys - 1))[1], wf)
+                    elif grip_seq is None:
+                        fq = slerp(fbase[b][1], fopen[b], fo)
+                    elif f <= 10:                 # build 38 pickup: rest -> open, closing onto the item at the grab,
+                        fq = slerp(fbase[b][1], fopen[b], fo)          # held until the hand is down again
+                    elif f <= 13:
+                        fq = slerp(fopen[b], fgrip_[b], smoother((f - 10) / 3))
+                    elif f <= 34:
+                        fq = fgrip_[b]
+                    elif f <= 42:
+                        fq = slerp(fgrip_[b], fbase[b][1], smoother((f - 34) / 8))
+                    else:
+                        fq = fbase[b][1]
+                    fk[b][1].append(unreal.Quat(*fq))
                 to_t = sub(T, A)
                 d = max(abs(l1 - l2) + 0.01, min(l1 + l2 - 0.01, norm(to_t)))
                 dv = unit(to_t)
@@ -1115,6 +1149,15 @@ try:
         build_doors(src, seq, path_h, path_q, nkeys, tgt_rot)
     if ARGS.get("BH", "1") == "1":
         build_bh_reach_table(src, seq, tgt_rot, nkeys)   # build 12 (build_bh_table = checkpoint-b11)
+    if ARGS.get("PICKADD", "0") == "1":    # build 38
+        build_use_table(src, tgt_rot, nkeys, unreal.load_asset(BASE_BH), "AS_ImmLoot_GrabBHAdd", unreal.load_asset(f"{DIR}/{NAME_BH}"),
+                        out_dir=DIR, grip_seq="src", azims=[-15, 0, 15, 30, 45])   # build 39; build 42: the vanilla grab's fingers
+    if ARGS.get("PICKCROUCH", "0") == "1":    # build 41: crouched, its own rest pose (the stand table's delta barely moved the
+        # crouched arm: build 40 probe, the hand ended where it started)
+        build_use_table(src, tgt_rot, nkeys, unreal.load_asset("/Game/_STALKER2/Animations/Player/AnimSequences/bh/crouch/fp_bh_idle_crouch"),
+                        "AS_ImmLoot_GrabBHAddCrouch", unreal.load_asset(f"{DIR}/{NAME_BH}"), out_dir=DIR,
+                        grip_seq="src", azims=[-15, 0, 15, 30, 45], finger_base=unreal.load_asset(BASE_BH),
+                        hand_roll=-70.0)   # build 45 (tester: crouched "rotate clockwise so the back of the hand faces up, now it faces left")   # build 42/44: the vanilla grab's fingers, from the standing rest
     if ARGS.get("PICKPOSE", "0") == "1":   # build 30: the pickup in our own use pose
         build_pick_pose()
         build_use_table(src, tgt_rot, nkeys, unreal.load_asset(f"{DIR}/AS_ImmLoot_PickPose"), "AS_ImmLoot_PickReach",

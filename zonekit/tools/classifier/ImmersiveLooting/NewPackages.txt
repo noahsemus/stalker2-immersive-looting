@@ -48,3 +48,5 @@
 /ImmersiveLooting/Runtime/Use/AS_ImmLoot_UseAny
 /ImmersiveLooting/Runtime/AS_ImmLoot_PickPose
 /ImmersiveLooting/Runtime/AS_ImmLoot_PickReach
+/ImmersiveLooting/Runtime/AS_ImmLoot_GrabBHAdd
+/ImmersiveLooting/Runtime/AS_ImmLoot_GrabBHAddCrouch

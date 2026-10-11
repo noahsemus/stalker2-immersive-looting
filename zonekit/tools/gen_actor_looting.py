@@ -728,7 +728,19 @@ g.link(bm["else"], _bu3["execute"])
 g.link(_bu3["else"], bdt3["execute"])
 g.link(bdt3["else"], bst["execute"])
 mp = play_grab(X1 + 2750, Y1 - 50, GRAB_SEQ, "left-hand grab, armed")
-mpb = play_grab(X1 + 2750, Y1 + 350, GRAB_SEQ_BH, "left-hand grab, empty hands (segment for the view pitch)")
+# build 38 (tester: "when picking something up while crouched there is no animation", reported many times; probe: crouched,
+# the hand bone stayed 77 cm below the view = the LeftHand slot's reach is covered in the crouch pose): the empty-hands
+# pickup plays in FullBody (after every arm layer, like the eat/drink grab), an additive on the left arm
+mpb = play_grab(X1 + 2750, Y1 + 350, "/ImmersiveLooting/Runtime/AS_ImmLoot_GrabBHAdd.AS_ImmLoot_GrabBHAdd",
+                "grab, empty hands: FullBody additive (nothing covers it, crouched or not)")
+mpb.pins["SlotNodeName"].extra = 'DefaultValue="FullBody",'
+# build 41: crouched, the same grab on the crouch table
+mpbc = play_grab(X1 + 2750, Y1 + 650, "/ImmersiveLooting/Runtime/AS_ImmLoot_GrabBHAddCrouch.AS_ImmLoot_GrabBHAddCrouch", "grab, empty hands, crouched: FullBody additive")
+mpbc.pins["SlotNodeName"].extra = 'DefaultValue="FullBody",'
+mpbc.pins["BlendInTime"].extra = 'DefaultValue="0.050000",'
+mpbc.pins["BlendOutTime"].extra = 'DefaultValue="0.250000",'
+mpb.pins["BlendInTime"].extra = 'DefaultValue="0.050000",'
+mpb.pins["BlendOutTime"].extra = 'DefaultValue="0.250000",'
 # build 9: AS_ImmLoot_GrabBH is a table of 2 s segments, one per view pitch -75..+30 in 15 deg steps (the arm bones do
 # not follow the view pitch); start at the nearest one
 # build 12: AS_ImmLoot_GrabBH is a table of 1.5 s segments, one per (elevation, distance) of the item seen from the
@@ -796,8 +808,152 @@ g.link(_vfz["Z"], _vpitch["A"])
 _steep = d_op("Less_DoubleDouble", X1 + 2350, Y1 + 1600, _vpitch["ReturnValue"], b_const="-40.0", ret=RB)
 
 
+# build 35 (tester on build 34: "now the hand is always way too high"; reviewed). Probe: the left arm stays in the body
+# (mesh) frame whatever the view pitch (build 34's live-spine index read -0.5 at both -23 and -47: the spine pitches 1:1
+# with the view, the arm chain is counter-rotated), but its root and the camera move. So the target is built from
+# MEASURED positions at the reach start, all in mesh space: the hand target T on the ray from the live camera C to the
+# item P, 0.9 x the reach (52.4 cm) from the live arm root A (jnt_l_arm); shifted by (A_table - A) onto the table's arm
+# root A_table (-15.36, -16.62, 148.64); then the direction from the table's eye (0, 0, 160.34) of the point X on the
+# ray A_table -> T' that is 60 cm from that eye = a dist-60 segment (the arm fully out toward it: the only regime the
+# table has been checked in) whose arm passes through T'. Computed step by step into variables (Aim*) at the reach
+# start, before the segment is picked.
+A_TAB = (-29.17, -18.23, 145.3)   # build 38: the FullBody pickup table's arm root (make_grab_seq log)
+EYE = (0.0, 0.0, 160.338)
+W_ = tuple(a_ - e_ for a_, e_ in zip(A_TAB, EYE))
+AX, AY = X1 + 1300, Y1 - 3600
+g.box("EdGraphNode_Comment_934", AX - 400, AY - 300, 6400, 1100, "Build 35: pickup aim from measured positions (live camera ray, live arm root, mapped onto the table)")
+_mxw = member_pure(SC_, "K2_GetComponentToWorld", AX - 300, AY + 400, mesh, [("ReturnValue", "struct", dict(sub=XFORM, out=True))])["ReturnValue"]
+av = lambda n, x, y: self_get(n, "struct", x, y, sub=VEC)
+ar = lambda n, x, y: self_get(n, "real", x, y, subcat="double")
+
+
+def _to_mesh(x, y, world_pin):
+    n = kml("InverseTransformLocation", x, y, [("T", "struct", dict(sub=XFORM)), ("Location", "struct", dict(sub=VEC)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+    g.link(_mxw, n["T"])
+    g.link(world_pin, n["Location"])
+    return n["ReturnValue"]
+
+
+def _vec(x, y, xyz):
+    return kml("MakeVector", x, y, [D("X", str(xyz[0])), D("Y", str(xyz[1])), D("Z", str(xyz[2])), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+
+
+def _dot(x, y, a_, b_):
+    return vop("Dot_VectorVector", x, y, a_, b_, ret_sub="real")
+
+
+def _vmul(x, y, v, f):
+    return vop("Multiply_VectorFloat", x, y, v, f, b_cat="real", b_sub="None", b_subcat="double")
+
+
+def _norm(x, y, v):
+    n = kml("Normal", x, y, [("A", "struct", dict(sub=VEC)), D("Tolerance", "0.0001"), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+    g.link(v, n["A"])
+    return n["ReturnValue"]
+
+
+def _size(x, y, v):
+    n = kml("VSize", x, y, [("A", "struct", dict(sub=VEC)), RD])
+    g.link(v, n["A"])
+    return n["ReturnValue"]
+
+
+def _sqrt0(x, y, v):
+    n = kml("Sqrt", x, y, [D("A"), RD])
+    g.link(d_op("FMax", x - 150, y, v, b_const="0.0"), n["A"])
+    return n["ReturnValue"]
+
+
+_steps = []
+
+
+def _sv(name, pin, k, comment=""):
+    n = set_from(name, "struct", AX + 300 * k, AY, pin, comment, sub=VEC)
+    _steps.append(n)
+
+
+def _sr(name, pin, k, comment=""):
+    n = set_from(name, "real", AX + 300 * k, AY, pin, comment, subcat="double")
+    _steps.append(n)
+
+
+Y2_ = AY + 250
+_sv("AimC", _to_mesh(AX - 100, Y2_, cam_basis(AX - 300, Y2_ + 200)[0]), 0, "build 35: the live camera, mesh space")
+# build 41: crouched (camera below 130 cm, mesh space) uses the crouch table and its geometry
+_acz = kml("BreakVector", AX + 50, Y2_ + 500, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
+                                              ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
+g.link(av("AimC", AX - 100, Y2_ + 500), _acz["InVec"])
+_sst = set_from("AimStand", "bool", AX + 150, AY, d_op("Greater_DoubleDouble", AX + 200, Y2_ + 500, _acz["Z"], b_const="130.0", ret=RB), "standing? (else crouched)")
+_steps.append(_sst)
+A_CR, EYE_CR = (-31.99, -17.41, 111.02), (0.0, 0.0, 130.21)
+W_CR = tuple(a_ - e_ for a_, e_ in zip(A_CR, EYE_CR))
+
+
+def _selv(x, y, a3, b3):
+    n = kml("SelectVector", x, y, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)), ("bPickA", "bool", dict(extra='DefaultValue="false",')),
+                                   ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+    g.link(_vec(x - 150, y, a3), n["A"])
+    g.link(_vec(x - 150, y + 70, b3), n["B"])
+    g.link(self_get("AimStand", "bool", x - 150, y + 140), n["bPickA"])
+    return n["ReturnValue"]
+
+
+def _self(x, y, a, b):
+    n = kml("SelectFloat", x, y, [D("A", f"{a}"), D("B", f"{b}"), ("bPickA", "bool", dict(extra='DefaultValue="false",')), RD])
+    g.link(self_get("AimStand", "bool", x - 150, y + 70), n["bPickA"])
+    return n["ReturnValue"]
+
+
+_sv("AimP", _to_mesh(AX + 200, Y2_, self_get("ItemCenter", "struct", AX + 50, Y2_ + 80, sub=VEC)), 1, "the item")
+_sv("AimA", _to_mesh(AX + 500, Y2_, member_pure(SKC, "GetSocketLocation", AX + 350, Y2_ + 100, mesh,
+                                                [("InSocketName", "name", dict(extra='DefaultValue="jnt_l_arm",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]), 2, "the live arm root")
+# build 37 (tester: on tables "the hand goes too close to the centre and up; it needs to be lower on the screen"): the
+# hand's line from the camera is turned ~8 deg down and ~4.5 deg left of the item (it lands below-left of it)
+_sv("AimD", _norm(AX + 950, Y2_, vop("Add_VectorVector", AX + 850, Y2_, _norm(AX + 750, Y2_ - 80, vop("Subtract_VectorVector", AX + 650, Y2_, av("AimP", AX + 500, Y2_ + 80), av("AimC", AX + 500, Y2_ + 150))),
+                                     _vec(AX + 700, Y2_ + 200, (0.0, -0.08, -0.14)))), 3, "camera -> item, turned a little down and left")
+_sv("AimOC", vop("Subtract_VectorVector", AX + 1050, Y2_, av("AimC", AX + 900, Y2_ + 80), av("AimA", AX + 900, Y2_ + 150)), 4)
+_sr("AimB", _dot(AX + 1350, Y2_, av("AimD", AX + 1200, Y2_ + 80), av("AimOC", AX + 1200, Y2_ + 150)), 5)
+_disc = d_op("Subtract_DoubleDouble", AX + 1600, Y2_, d_op("Multiply_DoubleDouble", AX + 1450, Y2_, ar("AimB", AX + 1300, Y2_ + 220), ar("AimB", AX + 1300, Y2_ + 290)),
+             d_op("Subtract_DoubleDouble", AX + 1450, Y2_ + 100, _dot(AX + 1300, Y2_ + 360, av("AimOC", AX + 1150, Y2_ + 360), av("AimOC", AX + 1150, Y2_ + 430)),
+                  b_const=f"{(0.9 * 52.36) ** 2:.3f}"))
+_troot = d_op("Add_DoubleDouble", AX + 1800, Y2_, d_op("Multiply_DoubleDouble", AX + 1650, Y2_ - 80, ar("AimB", AX + 1500, Y2_ - 80), b_const="-1.0"), _sqrt0(AX + 1700, Y2_ + 80, _disc))
+_sr("AimT", d_op("FMin", AX + 1950, Y2_, _troot, _size(AX + 1800, Y2_ + 150, vop("Subtract_VectorVector", AX + 1650, Y2_ + 200, av("AimP", AX + 1500, Y2_ + 200), av("AimC", AX + 1500, Y2_ + 270)))),
+    6, "along the camera ray: 0.9 x reach from the live arm root (no further than the item)")
+# (build 39's mapping through the live shoulder: removed, it sent the hand 60-100 deg up; back to build 38's target)
+_tp = vop("Add_VectorVector", AX + 2250, Y2_, vop("Add_VectorVector", AX + 2100, Y2_, av("AimC", AX + 1950, Y2_ + 80), _vmul(AX + 2000, Y2_ + 150, av("AimD", AX + 1850, Y2_ + 150), ar("AimT", AX + 1850, Y2_ + 220))),
+          vop("Subtract_VectorVector", AX + 2100, Y2_ + 300, _selv(AX + 1950, Y2_ + 300, A_TAB, A_CR), av("AimA", AX + 1950, Y2_ + 400)))
+_sv("AimTp", _tp, 7, "the target, moved onto the table's arm root")
+_sv("AimU", _norm(AX + 2550, Y2_, vop("Subtract_VectorVector", AX + 2450, Y2_, av("AimTp", AX + 2300, Y2_ + 80), _selv(AX + 2300, Y2_ + 150, A_TAB, A_CR))), 8, "table arm root -> target")
+_sr("AimBW", _dot(AX + 2750, Y2_, av("AimU", AX + 2600, Y2_ + 80), _selv(AX + 2600, Y2_ + 150, W_, W_CR)), 9)
+_ww = sum(c * c for c in W_)
+_L = d_op("Add_DoubleDouble", AX + 3150, Y2_, d_op("Multiply_DoubleDouble", AX + 3000, Y2_ - 80, ar("AimBW", AX + 2850, Y2_ - 80), b_const="-1.0"),
+          _sqrt0(AX + 3050, Y2_ + 80, d_op("Subtract_DoubleDouble", AX + 2950, Y2_ + 80,
+                                            d_op("Multiply_DoubleDouble", AX + 2800, Y2_ + 80, ar("AimBW", AX + 2650, Y2_ + 80), ar("AimBW", AX + 2650, Y2_ + 150)),
+                                            _self(AX + 2800, Y2_ + 250, f"{_ww - 3600.0:.3f}", f"{sum(c * c for c in W_CR) - 3600.0:.3f}"))))
+_sr("AimL", _L, 10)
+_sv("AimXE", vop("Add_VectorVector", AX + 3450, Y2_, _selv(AX + 3300, Y2_ + 80, W_, W_CR), _vmul(AX + 3350, Y2_ + 150, av("AimU", AX + 3200, Y2_ + 150), ar("AimL", AX + 3200, Y2_ + 220))), 11,
+    "the dist-60 item point, from the table's eye")
+for _a, _b in zip(_steps, _steps[1:]):
+    g.link(_a["then"], _b["execute"])
+AIM_FIRST, AIM_LAST = _steps[0], _steps[-1]
+#   the segment from it
+_xe = av("AimXE", AX + 2600, AY + 700)
+_xb = kml("BreakVector", AX + 2800, AY + 700, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
+                                              ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
+g.link(_xe, _xb["InVec"])
+_xy = kml("VSizeXY", AX + 2800, AY + 850, [("A", "struct", dict(sub=VEC)), RD])
+g.link(av("AimXE", AX + 2600, AY + 850), _xy["A"])
+_sp_el = kml("DegAtan2", AX + 3000, AY + 700, [D("Y"), D("X"), RD])
+g.link(_xb["Z"], _sp_el["Y"])
+g.link(_xy["ReturnValue"], _sp_el["X"])
+_sp_az = kml("DegAtan2", AX + 3000, AY + 800, [D("Y"), D("X"), RD])
+g.link(_xb["Y"], _sp_az["Y"])
+g.link(_xb["X"], _sp_az["X"])
+_sp_d = {"ReturnValue": d_op("Add_DoubleDouble", AX + 3000, AY + 900, None, b_const="60.0")}   # always the dist-60 segment
+
+
 def _pick_view(x, y, view_pin, body_pin, raise_steep=0.0):
-    """build 32 (= build 26): the use reach in view axes, the empty-hands pickup in the body frame."""
+    """build 34: the use reach in view axes; the empty-hands pickup from the live spine (body_pin = the spine-mapped value)."""
     n = kml("SelectFloat", x, y, [D("A"), D("B"), ("bPickA", "bool", dict(extra='DefaultValue="false",')), RD])
     g.link(view_pin, n["A"])
     g.link(body_pin, n["B"])
@@ -805,12 +961,28 @@ def _pick_view(x, y, view_pin, body_pin, raise_steep=0.0):
     return n["ReturnValue"]
 
 
-_el_u = _pick_view(X1 + 2350, Y1 + 1250, _vel["ReturnValue"], _el["ReturnValue"], raise_steep=25.0)
-_dist_u = _pick_view(X1 + 2350, Y1 + 1400, _vds["ReturnValue"], _dist["ReturnValue"])
-_az_u = _pick_view(X1 + 2350, Y1 + 1550, _vaz["ReturnValue"], _az["ReturnValue"])
+# build 40 (tester: "huge regression" on 39; "simple fix"): build 38's aim, corrected by what build 38 measured: standing the
+# hand landed 16 deg higher and 8 deg further left than aimed (crouched: at the aimed height)
+_cbv = kml("BreakVector", X1 + 1850, Y1 + 1300, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
+                                                ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
+g.link(self_get("AimC", "struct", X1 + 1700, Y1 + 1300, sub=VEC), _cbv["InVec"])
+_stand = d_op("Greater_DoubleDouble", X1 + 2000, Y1 + 1300, _cbv["Z"], b_const="130.0", ret=RB)   # camera above 130 cm (mesh space) = standing
+# build 42: crouched the hand landed 47 deg below the view centre ("grabbing their crotch"; standing lands at -8..-13): +38
+_elc = kml("SelectFloat", X1 + 2150, Y1 + 1300, [D("A", "-16.0"), D("B", "38.0"), ("bPickA", "bool", dict(extra='DefaultValue="false",')), RD])
+g.link(_stand, _elc["bPickA"])
+_el_u = _pick_view(X1 + 2350, Y1 + 1250, _vel["ReturnValue"], d_op("Add_DoubleDouble", X1 + 2250, Y1 + 1250, _sp_el["ReturnValue"], _elc["ReturnValue"]))
+_dist_u = _pick_view(X1 + 2350, Y1 + 1400, _vds["ReturnValue"], _sp_d["ReturnValue"])
+# build 41: standing +4 ("slightly too far right" at +8); build 43: crouched -25 (build 42 crouched landed 23 deg right of
+# the centre, standing lands 4-7 deg left)
+# build 44 (tester: crouched "LEFT, it is in the centre"; build 43 crouched landed 3-4 deg left = centre): -37
+_azc = kml("SelectFloat", X1 + 2100, Y1 + 1650, [D("A", "4.0"), D("B", "-37.0"), ("bPickA", "bool", dict(extra='DefaultValue="false",')), RD])
+g.link(_stand, _azc["bPickA"])
+_az_u = _pick_view(X1 + 2350, Y1 + 1550, _vaz["ReturnValue"], d_op("Add_DoubleDouble", X1 + 2250, Y1 + 1550, _sp_az["ReturnValue"], _azc["ReturnValue"]))
 _ie = _bin(X1 + 2500, Y1 + 700, _el_u, "80.0", "15.0", 7)
 _id = _bin(X1 + 2500, Y1 + 850, _dist_u, "-30.0", "15.0", 2)
-_ia = _bin(X1 + 2500, Y1 + 1000, _az_u, "45.0", "15.0", 4)
+_azo = kml("SelectFloat", X1 + 2300, Y1 + 1100, [D("A", "45.0"), D("B", "15.0"), ("bPickA", "bool", dict(extra='DefaultValue="false",')), RD])
+g.link(self_get("UseMode", "bool", X1 + 2100, Y1 + 1150), _azo["bPickA"])
+_ia = _bin(X1 + 2500, Y1 + 1000, d_op("Add_DoubleDouble", X1 + 2400, Y1 + 1050, _az_u, _azo["ReturnValue"]), "0.0", "15.0", 4)   # build 39: use -45..+15, pickup -15..+45
 
 
 def _imad(x, y, a, mul_const, b):
@@ -833,7 +1005,14 @@ sss0 = set_from("SegStart", "real", X1 + 3700, Y1 + 350, seg_start, "segment sta
 _pv = [set_from(v, "real", X1 + 4000 + 300 * k, Y1 + 350, src_pin, "item seen from the eye, body frame (probe)" if k == 0 else "", subcat="double")
        for k, (v, src_pin) in enumerate((("ItemElev", _el_u), ("ItemDist", _dist_u), ("ItemAzim", _az_u)))]
 chain(sss0, *_pv)
-sss = {"execute": sss0["execute"], "then": _pv[-1]["then"]}
+_p35 = []
+for k, (v, src_var, comp) in enumerate((("AimCX", "AimC", "X"), ("AimCZ", "AimC", "Z"), ("AimAX", "AimA", "X"), ("AimAY", "AimA", "Y"), ("AimAZ", "AimA", "Z"))):
+    _bk = kml("BreakVector", X1 + 5000 + 300 * k, Y1 + 600, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
+                                                         ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
+    g.link(self_get(src_var, "struct", X1 + 4800 + 300 * k, Y1 + 650, sub=VEC), _bk["InVec"])
+    _p35.append(set_from(v, "real", X1 + 5000 + 300 * k, Y1 + 350, _bk[comp], "aim inputs, mesh space (probe)" if k == 0 else "", subcat="double"))
+chain(_pv[-1], *_p35)
+sss = {"execute": sss0["execute"], "then": _p35[-1]["then"]}
 # 2026-10-10: a corpse / stash touch with a weapon plays AS_ImmLoot_Touch, the same asset form as the rifle grab (a
 # short copy of the vanilla grab played from 0), which shows over a rifle where the 180 s reach table never did. The
 # hand goes fully out toward the ground ahead, is held at 0.6 s while the window is open, then comes straight back.
@@ -860,7 +1039,10 @@ _mpk = member_call(ANIMI, "PlaySlotAnimationAsDynamicMontage", X1 + 2750, Y1 + 7
     ("InTimeToStartMontageAt", "real", dict(subcat="float", extra='DefaultValue="0.000000",')),
     ("ReturnValue", "object", dict(sub=MONT, out=True))])
 # (not paused: a paused montage may not blend in; the pose is constant for 3 s and is stopped at the end)
-g.link(bst["else"], mpb["execute"])   # build 32 (tester: "forget it, this approach isn't working"): back to build 26's pickup
+_bstc = branch(X1 + 2600, Y1 + 500, "build 41: standing? (else the crouch table)", self_get("AimStand", "bool", X1 + 2400, Y1 + 600))
+g.link(bst["else"], _bstc["execute"])
+g.link(_bstc["then"], mpb["execute"])
+g.link(_bstc["else"], mpbc["execute"])   # build 32 (tester: "forget it, this approach isn't working"): back to build 26's pickup
 _spm = set_from("UseMont", "object", X1 + 3350, Y1 + 750, _mpk["ReturnValue"], "the held pose", sub=MONT)
 chain(_mpk, _spm, self_set("UseMode", "bool", X1 + 3650, Y1 + 750, "", default="true"), self_set("PickUse", "bool", X1 + 3950, Y1 + 750, "a pickup in the use pose", default="true"),
       self_set("UseGrabbed", "bool", X1 + 4250, Y1 + 750, "", default="false"),
@@ -944,6 +1126,10 @@ ses_a2 = self_set("SegStart", "real", X1 + 3700, Y1 - 50, "", default="0.0", sub
 ses_b = self_set("GrabBH", "bool", X1 + 3400, Y1 + 350, "", default="true")
 chain(mp, sgm_a, ses_a, ses_a2)
 chain(mpb, sgm_b, ses_b, sss)
+_sgmc = set_from("GrabMontage", "object", X1 + 3100, Y1 + 650, mpbc["ReturnValue"], "our montage (crouched)", sub=MONT)
+g.link(mpbc["then"], _sgmc["execute"])
+g.link(_sgmc["then"], ses_b["execute"])
+g.link(seg_start, mpbc["InTimeToStartMontageAt"])
 g.link(sgm_u["then"], ses_b["execute"])
 g.link(seg_start, mpu["InTimeToStartMontageAt"])
 srs = set_from("ReachStart", "real", X1 + 2800, Y1 + 250, now(X1 + 2650, Y1 + 450), "reach started", subcat="double")
@@ -1949,8 +2135,22 @@ since_grab = d_op("Subtract_DoubleDouble", X3 - 100, Y3 + 650, now(X3 - 300, Y3 
 cl = kml("FClamp", X3 + 100, Y3 + 650, [D("Value"), D("Min", "0.0"), D("Max", "1.0"), RD])
 g.link(d_op("Divide_DoubleDouble", X3 - 100, Y3 + 750, since_grab, b_const="0.12"), cl["Value"])
 alpha = cl["ReturnValue"]
-bone = member_pure(SKC, "GetSocketLocation", X3 - 900, Y3 + 900, mesh,
+_bone_w = member_pure(SKC, "GetSocketLocation", X3 - 900, Y3 + 900, mesh,
                    [("InSocketName", "name", dict(extra=f'DefaultValue="{HAND}",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+# build 44 (tester: "the item doesn't go into the palm, it attaches to the wrist"): empty hands, the item is held at the palm
+# (60 % of the way from the wrist jnt_l_hand to the middle finger's knuckle), not at the item bone jnt_l_weapon
+_wr = member_pure(SKC, "GetSocketLocation", X3 - 1100, Y3 + 1000, mesh, [("InSocketName", "name", dict(extra='DefaultValue="jnt_l_hand",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+_kn = member_pure(SKC, "GetSocketLocation", X3 - 1100, Y3 + 1100, mesh, [("InSocketName", "name", dict(extra='DefaultValue="jnt_l_hand_middle_01",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+_palm = kml("VLerp", X3 - 950, Y3 + 1050, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)), ("Alpha", "real", dict(subcat="float", extra='DefaultValue="0.6",')),
+                                         ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_wr, _palm["A"])
+g.link(_kn, _palm["B"])
+_bsel = kml("SelectVector", X3 - 800, Y3 + 950, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)), ("bPickA", "bool", dict(extra='DefaultValue="false",')),
+                                               ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_palm["ReturnValue"], _bsel["A"])
+g.link(_bone_w, _bsel["B"])
+g.link(self_get("GrabBH", "bool", X3 - 1000, Y3 + 1200), _bsel["bPickA"])
+bone = _bsel["ReturnValue"]
 cl_, cf_, cr_, cu_, cfov = cam_basis(X3 - 1500, Y3 + 1100)
 tan_v = kml("DegTan", X3 - 700, Y3 + 1300, [D("A"), RD])
 g.link(d_op("Multiply_DoubleDouble", X3 - 900, Y3 + 1300, cfov, b_const="0.5"), tan_v["A"])
@@ -2017,7 +2217,7 @@ _rsel = kml("RLerp", X3 + 300, Y3 + 2800, [("A", "struct", dict(sub=ROT)), ("B",
                                           ("bShortestPath", "bool", dict(extra='DefaultValue="true",')), ("ReturnValue", "struct", dict(sub=ROT, out=True))])
 g.link(_ixb["Rotation"], _rsel["A"])
 g.link(_sbr["Rotation"], _rsel["B"])
-g.link(alpha, _rsel["Alpha"])
+# g.link(alpha, _rsel["Alpha"])   # build 41: alpha 0 = the item keeps how it lay (no turn into the grip)
 held_rot = _rsel["ReturnValue"]
 #   where the pivot goes so the centre sits on the hand as drawn
 _mt = kml("MakeTransform", X3 + 500, Y3 + 2800, [("Location", "struct", dict(sub=VEC)), ("Rotation", "struct", dict(sub=ROT)), ("Scale", "struct", dict(sub=VEC)),
@@ -2109,7 +2309,7 @@ pr.append(self_set("FlyAttached", "bool", X3 + 3100, Y3 + 250, "", default="true
 chain(att, *pr)
 _pt = kml("SelectFloat", X3 + 500, Y3 + 1000, [D("A", "1.2"), D("B"), ("bPickA", "bool", dict(extra='DefaultValue="false",')), RD])
 g.link(self_get("PocketTime", "real", X3 + 300, Y3 + 1050, subcat="double"), _pt["B"])
-g.link(self_get("PickUse", "bool", X3 + 300, Y3 + 1120), _pt["bPickA"])
+g.link(self_get("GrabBH", "bool", X3 + 300, Y3 + 1120), _pt["bPickA"])   # build 38: empty hands: when the hand is down
 pocket = d_op("GreaterEqual_DoubleDouble", X3 + 700, Y3 + 850, montage_time_since_reach(X3 + 500, Y3 + 850),
               _pt["ReturnValue"], ret=RB)   # build 28: a pickup in the use pose: when the hand is back down
 stale = d_op("Greater_DoubleDouble", X3 + 700, Y3 + 1050, el, b_const="3.0", ret=RB)
@@ -2462,7 +2662,7 @@ _clr5 = [self_set("Handed", "bool", X7 + 2150, Y7 + 4100, "", default="false"), 
 g.link(hv5["then"], _clr5[0]["execute"])
 g.link(bv5["else"], _clr5[0]["execute"])
 chain(*_clr5)
-sqhx = sequence(X7 + 500, Y7 + 5200, "", 7)
+sqhx = sequence(X7 + 500, Y7 + 5200, "", 8)
 _late = b_and(X7 + 850, Y7 + 5500, self_get("UseMode", "bool", X7 + 650, Y7 + 5450),
               b_or(X7 + 700, Y7 + 5550, b_not(X7 + 550, Y7 + 5550, grab_active(X7 + 350, Y7 + 5550)),
                    d_op("Greater_DoubleDouble", X7 + 550, Y7 + 5650,
@@ -2682,6 +2882,16 @@ _bgd = branch(X7 + 1300, Y7 + 6100, "stand-in out and done? (our copy took over,
               b_and(X7 + 1200, Y7 + 6300, is_valid(X7 + 1050, Y7 + 6600, self_get("Ghost", "object", X7 + 850, Y7 + 6600, sub=ACTOR)), _gdone))
 g.link(sqhx["then_6"], _bgd["execute"])
 g.link(_bgd["then"], member_call(ACTOR, "K2_DestroyActor", X7 + 1600, Y7 + 6100, self_get("Ghost", "object", X7 + 1400, Y7 + 6300, sub=ACTOR), "remove the stand-in")["execute"])
+
+# (builds 36-37, the game's left-hand IK driven through WeaponData.WeaponMesh: removed. 36: with empty hands there is no
+#  weapon mesh to move; 37: WeaponData's members are read-only to Blueprints ("Make Anim Player Weapon Data" has no pins))
+
+# build 35: the aim steps run first in the reach (brs.else -> Aim* -> reach steps)
+_brs_else = brs["else"]
+for _q in list(_brs_else.links):
+    _brs_else.links.remove(_q); _q.links.remove(_brs_else)
+    g.link(AIM_LAST["then"], _q)
+g.link(_brs_else, AIM_FIRST["execute"])
 
 write(sys.argv[1], g.text())
 print("ok", len(g.nodes), "nodes")
