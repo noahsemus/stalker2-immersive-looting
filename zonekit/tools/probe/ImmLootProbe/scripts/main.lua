@@ -1,7 +1,7 @@
 -- ImmLootProbe (dev-box only, never shipped): is BP_ImmLootActor alive and ticking, and what it sees / does.
 local TAG = "[ImmLootProbe] "
 local NUM = { "NTicks", "Enabled", "TouchDoors", "TouchState", "DoorTouch", "NDoor", "NPickups", "NReaches", "NSkips",
-              "SkipBits", "Reaching", "LootReach", "LootPaused", "Lootable", "ItemArmed", "NTouch", "KeyDown", "KeyHeld", "InteractPressAt", "DoorPulling", "DoorYaw", "UseHeld", "NUseHolds", "GameMontageAt", "ReachStart", "GrabBH" }
+              "SkipBits", "Reaching", "LootReach", "LootPaused", "Lootable", "ItemArmed", "NTouch", "KeyDown", "KeyHeld", "InteractPressAt", "DoorPulling", "DoorYaw", "UseHeld", "NUseHolds", "GameMontageAt", "ReachStart", "GrabBH", "ReplayAt", "NReplays" }
 local OBJS = { "LookActor", "Item", "LootObj", "LootComp", "GameMontage", "HeldUse", "GrabMontage", "Fly", "FBMontage", "TouchAsset" }
 local actor, last, ticks, lastT = nil, {}, 0, -1
 local function log(s) print(TAG .. s .. "\n") end

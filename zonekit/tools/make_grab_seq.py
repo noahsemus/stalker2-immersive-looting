@@ -471,7 +471,7 @@ TOUCH_REACH = 0.95                     # of the arm length: fully out, not locke
 
 
 DOOR_ELEV, DOOR_AZIM = -12.0, -14.0   # doors (tester): the hand stays in the lower left of the screen, one fixed direction
-DOOR_PUSH_STROKE, DOOR_PULL_STROKE = 22.0, 30.0   # cm along the sight line
+DOOR_PUSH_STROKE, DOOR_PULL_STROKE, DOOR_PULL_DROP = 9.0, 12.0, 10.0   # cm along the sight line
 
 
 def build_doors(src, grab, path_h, path_q, nkeys):
@@ -525,8 +525,10 @@ def build_touch_one(src, grab, path_h, path_q, nkeys, name, TOUCH_ELEV, TOUCH_AZ
     GQ = qmul(qp, path_q[W_FULL + 1])
     R, RQ = path_h[0], path_q[0]
     back = unit(sub(G, cam))
-    N = sub(G, mul(back, DOOR_PUSH_STROKE))            # push: the hand stops short, then strokes forward to G
-    PB = sub(G, mul(back, DOOR_PULL_STROKE))           # pull: from G the hand draws back toward the body
+    # build 7 (tester: "goes up to the left and off the top"): the stroke points stay near the door point; the old ones
+    # (22 / 30 cm back along the sight line) put the hand a hand-span from the eye, high on the screen
+    N = sub(G, mul(back, DOOR_PUSH_STROKE))            # push: the hand stops a little short, then strokes forward to G
+    PB = sub(sub(G, mul(back, DOOR_PULL_STROKE)), (0.0, 0.0, DOOR_PULL_DROP))   # pull: back and down toward the chest
     out.append(f"TOUCH {name}: elev {TOUCH_ELEV:+.0f} az {TOUCH_AZIM:+.0f}, lands {t:.1f} cm from the eye, plan rel cam {tuple(round(x, 1) for x in sub(G, cam))}")
     path = f"{DIR}/{name}"
     if not EAL.does_asset_exist(path):
@@ -534,10 +536,10 @@ def build_touch_one(src, grab, path_h, path_q, nkeys, name, TOUCH_ELEV, TOUCH_AZ
     seq = unreal.load_asset(path)
     keys = {b: ([], [], []) for b in (ARM, FORE, HAND)}
     # (from frame, to frame, from point, to point): the Blueprint pauses at 0.6 s (frame 18) for DoorHold / the window
-    if mode == "push":      # out short of the door by 10, a slow forward stroke 10-18 (pause), held to 22, back by 40
-        sched = ((0, 10, R, N), (10, 18, N, G), (18, 22, G, G), (22, 40, G, R))
-    elif mode == "pull":    # out to the door by 14, held to 18 (pause), drawn back 18-30, back on the grip by 44
-        sched = ((0, 14, R, G), (14, 18, G, G), (18, 30, G, PB), (30, 44, PB, R))
+    if mode == "push":      # out to just short of the door by 12, a forward stroke 12-18 (pause there), held to 22, back by 40
+        sched = ((0, 12, R, N), (12, 18, N, G), (18, 22, G, G), (22, 40, G, R))
+    elif mode == "pull":    # out to the door by 14, held to 18 (pause), drawn back and down 18-28, back on the grip by 42
+        sched = ((0, 14, R, G), (14, 18, G, G), (18, 28, G, PB), (28, 42, PB, R))
     else:
         sched = ((0, 12, R, G), (12, 20, G, G), (20, 36, G, R))
     qof = lambda P: RQ if P is R else GQ
@@ -591,7 +593,7 @@ def build_touch_one(src, grab, path_h, path_q, nkeys, name, TOUCH_ELEV, TOUCH_AZ
         if e.notify is not None and e.notify.get_class().get_name() == "AnimNotify_HandIK":
             hand = e.notify.get_editor_property("hand_to_apply")
     hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
-    for t, end in ((0.035907, None), ({"pull": 1.5, "push": 1.35}.get(mode, 1.2), 1.0)):
+    for t, end in ((0.035907, None), ({"pull": 1.45, "push": 1.35}.get(mode, 1.2), 1.0)):
         new = AL.add_animation_notify_event(seq, track, t, hik)
         new.set_editor_property("hand_to_apply", hand)
         if end is not None:
