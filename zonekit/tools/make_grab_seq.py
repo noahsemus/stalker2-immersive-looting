@@ -796,6 +796,26 @@ USE_MONTS = ["Antirad/MG_fp_antirad_use", "Bandage/MG_fp_bandage_use", "Beer/MG_
 USE_ROOT = "/Game/_STALKER2/Animations/Player/AnimSequences/Items/"
 
 
+ARC_OUT = (0.0, -3.0, 6.0)     # build 22: the hand's path bulges up (and a little left) on the way out / back (cm, view axes)
+ARC_BACK = (0.0, -2.0, 3.0)
+
+
+def smoother(x):
+    x = max(0.0, min(1.0, x))
+    return x * x * x * (x * (6 * x - 15) + 10)
+
+
+def finger_open(f):
+    """0 = the use animation's grip, 1 = open and spread: opening on the way out, closing on the item at the grab."""
+    if f <= 2 or f >= 13:
+        return 0.0
+    if f <= 8:
+        return smoother((f - 2) / 6)
+    if f <= 10:
+        return 1.0
+    return 1.0 - smoother((f - 10) / 3)
+
+
 def build_use_table(src, tgt_rot, nkeys, base, name, template):
     sp_p, sp_q = cs(base, "jnt_spine_03", 0)
     cam, _ = cs(base, "jnt_camera", 0)
@@ -813,6 +833,10 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template):
     wpn = local(src, "jnt_l_weapon", 13)[0]
     keys = {b: ([], [], []) for b in (ARM, FORE, HAND)}
     errs = []
+    fopen, _ = door_fingers(src)                        # an open, spread hand on the way out
+    tracks_b = [str(t) for t in AL.get_animation_track_names(base)]
+    fbase = {b: local(base, b, 0) for b in FINGERS if b in tracks_b}   # the use animation's own grip (holds the item)
+    fk = {b: ([], [], []) for b in fbase}
     for ie, elev in enumerate(ELEVS):
       for dd in DISTS:
         for az in AZIMS:
@@ -827,18 +851,22 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template):
             bias = (0.0, 0.0, 0.0)   # build 20: none (build 19 landed exactly where aimed)
             G = sub(sub(item, qrot(GQp, wpn)), bias)
             for f in range(SEG2):
-                if f <= 12:
-                    bw, T0, Q0, T1, Q1 = smooth(f / 12), R, RQ, G, GQp
-                elif f <= 20:
-                    bw, T0, Q0, T1, Q1 = 1.0, G, GQp, G, GQp
-                elif f <= 27:
-                    bw, T0, Q0, T1, Q1 = smooth((f - 20) / 7), G, GQp, POCKET, PQ
-                elif f <= 39:
-                    bw, T0, Q0, T1, Q1 = smooth((f - 27) / 12), POCKET, PQ, R, RQ
+                if f <= 12:                     # out: eased, arcing up and out, the wrist turning ahead of the arm
+                    bw = smoother(f / 12)
+                    T = add(add(R, mul(sub(G, R), bw)), mul(ARC_OUT, math.sin(math.pi * bw)))
+                    hq = slerp(RQ, GQp, smoother(min(1.0, f / 9)))
+                elif f <= 16:                   # the grip settles
+                    T, hq = G, GQp
+                elif f <= 39:                   # back with it to the use animation's pose, eased, a small arc
+                    bw = smoother((f - 16) / 23)
+                    T = add(add(G, mul(sub(R, G), bw)), mul(ARC_BACK, math.sin(math.pi * bw)))
+                    hq = slerp(GQp, RQ, smoother(min(1.0, (f - 16) / 20)))
                 else:
-                    bw, T0, Q0, T1, Q1 = 1.0, R, RQ, R, RQ
-                T = add(T0, mul(sub(T1, T0), bw))
-                hq = slerp(Q0, Q1, bw)
+                    T, hq = R, RQ
+                fo = finger_open(f)
+                for b in FINGERS:
+                    if b in fbase:
+                        fk[b][1].append(unreal.Quat(*slerp(fbase[b][1], fopen[b], fo)))
                 to_t = sub(T, A)
                 d = max(abs(l1 - l2) + 0.01, min(l1 + l2 - 0.01, norm(to_t)))
                 dv = unit(to_t)
@@ -881,6 +909,13 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template):
         else:
             ctrl.add_bone_curve(b, True)
         ctrl.set_bone_track_keys(b, pos, rot, scl, True)
+    for b, (pos, rot, scl) in fk.items():
+        n = len(rot)
+        if hasattr(ctrl, "add_bone_track"):
+            ctrl.add_bone_track(b, True)
+        else:
+            ctrl.add_bone_curve(b, True)
+        ctrl.set_bone_track_keys(b, [unreal.Vector(*fbase[b][0])] * n, rot, [unreal.Vector(*fbase[b][2])] * n, True)
     ctrl.close_bracket(True)
     for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
         AL.remove_animation_notify_events_by_track(seq, tn)

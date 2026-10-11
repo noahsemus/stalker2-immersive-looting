@@ -676,7 +676,8 @@ _buw = branch(X1 + 1850, Y1 - 700, "a hold to use? wait for the game's use anima
 g.link(ns["then"], _buw["execute"])
 _suw = self_set("UseWait", "bool", X1 + 2150, Y1 - 700, "waiting for the use animation", default="true")
 g.link(_buw["then"], _suw["execute"])
-chain(_suw, set_from("UseWaitAt", "real", X1 + 2450, Y1 - 700, now(X1 + 2300, Y1 - 500), "", subcat="double"))
+_suwa = set_from("UseWaitAt", "real", X1 + 2450, Y1 - 700, now(X1 + 2300, Y1 - 500), "", subcat="double")
+chain(_suw, _suwa)
 
 # reach
 sqr = sequence(X1 + 1550, Y1 + 100, "reach steps", 3)
@@ -946,7 +947,7 @@ bsm = branch(FX + 1200, FY, "static mesh item?", is_valid(FX + 1050, FY + 200, s
 g.link(sff["then"], bsm["execute"])
 
 
-def spawn_copy(x, y, actor_cls, comp_var, comment):
+def spawn_copy(x, y, actor_cls, comp_var, comment, var="Fly", count="NFly"):
     sp = exec_pins(Node(g, BG + "K2Node_SpawnActorFromClass", nm("K2Node_SpawnActorFromClass"), x, y, comment))
     sp.pin("Class", "class", sub=ACTOR, extra=f'DefaultObject="{actor_cls.split(chr(39))[1]}",')
     sp.pin("ReturnValue", "object", sub=actor_cls, out=True)
@@ -972,8 +973,8 @@ def spawn_copy(x, y, actor_cls, comp_var, comment):
         g.link(self_get("ItemSkel", "object", x + 450, y + 300, sub=SKMESH), setm["NewMesh"])
     col = member_call(PRIM, "SetCollisionEnabled", x + 950, y, comp, "no collision",
                       [("NewType", "byte", dict(sub=EN("/Script/Engine.ECollisionEnabled"), extra='DefaultValue="NoCollision",'))])
-    sf = set_from("Fly", "object", x + 1250, y, sp["ReturnValue"], "the flying copy", sub=ACTOR)
-    nf = inc("NFly", x + 1550, y, "count copies")
+    sf = set_from(var, "object", x + 1250, y, sp["ReturnValue"], "the flying copy" if var == "Fly" else "the stand-in copy", sub=ACTOR)
+    nf = inc(count, x + 1550, y, "count copies")
     chain(sp, mob, setm, col, sf, nf)
     return sp
 
@@ -2332,7 +2333,7 @@ _clr5 = [self_set("Handed", "bool", X7 + 2150, Y7 + 4100, "", default="false"), 
 g.link(hv5["then"], _clr5[0]["execute"])
 g.link(bv5["else"], _clr5[0]["execute"])
 chain(*_clr5)
-sqhx = sequence(X7 + 500, Y7 + 5200, "", 6)
+sqhx = sequence(X7 + 500, Y7 + 5200, "", 7)
 _late = b_and(X7 + 850, Y7 + 5500, self_get("UseMode", "bool", X7 + 650, Y7 + 5450),
               b_or(X7 + 700, Y7 + 5550, b_not(X7 + 550, Y7 + 5550, grab_active(X7 + 350, Y7 + 5550)),
                    d_op("Greater_DoubleDouble", X7 + 550, Y7 + 5650,
@@ -2510,6 +2511,38 @@ for _q in list(_c2then.links):
         _c2then.links.remove(_q); _q.links.remove(_c2then)
         g.link(bli["then"], _q)
 g.link(_c2then, bli["execute"])
+
+# build 22: the stand-in copy
+GX, GY = X1 + 2800, Y1 - 2600
+g.box("EdGraphNode_Comment_933", GX - 400, GY - 300, 3600, 1300, "Build 22: hold to use: a stand-in copy where the item lay, the moment it goes (no flicker)")
+_bgo = branch(GX - 200, GY, "an older stand-in still out? remove it", is_valid(GX - 300, GY + 200, self_get("Ghost", "object", GX - 500, GY + 200, sub=ACTOR)))
+g.link(_suwa["then"], _bgo["execute"])
+_dgo = member_call(ACTOR, "K2_DestroyActor", GX + 100, GY - 150, self_get("Ghost", "object", GX - 100, GY + 50, sub=ACTOR), "remove it")
+g.link(_bgo["then"], _dgo["execute"])
+_sga = set_from("GhostAt", "real", GX + 400, GY, now(GX + 250, GY + 200), "", subcat="double")
+g.link(_dgo["then"], _sga["execute"])
+g.link(_bgo["else"], _sga["execute"])
+_gsm = branch(GX + 700, GY, "static mesh item?", is_valid(GX + 600, GY + 200, self_get("ItemMesh", "object", GX + 400, GY + 200, sub=SM)))
+g.link(_sga["then"], _gsm["execute"])
+g.link(_gsm["then"], spawn_copy(GX + 1000, GY, SMA, "StaticMeshComponent", "stand-in (static mesh)", "Ghost", "NGhost")["execute"])
+_gsk = branch(GX + 1000, GY + 500, "skeletal mesh item?", is_valid(GX + 900, GY + 700, self_get("ItemSkel", "object", GX + 700, GY + 700, sub=SKMESH)))
+g.link(_gsm["else"], _gsk["execute"])
+g.link(_gsk["then"], spawn_copy(GX + 1300, GY + 500, SKA, "SkeletalMeshComponent", "stand-in (skeletal mesh)", "Ghost", "NGhost")["execute"])
+#   removed: our real copy is out (spawned after it), or no use animation came (0.35 s, or 3 s once the game started one)
+_gat = self_get("GhostAt", "real", X7 + 600, Y7 + 6200, subcat="double")
+_gage = d_op("Subtract_DoubleDouble", X7 + 800, Y7 + 6250, now(X7 + 600, Y7 + 6300), self_get("GhostAt", "real", X7 + 600, Y7 + 6370, subcat="double"))
+_gdone = b_or(X7 + 1100, Y7 + 6200,
+              b_and(X7 + 950, Y7 + 6100, is_valid(X7 + 750, Y7 + 6050, self_get("Fly", "object", X7 + 550, Y7 + 6050, sub=ACTOR)),
+                    d_op("GreaterEqual_DoubleDouble", X7 + 750, Y7 + 6120, self_get("FlyStart", "real", X7 + 550, Y7 + 6120, subcat="double"), _gat, ret=RB)),
+              b_and(X7 + 950, Y7 + 6300, d_op("Greater_DoubleDouble", X7 + 1000, Y7 + 6300, _gage, b_const="0.35", ret=RB),
+                    b_not(X7 + 950, Y7 + 6400, d_op("Greater_DoubleDouble", X7 + 750, Y7 + 6400,
+                                                     self_get("GameMontageAt", "real", X7 + 550, Y7 + 6400, subcat="double"),
+                                                     self_get("GhostAt", "real", X7 + 550, Y7 + 6470, subcat="double"), ret=RB))),
+              d_op("Greater_DoubleDouble", X7 + 1000, Y7 + 6500, _gage, b_const="3.0", ret=RB))
+_bgd = branch(X7 + 1300, Y7 + 6100, "stand-in out and done? (our copy took over, or no use came)",
+              b_and(X7 + 1200, Y7 + 6300, is_valid(X7 + 1050, Y7 + 6600, self_get("Ghost", "object", X7 + 850, Y7 + 6600, sub=ACTOR)), _gdone))
+g.link(sqhx["then_6"], _bgd["execute"])
+g.link(_bgd["then"], member_call(ACTOR, "K2_DestroyActor", X7 + 1600, Y7 + 6100, self_get("Ghost", "object", X7 + 1400, Y7 + 6300, sub=ACTOR), "remove the stand-in")["execute"])
 
 write(sys.argv[1], g.text())
 print("ok", len(g.nodes), "nodes")
