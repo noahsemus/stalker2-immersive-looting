@@ -246,6 +246,18 @@ def is_valid(x, y, obj_pin):
     return n["ReturnValue"]
 
 
+def is_valid_class(x, y, cls_pin):
+    n = lib_pure(KSL, "KismetSystemLibrary", "IsValidClass", x, y, [("Class", "class", dict(sub=OBJ)), RB])
+    g.link(cls_pin, n["Class"])
+    return n["ReturnValue"]
+
+
+def self_ref(x, y):
+    n = Node(g, BG + "K2Node_Self", nm("K2Node_Self"), x, y, "")
+    n.pin("self", "object", sub=SELF, out=True)
+    return n["self"]
+
+
 def now(x, y):
     return lib_pure(KSL, "KismetSystemLibrary", "GetGameTimeInSeconds", x, y,
                     [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)), RD])["ReturnValue"]
@@ -527,6 +539,35 @@ g.link(si0["then"], rlh["execute"])
 # 1.0.1k added PC.EnableInteractions after it: the carry died again (1.0.1i, the reset alone, carried): removed.
 imc_c = load_imc(X0 + 950, Y0, "IMC_Inventory", rlh["then"], "inventory / loot input context (game path)")
 sim0 = set_from("InvIMC", "object", X0 + 1700, Y0, imc_c["AsInput Mapping Context"], "remember it", sub=IMC_CLS)
+# 1.1: the MCM settings provider (BP_ImmLootMCM), loaded by name so this actor never imports MCM: without MCM installed
+# that class fails to load, nothing is spawned, the mod works with its defaults
+SCPS = "\"/Script/CoreUObject.ScriptStruct'/Script/CoreUObject.SoftClassPath'\""
+_mkc = lib_pure(KSL, "KismetSystemLibrary", "MakeSoftClassPath", X0 + 1900, Y0 + 400,
+                [("PathString", "string", dict(extra='DefaultValue="/ImmersiveLooting/Runtime/BP_ImmLootMCM.BP_ImmLootMCM_C",')),
+                 ("ReturnValue", "struct", dict(sub=SCPS, out=True))])
+_cvc = lib_pure(KSL, "KismetSystemLibrary", "Conv_SoftClassPathToSoftClassRef", X0 + 2150, Y0 + 400,
+                [("SoftClassPath", "struct", dict(sub=SCPS)), ("ReturnValue", "softclass", dict(sub=OBJ, out=True))])
+_cvc.pins["SoftClassPath"].ref = True
+_cvc.pins["SoftClassPath"].const = True
+g.link(_mkc["ReturnValue"], _cvc["SoftClassPath"])
+_ldc = lib_call(KSL, "LoadClassAsset_Blocking", X0 + 2050, Y0, "MCM provider class (only loads with MCM installed)",
+                [("AssetClass", "softclass", dict(sub=OBJ)), ("ReturnValue", "class", dict(sub=OBJ, out=True))],
+                "/Script/Engine.Default__KismetSystemLibrary")
+g.link(_cvc["ReturnValue"], _ldc["AssetClass"])
+g.link(sim0["then"], _ldc["execute"])
+_bvc = branch(X0 + 2400, Y0, "MCM there (the class loaded)?", is_valid_class(X0 + 2300, Y0 + 200, _ldc["ReturnValue"]))
+g.link(_ldc["then"], _bvc["execute"])
+_spm = exec_pins(Node(g, BG + "K2Node_SpawnActorFromClass", nm("K2Node_SpawnActorFromClass"), X0 + 2700, Y0, "spawn the MCM provider"))
+_spm.pin("Class", "class", sub=ACTOR)
+_spm.pin("ReturnValue", "object", sub=ACTOR, out=True)
+_spm.pin("WorldContextObject", "object", sub=OBJ, hidden=True)
+_spm.pin("SpawnTransform", "struct", sub=XFORM)
+_spm.pin("CollisionHandlingOverride", "byte", sub=EN("/Script/Engine.ESpawnActorCollisionHandlingMethod"), extra='DefaultValue="AlwaysSpawn",')
+_spm.pin("TransformScaleMethod", "byte", sub=EN("/Script/Engine.ESpawnActorScaleMethod"), adv=True, extra='DefaultValue="MultiplyWithRoot",')
+_spm.pin("Owner", "object", sub=ACTOR, adv=True)
+g.link(_ldc["ReturnValue"], _spm["Class"])
+g.link(member_pure(ACTOR, "GetTransform", X0 + 2500, Y0 + 400, self_ref(X0 + 2300, Y0 + 450), [("ReturnValue", "struct", dict(sub=XFORM, out=True))])["ReturnValue"], _spm["SpawnTransform"])
+g.link(_bvc["then"], _spm["execute"])
 g.link(imc_c["then"], sim0["execute"])
 
 # ---- 1: picked up? -> pending reach with a copy ----
