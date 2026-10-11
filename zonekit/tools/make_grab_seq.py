@@ -474,6 +474,49 @@ DOOR_ELEV, DOOR_AZIM = -12.0, -14.0   # doors (tester): the hand stays in the lo
 DOOR_PUSH_STROKE, DOOR_PULL_STROKE, DOOR_PULL_DROP = 14.0, 18.0, 10.0
 
 
+FINGERS = [f"jnt_l_hand_{n}" for n in ("thumb_01", "thumb_02", "thumb_03", "index_meta", "index_01", "index_02", "index_03",
+                                         "middle_meta", "middle_01", "middle_02", "middle_03", "ring_meta", "ring_01", "ring_02",
+                                         "ring_03", "pinky_meta", "pinky_01", "pinky_02", "pinky_03")]
+OPEN_SEQ = "/Game/_STALKER2/Animations/Player/AnimSequences/Dialog_animations/AS_fp_dialogue_openhands_expressive"
+OPEN_K, FIST_K = 36, 17          # an open, spread left hand (dialogue gesture); the vanilla grab's closed hand
+
+
+def door_fingers(src):
+    """(tester, build 10: "it looks like poking the door; the fingers should be out, spread, pushing; for closing the hand
+    goes out, makes a fist as if grabbing, and pulls"): open and fist finger rotations (left hand locals)."""
+    op = unreal.load_asset(OPEN_SEQ)
+    return ({b: local(op, b, OPEN_K)[1] for b in FINGERS}, {b: local(src, b, FIST_K)[1] for b in FINGERS})
+
+
+def finger_w(mode, f):
+    """(open weight, fist weight) at frame f. Push: open from 10, through the stroke, relaxed by 48. Pull: open by 12,
+    a fist at the door 14-20, held through the pull, relaxed by 50."""
+    ramp = lambda a, b: min(1.0, max(0.0, (f - a) / float(b - a)))
+    if mode == "push":
+        return (smooth(ramp(0, 10)) * (1.0 - smooth(ramp(30, 48))), 0.0)
+    return (smooth(ramp(0, 12)), smooth(ramp(14, 20)) * (1.0 - smooth(ramp(36, 50))))
+
+
+def finger_q(rest_q, opens, fists, b, wo, wf):
+    return slerp(slerp(rest_q, opens[b], wo), fists[b], wf)
+
+
+def palm_q(src, facing):
+    """A hand rotation (component / sequence space) with the palm toward `facing` and the fingers up: the push."""
+    hp, hq0 = cs(src, HAND, FIST_K)
+    loc = lambda b: qrot(qinv(hq0), unit(sub(cs(src, b, FIST_K)[0], hp)))
+    f_l = loc("jnt_l_hand_middle_01")                                   # finger direction, hand-local
+    lat = qrot(qinv(hq0), unit(sub(cs(src, "jnt_l_hand_index_01", FIST_K)[0], cs(src, "jnt_l_hand_pinky_01", FIST_K)[0])))
+    palm_l = unit(cross(f_l, lat))
+    if dot(qrot(hq0, palm_l), (1.0, 0.0, 0.0)) < 0:                    # the grab's palm faces the item (forward)
+        palm_l = mul(palm_l, -1.0)
+    q1 = q_between(palm_l, unit(facing))
+    f1 = qrot(q1, f_l)
+    up = unit(sub((0.0, 0.0, 1.0), mul(unit(facing), dot((0.0, 0.0, 1.0), unit(facing)))))
+    f1p = unit(sub(f1, mul(unit(facing), dot(f1, unit(facing)))))
+    return qmul(q_between(f1p, up), q1)
+
+
 def door_sched(mode, R, N, G, PB):
     """(from frame, to frame, from point, to point), 30 fps. Push: out to just short of the door by 14, a 0.4 s forward
     stroke 14-26 (the Blueprint pauses at 26 = 0.867 s), held to 30, back by 48. Pull: out to the door by 16, held to 22
@@ -502,7 +545,8 @@ def build_bh_door(src, rifle_seq, tgt_rot, nkeys, mode, name):
     er, ar = math.radians(DOOR_BH_ELEV), math.radians(DOOR_BH_AZIM)
     vf = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
     qp = qmul((0.0, 0.0, math.sin(ar / 2), math.cos(ar / 2)), (0.0, -math.sin(er / 2), 0.0, math.cos(er / 2)))
-    GQ = qmul(qp, tgt_rot[13])
+    GQ = palm_q(src, vf) if mode == "push" else qmul(qp, tgt_rot[13])
+    opens, fists = door_fingers(src)
     G = add(cam, mul(vf, DOOR_BH_DIST))
     N = sub(G, mul(vf, DOOR_PUSH_STROKE))
     PB = sub(sub(G, mul(vf, DOOR_PULL_STROKE)), (0.0, 0.0, DOOR_PULL_DROP))
@@ -547,6 +591,10 @@ def build_bh_door(src, rifle_seq, tgt_rot, nkeys, mode, name):
         r2 = q_between(qrot(r1, sub(H, E)), sub(T2, E2))
         f_q2 = qmul(r2, qmul(r1, f_q))
         solved = {ARM: qmul(qinv(sh_q), a_q2), FORE: qmul(qinv(a_q2), f_q2), HAND: qmul(qinv(f_q2), hq)}
+        wo, wf = finger_w(mode, f)
+        for b in FINGERS:
+            if b in c:
+                solved[b] = finger_q(c[b][1], opens, fists, b, wo, wf)
         for b in tracks:
             l = c[b]
             keys[b][0].append(unreal.Vector(*l[0]))
@@ -646,6 +694,12 @@ def build_touch_one(src, grab, path_h, path_q, nkeys, name, TOUCH_ELEV, TOUCH_AZ
     keys = {b: ([], [], []) for b in (ARM, FORE, HAND)}
     # (from frame, to frame, from point, to point): the Blueprint pauses at 0.6 s (frame 18) for DoorHold / the window
     sched = door_sched(mode, R, N, G, PB) if mode in ("push", "pull") else ((0, 12, R, G), (12, 20, G, G), (20, 36, G, R))
+    if mode == "push":
+        GQ = palm_q(src, dirv_e)
+    if mode in ("push", "pull"):
+        opens, fists = door_fingers(src)
+        for b in FINGERS:
+            keys[b] = ([], [], [])
     qof = lambda P: RQ if P is R else GQ
     for k in range(nkeys):
         bw, T0, Q0, T1, Q1 = 1.0, R, RQ, R, RQ
@@ -679,6 +733,13 @@ def build_touch_one(src, grab, path_h, path_q, nkeys, name, TOUCH_ELEV, TOUCH_AZ
             keys[b][0].append(unreal.Vector(*l[0]))
             keys[b][1].append(unreal.Quat(*lq))
             keys[b][2].append(unreal.Vector(*l[2]))
+        if mode in ("push", "pull"):
+            wo, wf = finger_w(mode, k)
+            for b in FINGERS:
+                l = local(src, b, k)
+                keys[b][0].append(unreal.Vector(*l[0]))
+                keys[b][1].append(unreal.Quat(*finger_q(l[1], opens, fists, b, wo, wf)))
+                keys[b][2].append(unreal.Vector(*l[2]))
         if k in (12,):
             rel = sub(T2, cam)
             out.append(f"TOUCH {name} k{k:02d} hand rel cam ({rel[0]:.1f},{rel[1]:.1f},{rel[2]:.1f}) reach {min(norm(to_t), (l1 + l2) * TOUCH_REACH):.1f}/{l1 + l2:.1f}")

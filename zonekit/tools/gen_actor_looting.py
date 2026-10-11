@@ -1139,7 +1139,7 @@ def tap_active(x, y, on, comment):
     return b["execute"], [c["then"], b["else"]]
 
 
-sqt = sequence(XT, YT, "touch steps", 8)
+sqt = sequence(XT, YT, "touch steps", 9)
 g.link(sq5["then_4"], sqt["execute"])
 
 #   T0: idle and window closed: is what we look at a corpse / stash? (re-evaluated every tick)
@@ -1248,7 +1248,34 @@ ts3 = self_set("TouchState", "int", XT + 1750, YT + 1800, "window requested", de
 toa = set_from("TouchOpenAt", "real", XT + 2050, YT + 1800, now(XT + 1900, YT + 2000), "", subcat="double")
 nto = inc("NTouch", XT + 2350, YT + 1800, "count touches")
 g.link(bt1["then"], _e1)
-chain(_s1, inj, ts3, toa, nto)
+_sra = set_from("ReenableAt", "real", XT + 1700, YT + 1600, now(XT + 1550, YT + 1450), "its tap interaction is on again since", subcat="double")
+_ts5 = self_set("TouchState", "int", XT + 2000, YT + 1600, "wait for the game to target it again", default="5")
+chain(_s1, _sra, _ts5)
+#   T8: 0.12 s after the tap interaction is on again: press the game's interact (the window); no window after 0.35 s:
+#   press again (twice at most)
+sq8w = sequence(XT + 300, YT + 13000, "window press steps", 2)
+g.link(sqt["then_8"], sq8w["execute"])
+bw5 = branch(XT + 600, YT + 13000, "waited 0.12 s since its tap interaction came back? press the game's interact",
+             b_and(XT + 500, YT + 13200, int_eq(XT + 300, YT + 13200, tstate(XT + 100, YT + 13200), 5),
+                   d_op("GreaterEqual_DoubleDouble", XT + 300, YT + 13300,
+                        d_op("Subtract_DoubleDouble", XT + 100, YT + 13300, now(XT - 100, YT + 13300),
+                             self_get("ReenableAt", "real", XT - 100, YT + 13370, subcat="double")), b_const="0.12", ret=RB)))
+g.link(sq8w["then_0"], bw5["execute"])
+g.link(bw5["then"], inj["execute"])
+chain(inj, ts3, toa, nto, self_set("InjRetries", "int", XT + 2650, YT + 1800, "", default="0"))
+_tsince = d_op("Subtract_DoubleDouble", XT + 100, YT + 13700, now(XT - 100, YT + 13700), self_get("TouchOpenAt", "real", XT - 100, YT + 13770, subcat="double"))
+bwr = branch(XT + 600, YT + 13600, "window asked for 0.35 s ago and not open? press again (twice at most)",
+             b_and(XT + 500, YT + 13800, int_eq(XT + 300, YT + 13800, tstate(XT + 100, YT + 13800), 3),
+                   b_not(XT + 300, YT + 13870, self_get("InvOpen", "bool", XT + 100, YT + 13870)),
+                   d_op("GreaterEqual_DoubleDouble", XT + 300, YT + 13940, _tsince, b_const="0.35", ret=RB),
+                   kml("Less_IntInt", XT + 300, YT + 14010, [("A", "int"), ("B", "int", dict(extra='DefaultValue="2",')), RB])["ReturnValue"]))
+_lii = [n_ for n_ in g.nodes if any('MemberName="Less_IntInt"' in b_ for b_ in n_.body)][-1]
+g.link(self_get("InjRetries", "int", XT + 100, YT + 14010), _lii["A"])
+g.link(sq8w["then_1"], bwr["execute"])
+inj2 = inject_interact(XT + 900, YT + 13600, "press the game's interact again")
+g.link(bwr["then"], inj2["execute"])
+chain(inj2, set_from("TouchOpenAt", "real", XT + 1250, YT + 13600, now(XT + 1100, YT + 13800), "", subcat="double"),
+      inc("InjRetries", XT + 1550, YT + 13600, "retries"), inc("NInjRetry", XT + 1850, YT + 13600, "count (probe)"))
 g.link(bt1o["then"], ts3["execute"])
 
 #   T2: window requested but never opened (e.g. the game started carrying the body): bring the hand back anyway
@@ -1436,12 +1463,16 @@ g.link(sq7d["then_1"], bdh["execute"])
 sdf = self_set("DoorTouch", "bool", XT + 900, YT + 9500, "", default="false")
 g.link(bdh["then"], sdf["execute"])
 g.link(sdf["then"], brv["execute"])   # the same hand return as after a loot window
-bdx = branch(XT + 600, YT + 10100, "door touch, but no reach out (skipped / ended)?",
+bdx = branch(XT + 600, YT + 10100, "door touch, but our montage not playing (skipped / ended / cut)?",
              b_and(XT + 500, YT + 10300, dtc(XT + 300, YT + 10300), b_not(XT + 300, YT + 10370, self_get("PendingReach", "bool", XT + 100, YT + 10370)),
-                   b_not(XT + 300, YT + 10440, self_get("LootReach", "bool", XT + 100, YT + 10440))))
+                   b_not(XT + 300, YT + 10440, grab_active(XT + 100, YT + 10440))))
 g.link(sq7d["then_2"], bdx["execute"])
 chain_x = [self_set("DoorTouch", "bool", XT + 900, YT + 10100, "", default="false"),
-           self_set("TouchState", "int", XT + 1200, YT + 10100, "idle", default="0")]
+           self_set("TouchState", "int", XT + 1200, YT + 10100, "idle", default="0"),
+           self_set("LootReach", "bool", XT + 1500, YT + 10100, "", default="false"),
+           self_set("LootPaused", "bool", XT + 1800, YT + 10100, "", default="false"),
+           self_set("LootReverse", "bool", XT + 2100, YT + 10100, "", default="false"),
+           inc("NDoorCut", XT + 2400, YT + 10100, "count (probe)")]
 g.link(bdx["then"], chain_x[0]["execute"])
 chain(*chain_x)
 
@@ -1476,8 +1507,10 @@ g.link(fek["Array Element"], _kdn["Key"])
 bkh = branch(XT + 1250, YT + 5500, "held?", _kdn["ReturnValue"])
 g.link(fek["LoopBody"], bkh["execute"])
 _skh = self_set("KeyHeld", "bool", XT + 1450, YT + 5450, "", default="true")
+_ksa = set_from("KeySeenAt", "real", XT + 1700, YT + 5450, now(XT + 1550, YT + 5350), "F seen down at", subcat="double")
 g.link(bkh["then"], _skh["execute"])
-g.link(_skh["then"], bjp["execute"])
+g.link(_skh["then"], _ksa["execute"])
+g.link(_ksa["then"], bjp["execute"])
 g.link(bkh["else"], bjp["execute"])
 _skd = self_set("KeyDown", "bool", XT + 1700, YT + 5800, "", default="true")
 g.link(bjp["then"], _skd["execute"])
@@ -1943,6 +1976,19 @@ chain(sgm7, sga7)
 #   while we hold it = the item shows again, nothing is taken.
 pr = lambda x, y: self_get("PreReach", "bool", x, y)
 capd = lambda x, y: self_get("Captured", "bool", x, y)
+evi = Node(g, "/Script/InputBlueprintNodes.K2Node_EnhancedInputAction", nm("K2Node_EnhancedInputAction"), X7 - 300, Y7 + 5600, "",
+           [f"InputAction=\"/Script/EnhancedInput.InputAction'{IA_TOUCH}'\""])
+for e in ("Triggered", "Started", "Ongoing", "Canceled", "Completed"):
+    evi.pin(e, "exec", out=True)
+evi.pin("ActionValue", "bool", out=True)
+evi.pin("ElapsedSeconds", "real", subcat="double", out=True, adv=True)
+evi.pin("TriggeredSeconds", "real", subcat="double", out=True, adv=True)
+evi.pin("InputAction", "object", sub=IA_CLS, out=True)
+_soh = set_from("OurHeldAt", "real", X7, Y7 + 5600, now(X7 - 150, Y7 + 5800), "F held, as our own action sees it (while caught)", subcat="double")
+g.link(evi["Triggered"], _soh["execute"])
+our_held = lambda x, y: d_op("Less_DoubleDouble", x + 200, y, d_op("Subtract_DoubleDouble", x, y, now(x - 200, y),
+                                                                    self_get("OurHeldAt", "real", x - 200, y + 70, subcat="double")),
+                              b_const="0.12", ret=RB)
 hnd = lambda x, y: self_get("Handed", "bool", x, y)
 hcomp = lambda x, y: self_get("HideComp", "object", x, y, sub=SC_)
 
@@ -1976,6 +2022,8 @@ bh1 = branch(X7 + 900, Y7 + 1100, "F held 0.15 s on a loose item still there (a 
                    int_eq(X7 + 500, Y7 + 1960, tstate(X7 + 300, Y7 + 1960), 0)))
 g.link(sqh["then_0"], bh1["execute"])
 ad1 = ctx_call(X7 + 1250, Y7 + 1100, "AddMappingContext", "our keys on: the game's hold is cut", True)
+ad1.pins["Options"].extra = 'DefaultValue="(bIgnoreAllPressedKeysUntilRelease=False,bForceImmediately=True,bForceRebuildWithFlush=False,bNotifyUserSettings=False)",'
+
 g.link(bh1["then"], ad1["execute"])
 shc = set_from("HideComp", "object", X7 + 1600, Y7 + 1100, self_get("ItemComp", "object", X7 + 1450, Y7 + 1300, sub=SC_), "the item's mesh", sub=SC_)
 g.link(ad1["then"], shc["execute"])
@@ -1992,7 +2040,7 @@ _pocketed = b_and(X7 + 800, Y7 + 2300, grab_active(X7 + 600, Y7 + 2250),
                   d_op("GreaterEqual_DoubleDouble", X7 + 600, Y7 + 2460, montage_time_since_reach(X7 + 400, Y7 + 2460),
                        self_get("PocketTime", "real", X7 + 400, Y7 + 2540, subcat="double"), ret=RB))
 bh2 = branch(X7 + 900, Y7 + 2200, "caught, F still held, our hand has pocketed it? give F back to the game",
-             b_and(X7 + 850, Y7 + 2400, capd(X7 + 650, Y7 + 2400), self_get("KeyHeld", "bool", X7 + 650, Y7 + 2470), _pocketed))
+             b_and(X7 + 850, Y7 + 2400, capd(X7 + 650, Y7 + 2400), our_held(X7 + 450, Y7 + 2470), _pocketed))
 g.link(sqh["then_1"], bh2["execute"])
 rm2 = _ctx_remove(X7 + 1250, Y7 + 2200, "our keys off, the held F counts again: the game's hold starts")
 g.link(bh2["then"], rm2["execute"])
@@ -2001,8 +2049,14 @@ chain(rm2, self_set("Captured", "bool", X7 + 1600, Y7 + 2200, "", default="false
       set_from("HandedAt", "real", X7 + 2200, Y7 + 2200, now(X7 + 2050, Y7 + 2400), "", subcat="double"),
       inc("NHandBack", X7 + 2500, Y7 + 2200, "count (probe)"))
 #   H3: F let go while caught: the item shows again, our hand and copy go
-bh3 = branch(X7 + 900, Y7 + 2900, "caught and F let go? nothing taken: item back, hand back",
-             b_and(X7 + 850, Y7 + 3100, capd(X7 + 650, Y7 + 3100), b_not(X7 + 650, Y7 + 3170, self_get("KeyHeld", "bool", X7 + 450, Y7 + 3170))))
+_upfor = d_op("GreaterEqual_DoubleDouble", X7 + 650, Y7 + 3240,
+              d_op("Subtract_DoubleDouble", X7 + 450, Y7 + 3240, now(X7 + 250, Y7 + 3240), self_get("OurHeldAt", "real", X7 + 250, Y7 + 3310, subcat="double")),
+              b_const="0.2", ret=RB)
+_grace = d_op("GreaterEqual_DoubleDouble", X7 + 650, Y7 + 3380,
+              d_op("Subtract_DoubleDouble", X7 + 450, Y7 + 3380, now(X7 + 250, Y7 + 3380), self_get("PreReachAt", "real", X7 + 250, Y7 + 3450, subcat="double")),
+              b_const="0.3", ret=RB)
+bh3 = branch(X7 + 900, Y7 + 2900, "caught and F let go (our action quiet 0.2 s, 0.3 s grace)? nothing taken: item back, hand back",
+             b_and(X7 + 850, Y7 + 3100, capd(X7 + 650, Y7 + 3100), _upfor, _grace))
 g.link(sqh["then_2"], bh3["execute"])
 rm3 = _ctx_remove(X7 + 1250, Y7 + 2900, "our keys off")
 g.link(bh3["then"], rm3["execute"])
