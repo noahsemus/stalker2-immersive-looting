@@ -1,8 +1,8 @@
 -- ImmLootProbe (dev-box only, never shipped): is BP_ImmLootActor alive and ticking, and what it sees / does.
 local TAG = "[ImmLootProbe] "
 local NUM = { "NTicks", "Enabled", "TouchBodies", "TouchDoors", "TouchState", "DoorTouch", "NDoor", "NPickups", "NReaches", "NSkips",
-              "SkipBits", "Reaching", "LootReach", "LootPaused", "Lootable", "ItemArmed", "NTouch", "KeyDown", "KeyHeld", "InteractPressAt", "DoorPulling", "DoorYaw", "UseHeld", "NUseHolds", "GameMontageAt", "ReachStart", "GrabBH", "PreReach", "PreReachAt", "Captured", "Handed", "NCapture", "NHandBack", "NAbort", "NHandUse", "NAbort2", "KeySeenAt", "NDoorCut", "TrPos", "InvOpen", "InjRetries", "NInjRetry", "ReenableAt", "TouchOpenAt", "OurHeldAt", "NHoldInject", "HandedAt" }
-local OBJS = { "LookActor", "Item", "LootObj", "LootComp", "GameMontage", "HeldUse", "GrabMontage", "Fly", "TouchAsset", "HideComp", "UseTap" }
+              "SkipBits", "Reaching", "LootReach", "LootPaused", "Lootable", "ItemArmed", "NTouch", "KeyDown", "KeyHeld", "InteractPressAt", "DoorPulling", "DoorYaw", "UseHeld", "NUseHolds", "GameMontageAt", "ReachStart", "GrabBH", "PreReach", "PreReachAt", "Captured", "Handed", "NCapture", "NHandBack", "NAbort", "NHandUse", "NAbort2", "KeySeenAt", "NDoorCut", "TrPos", "InvOpen", "InjRetries", "NInjRetry", "ReenableAt", "TouchOpenAt", "OurHeldAt", "NHoldInject", "HandedAt", "UseWait", "UseWaitAt", "UseMode", "UsePausedAt", "NUsePause", "NUseResume", "NUseLate", "NUseNoTable", "NSkips", "LHOff", "LHOffAt", "NLHOff", "NLHOn", "TwinsPaused", "TwinHidden", "NTwinPause", "NTwinResume", "FBActive", "TraceX", "TraceY", "TraceZ", "GrabFwd", "GrabRight", "GrabUp", "ItemElev", "ItemDist", "ItemAzim", "SegStart", "NCand", "TwinHidden2", "UseGrabbed" }
+local OBJS = { "LookActor", "Item", "LootObj", "LootComp", "GameMontage", "HeldUse", "GrabMontage", "Fly", "TouchAsset", "HideComp", "UseTap", "UseMont", "TwinComp", "TwinMont", "CandComp", "CandMont", "CandAnim", "CandComp2", "CandMont2", "TwinComp2" }
 local actor, last, ticks, lastT = nil, {}, 0, -1
 local function log(s) print(TAG .. s .. "\n") end
 local function nm(o) if o and o:IsValid() then return o:GetFName():ToString() end return "none" end
@@ -38,17 +38,8 @@ LoopAsync(50, function()
             if last[f] ~= v then changed = true; last[f] = v end
             parts[#parts + 1] = f .. "=" .. v
         end
-        -- option B: the game's own view of the left hand and its action slot (the use animation plays there)
-        local okb, busy = pcall(function() return tostring(actor.Player:IsLeftHandBusy()) end)
-        local oka, act = pcall(function()
-            return tostring(actor.Player.Mesh:GetAnimInstance():IsSlotActive(FName("MainActionSlot")))
-        end)
-        local okv, vis = pcall(function() return tostring(actor.HideComp:IsVisible()) end)
-        local okm, mcm = pcall(function() local m = FindFirstOf("BP_ImmLootMCM_C"); return (m and m:IsValid()) and ("yes reg=" .. tostring(m.Registered) .. " val=" .. tostring(m.TouchBodies)) or "none" end)
-        parts[#parts + 1] = "MCM=" .. (okm and mcm or "?")
-        local g = "LHBusy=" .. (okb and busy or "?") .. " ActionSlot=" .. (oka and act or "?") .. " HideVis=" .. (okv and vis or "?")
-        if last["_g"] ~= g then changed = true; last["_g"] = g end
-        parts[#parts + 1] = g
+        -- (2026-10-11: the game-function calls here (IsLeftHandBusy, GetAnimInstance, IsVisible, FindFirstOf every 50 ms)
+        --  crashed loading a save, inside UE4SS: removed; the probe only reads our actor's own variables)
         parts[#parts + 1] = string.format("t=%.2f", os.clock())
         if changed then log(table.concat(parts, " ")) end
         if ticks % 40 == 0 then
@@ -60,3 +51,5 @@ LoopAsync(50, function()
     return false
 end)
 log("loaded")
+
+-- (hold-to-use study 2026-10-11 removed: passive mode + state reads; a save-to-save load crashed with it on)

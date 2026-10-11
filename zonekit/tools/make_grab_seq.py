@@ -778,6 +778,135 @@ def build_touch_one(src, grab, path_h, path_q, nkeys, name, TOUCH_ELEV, TOUCH_AZ
                f"saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
 
 
+# 1.1 build 17, hold F to use (tester: "the prompt fills completely, our grab plays as if the item is looted, then the
+# vanilla use"). The game's use animation (MainActionSlot) is paused on its first frame while our reach plays in the
+# FullBody slot, which the player AnimBP evaluates after every arm layer, slot, IK and "left hand busy" switch
+# (2026-10-11 slot-order study of AnimBP_Player / _player_bh / _PlayerWeaponLayer). FullBody as a full pose took the
+# camera (build 10); as a LOCAL-SPACE ADDITIVE keyed only on the left upper arm, forearm and hand (every other bone has
+# no track = no change; base = this asset's own frame 0) the camera and the body stay the game's. The arm is solved on
+# each use animation's own first frame (spine, shoulder, rest arm: they differ per item, hand 6-31 cm ahead, 27-67 cm
+# below the eye), so one table per vanilla use montage: AS_ImmLoot_<montage name>, picked by name at run time;
+# AS_ImmLoot_UseAny (canned food's frame) for any other (Project Itemization Reborn's AM_fp_PIR_*).
+# Same segments as AS_ImmLoot_GrabBH (elevation x distance x azimuth of the item seen from the eye, 45 frames each).
+USE_DIR = f"{DIR}/Use"
+USE_MONTS = ["Antirad/MG_fp_antirad_use", "Bandage/MG_fp_bandage_use", "Beer/MG_fp_beer_use", "Bread/MG_fp_bread_use",
+             "CannedFood/MG_fp_canned_food_use", "CannedMilk/MG_fp_condensed_milk_use", "EnergyDrink/MG_fp_energy_drink_use",
+             "Medkit/MG_fp_medkit_common_use", "Pills/MG_fp_pills_common_use", "Sausage/MG_fp_sausage_use",
+             "Vodka/MG_fp_vodka_use", "Water/MG_fp_water_use"]
+USE_ROOT = "/Game/_STALKER2/Animations/Player/AnimSequences/Items/"
+
+
+def build_use_table(src, tgt_rot, nkeys, base, name, template):
+    sp_p, sp_q = cs(base, "jnt_spine_03", 0)
+    cam, _ = cs(base, "jnt_camera", 0)
+    cam_ar, _ = cs(src, "jnt_camera", 0)
+    bsh, ba, bf, bh = local(base, SHOULDER, 0), local(base, ARM, 0), local(base, FORE, 0), local(base, HAND, 0)
+    sh_q = qmul(sp_q, bsh[1]); sh_p = add(sp_p, qrot(sp_q, bsh[0]))      # the shoulder stays the paused frame's
+    a_q0 = qmul(sh_q, ba[1]); A = add(sh_p, qrot(sh_q, ba[0]))
+    f_q0 = qmul(a_q0, bf[1]); E = add(A, qrot(a_q0, bf[0]))
+    RQ = qmul(f_q0, bh[1]); R = add(E, qrot(f_q0, bh[0]))
+    H = R
+    l1, l2 = norm(sub(E, A)), norm(sub(H, E))
+    POCKET = add(sub((12.4, -8.2, 121.0), cam_ar), cam)
+    PQ = tgt_rot[min(27, nkeys - 1)]
+    GQ = tgt_rot[13]
+    wpn = local(src, "jnt_l_weapon", 13)[0]
+    keys = {b: ([], [], []) for b in (ARM, FORE, HAND)}
+    errs = []
+    for ie, elev in enumerate(ELEVS):
+      for dd in DISTS:
+        for az in AZIMS:
+            er, ar = math.radians(elev), math.radians(az)
+            dirv_e = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
+            qp = qmul((0.0, 0.0, math.sin(ar / 2), math.cos(ar / 2)), (0.0, -math.sin(er / 2), 0.0, math.cos(er / 2)))
+            GQp = qmul(qp, GQ)
+            item = add(cam, mul(dirv_e, dd))
+            vf = dirv_e
+            vu = (-math.sin(er) * math.cos(ar), -math.sin(er) * math.sin(ar), math.cos(er))
+            vr = cross(vu, vf)
+            bias = (0.0, 0.0, 0.0)   # build 20: none (build 19 landed exactly where aimed)
+            G = sub(sub(item, qrot(GQp, wpn)), bias)
+            for f in range(SEG2):
+                if f <= 12:
+                    bw, T0, Q0, T1, Q1 = smooth(f / 12), R, RQ, G, GQp
+                elif f <= 20:
+                    bw, T0, Q0, T1, Q1 = 1.0, G, GQp, G, GQp
+                elif f <= 27:
+                    bw, T0, Q0, T1, Q1 = smooth((f - 20) / 7), G, GQp, POCKET, PQ
+                elif f <= 39:
+                    bw, T0, Q0, T1, Q1 = smooth((f - 27) / 12), POCKET, PQ, R, RQ
+                else:
+                    bw, T0, Q0, T1, Q1 = 1.0, R, RQ, R, RQ
+                T = add(T0, mul(sub(T1, T0), bw))
+                hq = slerp(Q0, Q1, bw)
+                to_t = sub(T, A)
+                d = max(abs(l1 - l2) + 0.01, min(l1 + l2 - 0.01, norm(to_t)))
+                dv = unit(to_t)
+                a = (l1 * l1 - l2 * l2 + d * d) / (2 * d)
+                h = math.sqrt(max(l1 * l1 - a * a, 0.0))
+                hint = sub(E, A)
+                pole = sub(hint, mul(dv, dot(hint, dv)))
+                pole = unit(pole) if norm(pole) > 1e-6 else unit(cross(dv, (0.0, 0.0, 1.0)))
+                E2 = add(A, add(mul(dv, a), mul(pole, h)))
+                T2 = add(A, mul(dv, d))
+                r1 = q_between(sub(E, A), sub(E2, A))
+                a_q2 = qmul(r1, a_q0)
+                r2 = q_between(qrot(r1, sub(H, E)), sub(T2, E2))
+                f_q2 = qmul(r2, qmul(r1, f_q0))
+                if f == 0 or f >= 39:       # exactly the paused frame's own arm (no jump when the use goes on)
+                    solved = {ARM: ba[1], FORE: bf[1], HAND: bh[1]}
+                else:
+                    solved = {ARM: qmul(qinv(sh_q), a_q2), FORE: qmul(qinv(a_q2), f_q2), HAND: qmul(qinv(f_q2), hq)}
+                for b, l in ((ARM, ba), (FORE, bf), (HAND, bh)):
+                    keys[b][0].append(unreal.Vector(*l[0]))
+                    keys[b][1].append(unreal.Quat(*solved[b]))
+                    keys[b][2].append(unreal.Vector(*l[2]))
+                if f == 12:
+                    errs.append(norm(sub(add(T2, qrot(hq, wpn)), sub(item, bias))))
+    nseg = len(ELEVS) * len(DISTS) * len(AZIMS)
+    total = nseg * SEG2
+    path = f"{USE_DIR}/{name}"
+    if not EAL.does_asset_exist(path):
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, USE_DIR, template)
+    seq = unreal.load_asset(path)
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot use reach (additive)", True)
+    ctrl.remove_all_bone_tracks(True)
+    ctrl.remove_all_curves_of_type(unreal.RawCurveTrackTypes.RCT_FLOAT, True)
+    ctrl.set_frame_rate(unreal.FrameRate(30, 1), True)
+    ctrl.set_number_of_frames(unreal.FrameNumber(total - 1), True)
+    for b, (pos, rot, scl) in keys.items():
+        if hasattr(ctrl, "add_bone_track"):
+            ctrl.add_bone_track(b, True)
+        else:
+            ctrl.add_bone_curve(b, True)
+        ctrl.set_bone_track_keys(b, pos, rot, scl, True)
+    ctrl.close_bracket(True)
+    for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
+        AL.remove_animation_notify_events_by_track(seq, tn)
+    seq.set_editor_property("additive_anim_type", unreal.AdditiveAnimationType.AAT_LOCAL_SPACE_BASE)
+    seq.set_editor_property("ref_pose_type", unreal.AdditiveBasePoseType.ABPT_LOCAL_ANIM_FRAME)
+    seq.set_editor_property("ref_frame_index", 0)
+    out.append(f"USE {name} (base {base.get_name()}): tracks {[str(t) for t in AL.get_animation_track_names(seq)]}, len {seq.get_play_length():.1f} s, "
+               f"additive {seq.get_editor_property('additive_anim_type')}, rest hand rel eye {tuple(round(x - c, 1) for x, c in zip(R, cam))}, "
+               f"grab error max {max(errs):.1f} cm (beyond reach: arm out toward it), saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
+
+
+def build_use_tables(src, tgt_rot, nkeys):
+    template = unreal.load_asset(f"{DIR}/{NAME_BH}")
+    ar = unreal.AssetRegistryHelpers.get_asset_registry()
+    opt = unreal.AssetRegistryDependencyOptions(include_soft_package_references=False, include_hard_package_references=True)
+    only = ARGS.get("USE_ONLY", "")
+    for rel in USE_MONTS + [None]:
+        mpath = USE_ROOT + (rel or "CannedFood/MG_fp_canned_food_use")
+        name = "AS_ImmLoot_" + (mpath.rsplit("/", 1)[1] if rel else "UseAny")
+        if only and only not in name:
+            continue
+        deps = [str(d) for d in ar.get_dependencies(mpath, opt)]
+        seqs = [d for d in deps if "/Animations/" in d and str(EAL.find_asset_data(d).asset_class_path.asset_name) == "AnimSequence"]
+        build_use_table(src, tgt_rot, nkeys, unreal.load_asset(seqs[0]), name, template)
+
+
 try:
     src = unreal.load_asset(SRC)
     path = f"{DIR}/{NAME}"
@@ -883,6 +1012,8 @@ try:
         build_doors(src, seq, path_h, path_q, nkeys, tgt_rot)
     if ARGS.get("BH", "1") == "1":
         build_bh_reach_table(src, seq, tgt_rot, nkeys)   # build 12 (build_bh_table = checkpoint-b11)
+    if ARGS.get("USE", "0") == "1":
+        build_use_tables(src, tgt_rot, nkeys)
     if ARGS.get("AR", "0") == "1":   # the rifle table never showed over a rifle (no left_hand_curve then); deleted for v1.0.0
         # v0.2: the same reach table on the rifle stance (weapon in hand), used to touch a corpse / stash; the rest pose
         # is the stance's own left hand on the grip
