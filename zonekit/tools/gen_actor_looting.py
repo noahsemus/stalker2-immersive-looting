@@ -351,10 +351,24 @@ def load_imc(x, y, name, prev_then, comment):
 
 
 def looked_at(x, y):
-    """The actor under the crosshair: our own sphere trace from the camera (LookActor, set every tick before the
-    steps). Until 1.0.1d this was PC.GetInteractedActor / the owner of PC.GetInteractionTarget: the last calls into
-    the game's interaction system, suspected of costing the body's "hold F" carry (its prompt stayed a dot)."""
-    return self_get("LookActor", "object", x, y, sub=ACTOR)
+    """The actor under the crosshair: the game's own interaction target first (PC.GetInteractedActor, else the owner of
+    PC.GetInteractionTarget), else our sphere trace (LookActor). Nexus (Jerbo400, +1): "looted ~15 items, 6-7 had no
+    animation": 1.0.1 used only the trace (10 cm, visibility), which misses small / cluttered items, so the pickup was
+    never seen; 1.0.0 used only the game's target."""
+    ia = member_pure(PC, "GetInteractedActor", x, y, as_pc, [("ReturnValue", "object", dict(sub=ACTOR, out=True))])["ReturnValue"]
+    it = member_pure(PC, "GetInteractionTarget", x, y + 100, as_pc, [("ReturnValue", "object", dict(sub=ICOMP, out=True))])["ReturnValue"]
+    ow = member_pure(ACOMP, "GetOwner", x + 200, y + 100, it, [("ReturnValue", "object", dict(sub=ACTOR, out=True))])["ReturnValue"]
+    s1 = kml("SelectObject", x + 400, y + 100, [("A", "object", dict(sub=OBJ)), ("B", "object", dict(sub=OBJ)),
+                                                 B("bSelectA"), ("ReturnValue", "object", dict(sub=OBJ, out=True))])
+    g.link(ow, s1["A"])
+    g.link(self_get("LookActor", "object", x + 200, y + 200, sub=ACTOR), s1["B"])
+    g.link(is_valid(x + 300, y + 250, ow), s1["bSelectA"])
+    sel = kml("SelectObject", x + 600, y, [("A", "object", dict(sub=OBJ)), ("B", "object", dict(sub=OBJ)),
+                                           B("bSelectA"), ("ReturnValue", "object", dict(sub=OBJ, out=True))])
+    g.link(ia, sel["A"])
+    g.link(s1["ReturnValue"], sel["B"])
+    g.link(is_valid(x + 200, y - 100, ia), sel["bSelectA"])
+    return sel["ReturnValue"]
 
 
 def grab_active(x, y):
@@ -2007,9 +2021,10 @@ def _set_vis(x, y, comp_pin, on, comment):
 _held7 = d_op("GreaterEqual_DoubleDouble", X7 + 500, Y7 + 1400,
               d_op("Subtract_DoubleDouble", X7 + 300, Y7 + 1400, now(X7 + 100, Y7 + 1400),
                    self_get("InteractPressAt", "real", X7 + 100, Y7 + 1460, subcat="double")), b_const="0.15", ret=RB)
-_eq7 = kml("EqualEqual_ObjectObject", X7 + 500, Y7 + 1550, [("A", "object", dict(sub=OBJ)), ("B", "object", dict(sub=OBJ)), RB])
-g.link(self_get("LookActor", "object", X7 + 300, Y7 + 1550, sub=ACTOR), _eq7["A"])
-g.link(self_get("Item", "object", X7 + 300, Y7 + 1620, sub=ACTOR), _eq7["B"])
+# still looked at: seen by the tracking step within 0.15 s (the game's target or our trace), not only our trace
+_eq7 = {"ReturnValue": d_op("Less_DoubleDouble", X7 + 500, Y7 + 1550,
+                            d_op("Subtract_DoubleDouble", X7 + 300, Y7 + 1550, now(X7 + 100, Y7 + 1550),
+                                 self_get("ItemSeen", "real", X7 + 100, Y7 + 1620, subcat="double")), b_const="0.15", ret=RB)}
 sqh = sequence(X7 + 600, Y7 + 1000, "hold steps", 5)
 g.link(sq7["then_1"], sqh["execute"])
 #   H1: catch the hold
