@@ -52,6 +52,13 @@ generators in the mod's `zonekit/tools/gen_*.py`; lift reusable node builders in
 - Function purity after a paste comes from the UFunction (`bDefaultsToPureFunc`), not the pasted `bIsPureFunc`:
   write `const` getters (BlueprintCallable const = pure) without exec pins and static library calls with them, or the
   reconstructed node drops the exec links.
+- **A pasted call to a function that does not exist on the named class is silently dropped too**, and the graph
+  still compiles: its consumers read the pin default (ImmersiveLooting v1.1.0: `SelectString` named on
+  `KismetStringLibrary`; it lives in `KismetMathLibrary`. The asset path came out empty and every hold-to-use loaded the
+  fallback animation for seven builds). Before handing over a paste, check every `FunctionReference` resolves in the
+  editor (`unreal.find_object(None, "/Script/Engine.<Class>:<Function>")`; inherited functions such as
+  `GetSocketLocation` resolve only on the declaring class), and after the paste compare function counts of the export
+  with the paste.
 - **A pasted call to a BlueprintInternalUseOnly function is silently dropped** (no error, its links vanish): e.g.
   `KismetMathLibrary` `Ease` / `VEase` / `REase` belong to the `K2Node_EaseFunction` node. Ease by hand
   (`alpha * alpha` + `VLerp`). After every paste, export the graph and compare node and link counts with the
