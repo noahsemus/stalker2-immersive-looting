@@ -470,7 +470,7 @@ TOUCH_MAP = ((1.0, 8.4), (1.14, 4.0), (1.15, 2.0))
 TOUCH_REACH = 0.95                     # of the arm length: fully out, not locked straight
 
 
-DOOR_ELEV, DOOR_AZIM = -12.0, -14.0   # doors (tester): the hand stays in the lower left of the screen, one fixed direction
+DOOR_ELEV, DOOR_AZIM = -20.0, -22.0   # doors (tester): the hand stays in the lower left of the screen, one fixed direction
 DOOR_PUSH_STROKE, DOOR_PULL_STROKE, DOOR_PULL_DROP = 14.0, 18.0, 10.0
 
 
@@ -485,7 +485,10 @@ def door_fingers(src):
     """(tester, build 10: "it looks like poking the door; the fingers should be out, spread, pushing; for closing the hand
     goes out, makes a fist as if grabbing, and pulls"): open and fist finger rotations (left hand locals)."""
     op = unreal.load_asset(OPEN_SEQ)
-    return ({b: local(op, b, OPEN_K)[1] for b in FINGERS}, {b: local(src, b, FIST_K)[1] for b in FINGERS})
+    opens = {b: local(op, b, OPEN_K)[1] for b in FINGERS}
+    for j in ("01", "02", "03"):                                       # build 11: "the pinky's curled": straight like the ring
+        opens[f"jnt_l_hand_pinky_{j}"] = opens[f"jnt_l_hand_ring_{j}"]
+    return (opens, {b: local(src, b, FIST_K)[1] for b in FINGERS})
 
 
 def finger_w(mode, f):
@@ -512,7 +515,8 @@ def palm_q(src, facing):
         palm_l = mul(palm_l, -1.0)
     q1 = q_between(palm_l, unit(facing))
     f1 = qrot(q1, f_l)
-    up = unit(sub((0.0, 0.0, 1.0), mul(unit(facing), dot((0.0, 0.0, 1.0), unit(facing)))))
+    up0 = unit(add((0.0, 0.0, 1.0), mul(unit(facing), 0.8)))          # build 11: fingers up AND forward (less tall on screen)
+    up = unit(sub(up0, mul(unit(facing), dot(up0, unit(facing)))))
     f1p = unit(sub(f1, mul(unit(facing), dot(f1, unit(facing)))))
     return qmul(q_between(f1p, up), q1)
 
@@ -526,7 +530,7 @@ def door_sched(mode, R, N, G, PB):
     return ((0, 16, R, G), (16, 22, G, G), (22, 36, G, PB), (36, 50, PB, R))   # cm along the sight line
 
 
-DOOR_BH_ELEV, DOOR_BH_AZIM, DOOR_BH_DIST = -18.0, -22.0, 34.0   # the shoulder is ~19 cm behind the eye: 52 cm of arm reaches ~30 cm ahead   # body frame, from the eye
+DOOR_BH_ELEV, DOOR_BH_AZIM, DOOR_BH_DIST = -30.0, -30.0, 34.0   # the shoulder is ~19 cm behind the eye: 52 cm of arm reaches ~30 cm ahead   # body frame, from the eye
 
 
 def build_bh_door(src, rifle_seq, tgt_rot, nkeys, mode, name):
