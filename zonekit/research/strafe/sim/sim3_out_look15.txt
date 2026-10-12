@@ -1,0 +1,26 @@
+samples 1071, yaw bins 35; look frame 15
+walk_left: natural clavicle root x(fwd) -9..-4 cm, natural shoulder joint x -21..-17; re-rooted clavicle root fixed at (-28, -6, -14); gap 38-43 cm
+walk_right: natural clavicle root x(fwd) -39..-35 cm, natural shoulder joint x -27..-23; re-rooted clavicle root fixed at (-28, -6, -14); gap 48-53 cm
+run_left: natural clavicle root x(fwd) -43..-34 cm, natural shoulder joint x -56..-43; re-rooted clavicle root fixed at (-28, -6, -14); gap 7-17 cm
+run_right: natural clavicle root x(fwd) -38..-31 cm, natural shoulder joint x -32..-23; re-rooted clavicle root fixed at (-28, -6, -14); gap 7-14 cm
+
+seg 44 (elev-50 az0) t=0.50 s: still hand rel cam (17.9, -7.0, -35.0)  [max hand displacement over all frames, per test blend weight]
+  none             walk_left 4/13/22/30/36/39 | walk_right 8/22/34/42/48/50 | run_left 8/24/42/58/74/81 | run_right 7/22/34/44/53/57
+  f_exact_cam      walk_left 0/0/0/0/0/0 | walk_right 0/0/0/0/0/0 | run_left 0/0/0/0/0/0 | run_right 0/0/0/0/0/0
+  f_yaw_table      walk_left 5/13/22/30/4/3 | walk_right 6/13/23/33/5/3 | run_left 4/7/14/15/15/28 | run_right 3/7/15/27/31/33
+  f_nn_table       walk_left 4/5/5/5/5/1 | walk_right 4/5/5/4/4/1 | run_left 3/5/7/7/6/6 | run_right 3/5/7/6/6/6
+  f_nn_table_lag1  walk_left 4/5/5/6/6/2 | walk_right 4/5/5/5/5/2 | run_left 3/7/9/17/19/15 | run_right 4/8/12/18/22/15
+
+seg 66 (elev-35 az+15) t=0.50 s: still hand rel cam (18.9, -0.9, -26.3)  [max hand displacement over all frames, per test blend weight]
+  none             walk_left 5/14/23/29/33/36 | walk_right 8/24/37/47/55/58 | run_left 8/25/42/59/74/80 | run_right 7/20/32/41/49/53
+  f_exact_cam      walk_left 0/0/0/0/0/0 | walk_right 0/0/0/0/0/0 | run_left 0/0/0/0/0/0 | run_right 0/0/0/0/0/0
+  f_yaw_table      walk_left 5/13/22/30/4/3 | walk_right 6/13/24/34/6/4 | run_left 5/7/14/16/15/29 | run_right 3/7/15/28/33/34
+  f_nn_table       walk_left 5/5/5/5/5/1 | walk_right 4/5/5/4/4/1 | run_left 3/5/8/7/6/6 | run_right 3/5/7/6/6/7
+  f_nn_table_lag1  walk_left 5/5/6/6/6/2 | walk_right 4/5/5/5/5/2 | run_left 3/8/10/16/20/15 | run_right 4/8/12/18/22/15
+
+seg 120 (elev+10 az0) t=0.50 s: still hand rel cam (20.6, -9.3, -1.6)  [max hand displacement over all frames, per test blend weight]
+  none             walk_left 5/16/25/36/44/48 | walk_right 9/26/40/50/58/60 | run_left 9/26/44/60/75/81 | run_right 7/21/33/42/50/54
+  f_exact_cam      walk_left 0/0/0/0/0/0 | walk_right 0/0/0/0/0/0 | run_left 0/0/0/0/0/0 | run_right 0/0/0/0/0/0
+  f_yaw_table      walk_left 6/15/25/34/6/5 | walk_right 7/14/27/37/8/5 | run_left 5/7/16/19/16/31 | run_right 3/7/17/31/36/37
+  f_nn_table       walk_left 5/6/6/7/7/1 | walk_right 4/5/5/4/4/1 | run_left 4/6/8/8/7/6 | run_right 3/6/8/7/6/8
+  f_nn_table_lag1  walk_left 5/6/8/8/9/2 | walk_right 4/5/5/6/7/2 | run_left 4/9/11/17/21/15 | run_right 5/9/14/20/25/16

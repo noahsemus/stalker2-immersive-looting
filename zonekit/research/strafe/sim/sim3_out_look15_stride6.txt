@@ -1,0 +1,9 @@
+samples 297, yaw bins 34; look frame 15
+walk_left: natural clavicle root x(fwd) -9..-4 cm, natural shoulder joint x -21..-17; re-rooted clavicle root fixed at (-28, -6, -14); gap 38-43 cm
+walk_right: natural clavicle root x(fwd) -39..-35 cm, natural shoulder joint x -27..-23; re-rooted clavicle root fixed at (-28, -6, -14); gap 48-53 cm
+run_left: natural clavicle root x(fwd) -43..-34 cm, natural shoulder joint x -56..-43; re-rooted clavicle root fixed at (-28, -6, -14); gap 7-17 cm
+run_right: natural clavicle root x(fwd) -38..-31 cm, natural shoulder joint x -32..-23; re-rooted clavicle root fixed at (-28, -6, -14); gap 7-14 cm
+
+seg 44 (elev-50 az0) t=0.50 s: still hand rel cam (17.9, -7.0, -35.0)  [max hand displacement over all frames, per test blend weight]
+  f_nn_table       walk_left 6/3/1/3/6/2 | walk_right 6/2/1/3/4/2 | run_left 5/3/3/6/6/6 | run_right 4/3/3/4/6/6
+  f_nn_table_lag1  walk_left 6/3/1/4/6/2 | walk_right 6/2/2/4/5/2 | run_left 5/6/12/20/24/15 | run_right 5/8/13/18/22/15
