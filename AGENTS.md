@@ -75,7 +75,7 @@ harness on 2026-10-09.
   in the palm), MCM toggles for body / stash touch and doors (`BP_ImmLootMCM` -> actor `TouchBodies` / `TouchDoors`; header pictures `T_ImmLoot_MCMHeader` / `T_ImmLoot_MCMCatHeader`: the
   example's own were not shipped = white box behind white text). Released actor graph = the build Noah last tested
   (with its strafe counter-turn attempt, no visible effect); `zonekit/paste/BP_ImmLootActor.txt` / the generator already
-  hold the untested build 55. Open: the hand swings while strafing during a pickup.
+  hold the untested build 55. Open: the hand swings while strafing during a pickup (fix designed, not built: `zonekit/research/strafe/README.md`).
 
 - 2026-10-11 v1.1.1 released (Noah: "finally. cut the release"): hold-to-use showed no hand in 1.1.0. Cause: build
   28's `SelectString` node named `KismetStringLibrary` (it lives in `KismetMathLibrary`); the paste silently dropped
