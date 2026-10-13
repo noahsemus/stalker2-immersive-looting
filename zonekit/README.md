@@ -196,3 +196,179 @@ mod go to `harness/docs/` instead (promote them).
   window on a body also opens sooner than in 1.0.0 with the touch still looking right (no timing value changed; 1.0.0
   removed its input context and the input map was rebuilt before the injected press counted). = rc-1.0.1
   (`zonekit/builds/rc-1.0.1/`).
+
+## 2026-10-12 — 1.1.2 a: item used from the loot window; bag looting
+- Report (Nexus, Tim0st, video; Noah after re-watching it: the player right-clicks an item in the loot window and
+  uses it; when the window closes our return animation plays and the hand inverts during it, just before the vanilla
+  use animation). The use (MainActionSlot, ActionGroup) does not stop our LeftHand touch / FullBody additive, which
+  come after it in the arm layers: our return posed the arm over the use. A first reading (our recovery
+  `MG_fp_return_left_hand_on_item` over a weapon put-away) was dropped on Noah's word. Probe fact (2026-10-12 log): with
+  a weapon, every pickup's recovery plays that montage when our grab starts blending out (Montage_IsActive is false
+  while blending out, and the "cut" test is time-based): unchanged, it looks right in game.
+- Build a, fix (Noah: "our return animation should still play, with our custom use animation like when holding F on a
+  loose item, where we freeze on the first frame"): a use montage starting while the window is open and our touch /
+  bag is out is held on its first frame like a hold to use (`UseMode`, `LootUse`, twins hidden until the grab) and our
+  touch stops then (the world stands still while the window is open, so it is gone by the close); at the close, step 3
+  plays the use reach for that use (`AS_ImmLoot_<use montage>`, aimed at the body / stash) over the held frame, the
+  hand takes the item there, and the use goes on (as a hold to use). The "action" and "left-hand" skips do not apply
+  to it. Any other game montage that took the arms since our reach: ours goes in 0.1 s, no return (`bused`); while on
+  the way back (`BackAt`) the same (6c); the recovery montage yields to a use started after it (`RetAt`) and is not
+  played in the tick a game montage started.
+- Build a, bag looting (Noah: "an optional MCM toggle, on by default, that uses the bag animation (like opening the
+  player's inventory) when looting bodies and stashes"): kit research: the inventory animation is
+  `MG_fp_backpack_inventory` (MainActionSlot; In 1.5 s, Idle, Out 0.667 s, OutFast; `UseHandItem` notify at 0.567 s
+  opens the inventory, so it is not played) plus `MG_backpack_fp_inventory` on `SK_bpa_pla_01` (`AnimBP_Backpack`,
+  `BackpackPrototypes.cfg`; material `MI_bpa_sta_09_a_01_fov`, first-person). The bag's root bone is keyed in the
+  player's component space; the player animation keys `jnt_weapon` behind the back (-49, -7, 120) throughout, and the
+  Out ends with both hands down out of view. `make_bag_seq.py` copies In / Out into `AS_ImmLoot_BagIn` / `BagOut`
+  (all 110 tracks, HandIK off at the start, on near the end, `left_hand_curve`); the actor plays them in MainActionSlot
+  (rate 1) and spawns a SkeletalMeshActor with the backpack at the player mesh's origin playing the bag's own In /
+  Out; held at 0.6 s like the touch, Out after the window, the backpack destroyed when its animation is over.
+  Setting `BagLoot` (default on; MCM "Bag for bodies and stashes").
+- Build a result (Noah): no bag: "the hand holding nothing"; with the hand touch "the hand stays reaching out over the
+  stash, then the use plays at once with no tween". Probe: bag spawned (NBag 1); the use was never caught (NLootUse 0):
+  as the window goes the game starts one montage at once (not "_use": by its timing the hands' `MG_fp_bh_unequip`,
+  bh/showhide), the use ~0.4 s later (after our close step), and ~2.7 s later another (`MG_fp_bh_equip`). Engine:
+  `ASkeletalMeshActor` ticks its pose (`AlwaysTickPose`) but refreshes bones only when drawn: our backpack stayed in its
+  reference pose (worn on the back, behind the camera), never drawn, never posed.
+- Build b: the close step waits up to 1 s for the use (`LootWait`, our touch held where it is); a use starting during
+  the touch or that wait is held on its first frame (`LootUse`); once the window is gone our touch / bag goes and the
+  use reach plays over it, from its grab frame after a touch (`LootFromGrab`: the hand is out at the body / stash with
+  the item, then comes back into the use pose); no use in 1 s = ours goes (no return). Backpack: bones refreshed
+  always (`AlwaysTickPoseAndRefreshBones`) and the player mesh's bounds. Probe: `GameMontageName`, `BagF/R/U` (the
+  bag's jnt_backpack in view axes), `BagPlay`.
+- Build b result (Noah): still no bag (and: bag looting off by default); with the hand "it holds for a second, snaps
+  down and right and goes straight into the use". Probe: the use was caught (NLootUse 1, 2), but the build-17 fail-safe
+  (`_late`: UseMode and no reach of ours playing) fired in the same tick step 6c asked for the reach: the use went on
+  (NUseLate) and the reach played as a plain pickup segment (SegStart 117 / 118.5). Backpack: posed but still, 61 cm
+  ahead and 81 cm below the view: the bag sequences lock their root to the reference pose (`bForceRootLock`), and their
+  keyed root equals the player's `jnt_l_weapon` (= `jnt_second_weapon`) in every frame, rotated -90 deg about X = the
+  root's own reference rotation: the game holds the bag in the left hand.
+- Build c: the fail-safe waits while a reach is pending; the backpack is attached at `jnt_l_weapon`; `BagLoot` off by
+  default (actor and MCM). A Lua probe read of the String variable `GameMontageName` crashed the game while loading a
+  save (UE4SS): removed from the probe (harness/docs/diagnostics.md).
+- Build c result (Noah): the bag shows, but "in front of the face for a bit before the normal animation"; the use reach
+  "starts to reach back, resets, then does the correct full reach back with the item". The game's own montage blends
+  in / out in 0 s (ours 0.25: the arms carried the bag across the face to the In's first pose). Probe: step 6c stopped
+  our touch a tick before step 3 started the use reach.
+- Build d: In blend-in 0.01 (a pasted 0.0 reads back as the 0.25 default), Out blend-in 0.1; the touch is kept
+  (`LootTouchMont`) and stopped in the tick the use reach starts (or is skipped).
+- Build d result (Noah): "the bag is supposed to have the right hand going into the bag: copy the ENTIRE vanilla
+  animation"; "the bag is not off by default" (probe: the actor starts with BagLoot false, MCM's saved value from
+  Noah's own earlier choice turns it on at load: MCM keeps a player's setting); the use reach unchanged ("starts to
+  reach back, resets, then the full reach back"). Probe: the use reach played from its grab frame 0.07 s after the use
+  started; the touch was stopped with a 0.15 s blend in that tick: the reach is an additive on the held use frame, so
+  while the touch still shaped the arm the reach was bent.
+- Build e: the bag In plays to its end (1.4 s, the right hand reaches into the bag), then `AS_ImmLoot_BagIdle` (the
+  game's idle, the hand in the bag) loops while the window is open (with the bag mesh's own idle), Out after; In blends
+  out in 0.05 s into the idle. The held touch stops at once (0.01 s) when the use reach starts. Probe (numbers only):
+  `GameMontageKind` (1 unequip, 2 equip, 3 use, 4 backpack), `GameMontageLen`, `TouchStopped` (to see what the game
+  plays as the window goes and whether it stops our touch).
+- Build e result (Noah): use return "no change"; "the closing bag animation is janky too". Probe (montage kind / length,
+  numbers only): as the loot window goes the game plays the weapon's "unequip" (kind 1, 0.467 s), the use 0.36 s later
+  (kind 3, 2.97 s); our touch is NOT stopped by it (TouchStopped false until our reach): our left arm rode the
+  lowering shoulders, then the use reach (2 ticks after the use) put it back out. The player's own inventory (I key):
+  unequip (0.43-0.47 s) -> MG_fp_backpack_inventory (kind 4, 7.5 s) -> equip (0.5 s) at the close. Our Out blended
+  out over its last 0.3 s (hands rising while the Out still lowered them) with nothing after it.
+- Build f: an unequip while our touch is out or just after it plays 8x as fast; a use caught after the window is gone
+  starts our reach in the same frame (`loot_use_go` from the montage event). Bag: a weapon in hand is put away at the
+  bag's start (`RemoveWeaponFromHands`, `BagWeapon`) and drawn by the game (`EquipLastHeldItem`) once the bag is gone
+  and the arms are free (unless already shown); empty hands: `MG_fp_bh_equip` after a played-out Out (as the game's
+  inventory); Out blends out in 0.05 s.
+- Build f result (Noah): use "much better, but a frame or flash of the arm disappearing and swapping"; bag "the right
+  hand clips into the bag and it hijacks the camera and looks down". Probe: view pitch -51 -> -75 for the whole bag
+  (the player's own inventory leaves it alone); the weapon had been put away, so the bag played in the bare-hands
+  layer. The game plays its bag over the rifle-type stance (`AnimCollection_fp_Backpack` -> `AnimCollection_fp_ar`).
+- Build g: weapon in hand: the bag in MainActionSlot over its stance again (no put-away), the Out blends out after its
+  last frame (0.35 s); empty hands: `AS_ImmLoot_BagInAdd / IdleAdd / OutAdd` (make_bag_seq add=True: local-space
+  additives on fp_bh_idle_stand, upper body only, spine root re-solved for the bare-hands hips) in FullBody from
+  frame 1, `MG_fp_bh_equip` after the Out. Use from the window: the item shown in the hand at once (no twin hide
+  frame), the use reach blends in 0.001 s, the backpack destroyed when the use reach takes over.
+- Noah on build g's plan (an additive copy for empty hands): "the open inventory animation is VANILLA; did you fully
+  research how it works?" No: the inventory animation is driven by native code: `PC.StartUseBackpack` (the backpack as a
+  hand item: `HandItem` BACKPACK, `AnimBP_Player_TwoHandedItem` + `AnimCollection_fp_ar`, `SetHandItemSkeletalMesh`
+  with `AnimBP_Backpack` (a DefaultSlot over the bag idle), both montages, `AnimNotify_UseHandItem` opens the
+  inventory, `OnBackpackUseEnded` the Out and the weapon draw). The pawn Blueprint has none of it. The game also has
+  `PC.OpenLootMenu` / `CloseLootMenu` and `AnimNotify_InteractAction` (OPEN_LOOT_MENU / CLOSE_LOOT_MENU) for animations
+  that open a loot menu. Builds a-g reproduced only the montage part by hand (copies, attach, layer, camera): dropped.
+- Build h (test): a bag tap calls `StartUseBackpack`; once the game's inventory is open (`IMC_Inventory`,
+  `IsUsingBackpack`) `OpenLootMenu` is called. Probe: `NBag`, `NBagLoot`, `BagUsing`, `InvOpen`, `LootKind`.
+- Build h result (Noah): the bag "just opens my inventory, not the stash"; the use from a stash "finally looks
+  correct". Probe: the game's unequip, then IMC_Inventory at 0.45 s (before its bag montage, kind 4, starts) with
+  IsUsingBackpack; `OpenLootMenu` called then changed nothing lasting (no interaction in progress for it to open).
+- Build i (test): the moment the game's inventory is open, its own close input `IA_UI_Inventory_Close` is injected (the
+  backpack goes back natively), and once IMC_Inventory is gone, the game's interact (T8: after 0.12 s, retried) opens
+  the stash's / body's loot window as without the bag. Watch: a flash of the inventory; the bag's Out against the
+  loot window.
+- Build i was not built (Noah: closing the game's inventory to open the loot window "will almost certainly just close
+  the inventory animation"; no jank-prone tricks). Research: no Blueprint route puts the game into its backpack state
+  but `StartUseBackpack`, which always ends in Skif's inventory. The posture the game plays its bag over is
+  `AnimBP_Player_TwoHandedItem` (implements only `AnimLI_PlayerWeapon`: the WeaponLayer, ungrouped), linked by the
+  native backpack use; `AnimBP_PlayerWeaponLayer` / `AnimBP_player_bh` are the firearm / bare-hands WeaponLayer classes.
+- Build j: at a bag tap the WeaponLayer instance's class is remembered (`GetLinkedAnimLayerInstancesByGroup(None)`,
+  the one implementing AnimLI_PlayerWeapon) and `AnimBP_Player_TwoHandedItem` linked (`LinkAnimClassLayers`); the
+  copied In / Idle / Out play in MainActionSlot over it for both weapon and empty hands (the additive set unused);
+  when the bag is gone the remembered class is linked back if the backpack posture is still linked. Noah still sees
+  the right arm clip through the bag flap in the earlier own-bag builds: to watch with the game's posture.
+- Build j result (Noah): "I didn't see the right hand at all and the game crashed when I closed the stash loot window".
+  Game log: AV in game code at 09:14:50.8, 0.5 s after our Out started (the posture link-back had not run). Linking the
+  game's posture from a mod is a crash family (harness/docs/animation.md). Reverted (the bag tap back to build g's
+  path; not rebuilt). The posture's AnimGraph shows what it adds over the montage (camera / weapon from virtual bones,
+  spine_03 from another pose in component space, a smooth copy of the right forearm): harness/docs/animation.md.
+- Build k (Noah: "yes let's do it": the bag as an arms-only layer over Skif's posture). Slot study: every full-pose slot
+  a mod can reach in the bare-hands layer takes the camera (MainActionSlot: legs mask only; UpperBody: `under_hips`
+  mask; FullBody: everything); only LeftHand / RightHand are masked to the arms (`left_hand_blend_mask` /
+  `right_hand_blend_mask`, shoulder down). Both are DefaultGroup, so one dynamic montage per slot stops the other:
+  montage assets `AM_ImmLoot_BagIn / Idle / Out` (`make_bag_montages.py`) with a LeftHand and a RightHand track (set by
+  Noah in the montage editor: Python cannot edit slot tracks), played with `Montage_Play(bStopAllMontages false)`; the
+  previous montage of the bag stopped explicitly. Weapon in hand: `RemoveWeaponFromHands` at the start (the hand masks
+  leave `jnt_weapon` alone), `EquipLastHeldItem` after the bag (if the game has not drawn it); empty hands:
+  `MG_fp_bh_equip` after a played-out Out.
+- Build k result (Noah): "the right arm still clips through the backpack, too far up, not through the flap opening";
+  "after the stash it forces me unarmed; the weapon key needs two presses". Cause of the second: the weapon redraw
+  block never made it into the generator (a CRLF mismatch in the edit script; the file is LF now), and our AM_ montage
+  assets counted as the game's in `GameMontageAt` (so no hands-up either). Data check (copied animation, bag frame =
+  jnt_backpack, root locked): right hand (-1.2, -10.8, -1.3), middle fingertip (4.6, -1.6, 2.5), the bag's bones span
+  x -16..16, y -26..14, z -22..4.4 (top caps to 3.5): the animation itself has the fingers at the flap's level.
+- Build l: weapon redraw restored (`EquipLastHeldItem` once the bag is gone and the arms are free), `AM_ImmLoot*` not
+  counted as game montages; probe `RHand*` / `RFing*` = the right hand / middle fingertip in the backpack's frame in
+  game, to compare with the data above.
+- Build l also: probe of the game's own backpack while it is in use (I key): `VRHand*` / `VRFing*` (right hand / fingertip in its jnt_backpack frame), `VAttL` / `VAttS` (its root to the player's jnt_l_weapon / jnt_second_weapon, cm), `VBag*` (its jnt_backpack in view axes), `VBagComp` (1 secondary-hand mesh, 2 in-hands mesh).
+- Build l result (Noah): right hand unchanged (clips through the flap), weapon still needs two presses after the
+  stash; standing, the bag plays "way above the screen" (crouched roughly right). Cause (data: look-vertical deltas):
+  the bare-hands standing look additive (`fp_bh_stand_lookvertical_idle`) leaves the hands where they are when looking
+  down while the camera turns, so the arms layer lands above the view; the rifle and low-crouch look additives turn
+  spine, arms and camera together. The game's bag posture turns the arms with the view.
+- Build m: armed, the weapon stays in the hands, hidden (`SetHiddenInGame` on `GetWeaponInHandsMeshComponent`), shown
+  again when the bag is gone (no `RemoveWeaponFromHands` / `EquipLastHeldItem`), so the weapon posture's rigid look
+  turn carries the arms. Empty hands: `AS_ImmLoot_BagPitchFix` (`make_bag_seq.py --arg PART=pitch`, 91 frames =
+  view pitch 0..-90, mesh-space rotation offset: shoulder subtrees turned by the spine's look turn and the bare-hands
+  look's own arm turn undone) in FullBody, paused, its position = pitch down / 30 every tick (0 crouched: camera below
+  130 cm in the mesh frame), stopped 0.3 s when the bag is gone.
+- Build m result (Noah): standing, the bag is on screen and the left hand is right; the weapon comes back after the
+  stash; but armed, the right hand "still holds the weapon that isn't there", the elbow bends up, the hand never goes
+  into the bag. Cause: the weapon layer's right-hand IK (`TwoBoneIK_GSC` on `jnt_r_hand` to the weapon mesh's
+  `jnt_r_hand` socket, alpha `HandsIKData.RightHand.Alpha`) still pins the hand to the hidden weapon's grip.
+- Build n: `AS_ImmLoot_BagIn` / `BagOut` carry a second `AnimNotify_HandIK` for the right hand (off at the start of
+  In, on at the end of Out), like the left one. No Blueprint change.
+- Build n result (Noah): "right hand is perfect, finally fixed". Left: the bag pops for a frame or two on the left at
+  the open; at the close it "turns in place instead of going down and off screen with the left hand". Probe: first
+  frame after the spawn the bag sat (40, -92, -106) cm in view (its reference pose); at the close it rose from
+  (38, -17, -27) to (47, 0, -18) = back to the weapon grip. Data (game's Out, `jnt_l_weapon` in `jnt_camera`): the bag
+  drops to (25, -9, -36) by frame 18 (0.6 s), the last frame (20) snaps behind the back; our Out's 0.3 s auto blend-out
+  started at 0.37 s.
+- Build o: the bag hidden for its first 3 ticks (`BagShowTick`); `AM_ImmLoot_BagOut` blend-out 0.25 s triggered at its
+  end only (`blend_out_trigger_time` 0); at Out 0.6 s the actor pauses it, stops it (0.25 s) and stops the bag mesh's
+  animation, so the cleanup removes the bag (then the weapon shows / the empty-hands hands-up).
+- Build o result (Noah): no backpack at all (the show step's condition was negated: `BagShowTick > 0` under a NOT);
+  at the close "the weapon appears floating in the air and then the hands come up to grab it".
+- Build p: show condition fixed; the game's last weapon equip montage is remembered from `OnMontageStarted` (kind 2,
+  not `_bh_`; e.g. `MG_fp_ak74_equip`: MainActionSlot 1 s, HandIK both on, WeaponAction unlock-left-hand idle,
+  PlayerAction END EQUIP_MAIN_ITEM) and replayed at the Out's 0.6 s with the weapon shown at the same moment (the game
+  closes its own bag with the equip). None remembered: shown when the bag is gone. `MG_fp_bh_equip` only without an
+  item in the main hand.
+- Build p result (Noah): "almost perfect": the open looks great; at the close the weapon shows for a frame before the
+  equip. Build q: the weapon shown 2 ticks after the equip starts (`WeaponShowTick`; our tick runs after the animation
+  update, so the equip poses the weapon from the next frame).
+- Build q result (Noah): "bag is perfect, done and delivered". Checkpoint `checkpoint-bag` (paks in
+  `zonekit/builds/checkpoint-bag/`).

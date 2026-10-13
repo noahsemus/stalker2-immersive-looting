@@ -34,6 +34,8 @@ SETTING = "Body and stash animation"
 HOVER = "Skif's hand touches bodies, crates and bags before the loot window opens. Off: they open at once, as in vanilla. Loose items keep their animation."
 SETTING2 = "Door animation"
 HOVER2 = "Skif's hand reaches for the door when you open, close or peek through it. Off: doors behave as in vanilla."
+SETTING3 = "Bag for bodies and stashes"
+HOVER3 = "Skif swings his backpack round, as when opening the inventory, before the loot window of a body or stash opens. Off: his hand reaches out to it instead."
 P = "BP_MCM_ModExample1.BP_MCM_ModExample1:EventGraph."
 
 g = Graph()
@@ -119,7 +121,12 @@ link(ev_r, "then", reg, "execute")
 link(ev_r, "BPI MCM API", reg, "self")
 link(reg, "then", reg2, "execute")
 link(ev_r, "BPI MCM API", reg2, "self")
-link(reg2, "then", add, "execute")
+reg3 = Lifted(EX, P + "K2Node_Message_55", "K2Node_Message_908", 1150, 0, defaults(dict(common, SettingID=SETTING3, SettingHoverText=HOVER3)))
+link(reg2, "then", reg3, "execute")
+link(ev_r, "BPI MCM API", reg3, "self")
+link(reg3, "then", add, "execute")
+xlink(reg3, "BoolValue", self_get("BagLoot", "bool", 950, 500)["BagLoot"])
+xlink(reg3, "ComboBoxOptions", make_str_array(950, 650)["Array"])
 xlink(reg2, "BoolValue", self_get("TouchDoors", "bool", 650, 500)["TouchDoors"])
 xlink(reg2, "ComboBoxOptions", make_str_array(650, 650)["Array"])
 link(ev_r, "BPI MCM API", add, "self")
@@ -137,6 +144,10 @@ link(ev_d, "BPI MCM API", dft, "self")
 link(dft, "then", dft2, "execute")
 link(ev_d, "BPI MCM API", dft2, "self")
 xlink(dft2, "ComboBoxOptions", make_str_array(750, 1950)["Array"])
+dft3 = Lifted(EX, P + "K2Node_Message_31", "K2Node_Message_909", 1500, 1300, defaults(dict(common, SettingID=SETTING3, SettingHoverText=HOVER3, BoolValue="false")))   # off by default (tester)
+link(dft2, "then", dft3, "execute")
+link(ev_d, "BPI MCM API", dft3, "self")
+xlink(dft3, "ComboBoxOptions", make_str_array(1150, 1950)["Array"])
 for l_ in list(dft.lines):
     pass
 xlink(dft, "ComboBoxOptions", make_str_array(350, 1950)["Array"])
@@ -170,7 +181,13 @@ link(ev_a, "BPI MCM API", get2, "self")
 st2 = self_set("TouchDoors", "bool", 1700, 2900, "the door setting")
 xlink(get2, "then", st2["execute"])
 xlink(get2, "BoolValue", st2["TouchDoors"])
-g.link(st2["then"], gaoc["execute"])
+get3 = Lifted(EX, P + "K2Node_Message_66", "K2Node_Message_910", 1300, 3200, defaults({"ModID": MOD_ID, "SettingID": SETTING3}))
+xlink(get3, "execute", st2["then"])
+link(ev_a, "BPI MCM API", get3, "self")
+st3 = self_set("BagLoot", "bool", 1700, 3200, "the bag setting")
+xlink(get3, "then", st3["execute"])
+xlink(get3, "BoolValue", st3["BagLoot"])
+g.link(st3["then"], gaoc["execute"])
 g.link(gaoc["then"], cast["execute"])
 sa = exec_pins(Node(g, BG + "K2Node_VariableSet", nm("K2Node_VariableSet"), 2400, 2600, "into the loot actor",
                     [f'VariableReference=(MemberParent={ACT},MemberName="TouchBodies")']))
@@ -188,9 +205,17 @@ sa2.pin("self", "object", sub=ACT, extra=TGT)
 g.link(sa["then"], sa2["execute"])
 g.link(cast["AsBP Imm Loot Actor"], sa2["self"])
 g.link(self_get("TouchDoors", "bool", 2500, 2900)["TouchDoors"], sa2["TouchDoors"])
+sa3 = exec_pins(Node(g, BG + "K2Node_VariableSet", nm("K2Node_VariableSet"), 3000, 2600, "",
+                     [f'VariableReference=(MemberParent={ACT},MemberName="BagLoot")']))
+sa3.pin("BagLoot", "bool")
+sa3.pin("Output_Get", "bool", out=True)
+sa3.pin("self", "object", sub=ACT, extra=TGT)
+g.link(sa2["then"], sa3["execute"])
+g.link(cast["AsBP Imm Loot Actor"], sa3["self"])
+g.link(self_get("BagLoot", "bool", 2800, 2900)["BagLoot"], sa3["BagLoot"])
 
 out = []
-for l_ in (ev_r, reg, reg2, add, ev_d, dft, dft2, ev_a, get, get2):
+for l_ in (ev_r, reg, reg2, reg3, add, ev_d, dft, dft2, dft3, ev_a, get, get2, get3):
     out += l_.text()
 out += g.text()
 # the example's header pictures are not shipped (MCM showed white behind its white text): our own copies
@@ -201,4 +226,4 @@ for a_, b_ in HEADERS.items():
     out = [l_.replace(a_, b_) for l_ in out]
 assert not any("/MCM_ModExample1/" in l_ for l_ in out)
 write(sys.argv[2], out)
-print("ok", len(g.nodes) + 10, "nodes")
+print("ok", len(g.nodes) + 13, "nodes")

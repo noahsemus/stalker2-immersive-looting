@@ -83,6 +83,14 @@ harness on 2026-10-09.
   screen on other items' use poses. Fixed by loading the per-item table directly (checkpoint wiring). Also: the
   pickup-only item-copy changes (builds 26-48) gated off the use reach (`pick_bh`), the strafe experiments block off.
 
+- 2026-10-13 checkpoint-bag (Noah: "bag is perfect, done and delivered", "checkpoint it"; paks in
+  `zonekit/builds/checkpoint-bag/`): items used from the loot window get our use reach (the use held on its first
+  frame, as hold F); MCM "Bag for bodies and stashes" (default off): the game's inventory bag animation copied
+  (`AS_ImmLoot_BagIn/Idle/Out`, montages `AM_ImmLoot_Bag*` in LeftHand + RightHand), both hands' IK off for it, a
+  weapon stays in the hands hidden and comes back with the game's last weapon equip; empty hands standing: pitch-fix
+  pose table `AS_ImmLoot_BagPitchFix` (FullBody); bag mesh `SK_bpa_pla_01` in the left hand. Next: build r (armed
+  grab / touch return spins: blend-out 0.35 s), not tested yet.
+
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
   `CoreVariables.cfg:888-889`), visual in `MeshComponent`; pickup is instant and has no BP-visible "item added" event.

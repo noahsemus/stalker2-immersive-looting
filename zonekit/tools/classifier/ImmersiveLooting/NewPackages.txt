@@ -54,3 +54,13 @@
 /ImmersiveLooting/Runtime/Use/AS_ImmLoot_MG_fp_beer_use
 /ImmersiveLooting/Runtime/Use/AS_ImmLoot_MG_fp_bandage_use
 /ImmersiveLooting/Runtime/Use/AS_ImmLoot_MG_fp_antirad_use
+/ImmersiveLooting/Runtime/AS_ImmLoot_BagIn
+/ImmersiveLooting/Runtime/AS_ImmLoot_BagOut
+/ImmersiveLooting/Runtime/AS_ImmLoot_BagIdle
+/ImmersiveLooting/Runtime/AS_ImmLoot_BagInAdd
+/ImmersiveLooting/Runtime/AS_ImmLoot_BagIdleAdd
+/ImmersiveLooting/Runtime/AS_ImmLoot_BagOutAdd
+/ImmersiveLooting/Runtime/AM_ImmLoot_BagIn
+/ImmersiveLooting/Runtime/AM_ImmLoot_BagIdle
+/ImmersiveLooting/Runtime/AM_ImmLoot_BagOut
+/ImmersiveLooting/Runtime/AS_ImmLoot_BagPitchFix
