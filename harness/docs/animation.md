@@ -54,6 +54,49 @@ Mostly from ImmersiveDialogue 2.0-2.1 (walk in dialogue, arms, gestures) and Imm
   player's `AnimInstancePlayer` while the interaction runs). Even swapping ImmersiveDialogue's own class back after a
   sit crashed. Only the single swap at load is known safe.
 - Calling `GetCurrentStateName` / state-machine queries from outside the anim update (probe) faults.
+- **`LinkAnimClassLayers` of a game posture outside its native flow**: linking `AnimBP_Player_TwoHandedItem` (the
+  backpack / two-handed-item posture, parent `AnimInstancePlayer`) into the WeaponLayer from a mod showed no right arm
+  and crashed (AV in game code) ~0.5 s after the loot window closed, before any re-link (ImmersiveLooting 2026-10-13).
+  The game links it itself inside `PC.StartUseBackpack`, which always ends in Skif's own inventory.
+
+## The game's inventory (backpack) animation (ImmersiveLooting 2026-10-12/13)
+- All native: `PC.StartUseBackpack` puts the weapon / hands away (an "unequip" montage, ~0.45 s), makes the backpack a
+  hand item (`HandItem` BACKPACK; `AnimCollection_fp_Backpack`: `PlayerAnimBlueprint` = `AnimBP_Player_TwoHandedItem`,
+  `PlayerAnimCollection` = `AnimCollection_fp_ar`), gives the hand-item mesh `SK_bpa_pla_01` + `AnimBP_Backpack` (a
+  DefaultSlot over the bag idle), plays `MG_fp_backpack_inventory` (MainActionSlot; In 1.5 / Idle 5 / Out 0.667 /
+  OutFast 0.333 s, blend 0) and `MG_backpack_fp_inventory` on the bag; `AnimNotify_UseHandItem` (0.567 s) opens the
+  inventory (it is on screen ~0.45 s after the key, before most of the In); the close plays Out and an equip.
+  `PC.OpenLootMenu` alone (no interaction in progress) does not turn that into a loot window.
+- The bag sequences lock their root (`bForceRootLock`, reference rotation -90 deg about X); their keyed root equals the
+  player's `jnt_l_weapon` (= `jnt_second_weapon`) every frame: the bag is held in the left hand. The bag's material is
+  first-person (`_fov`). A runtime `SkeletalMeshActor` refreshes bones only when drawn (`AlwaysTickPose`): set
+  `AlwaysTickPoseAndRefreshBones` or it stays in its reference pose behind the camera.
+- What the backpack posture adds over the montage (`AnimBP_Player_TwoHandedItem`): `jnt_camera` and `jnt_weapon`
+  copied from their virtual bones (the montage never moves the camera), `jnt_spine_03` taken from another pose in
+  component space (the upper body follows the look), a smooth copy of `jnt_r_fore_arm`. Played over another posture in
+  MainActionSlot the montage's camera key won (bare hands: view pitch -51 -> -75).
+- Playing the bag sequences as an arms-only layer (montage asset with LeftHand + RightHand slot tracks, `Montage_Play`
+  with `bStopAllMontages` false) works over Skif's own posture. Its blend-out must start only once the bag is below
+  the view (the game's Out has it there from frame 16-18 of 20; its last frame snaps behind the back).
+
+## Arms, hands and weapon (verified 2026-10-13, ImmersiveLooting)
+- Look-vertical additives: `fp_ar_stand_lookvertical` and `AS_fp_bh_lowcrouch_lookvertical` turn spine, arms, hands
+  and camera together; the standing bare-hands one (`fp_bh_stand_lookvertical_idle`) turns the camera but leaves the
+  hands where they are, so an arm animation laid over bare hands standing drifts up out of view as you look down.
+- `VB jnt_camera` and `VB jnt_weapon` are virtual bones under `jnt_spine_03`. The weapon follows `jnt_weapon`, which
+  arm-masked slots never move.
+- The weapon layer's hand IK (`TwoBoneIK_GSC`) pins each hand to the weapon mesh's own `jnt_l_hand` / `jnt_r_hand`
+  socket, alpha `HandsIKData.LeftHand` / `.RightHand`, switched by `AnimNotify_HandIK` (`HandToApply` LEFT_HAND /
+  RIGHT_HAND / BOTH_HAND). A weapon hidden with `SetHiddenInGame` stays in the hands, keeps the weapon posture, and
+  its IK keeps the hand on the invisible grip until switched off.
+- Weapon equip montages `MG_fp_<weapon>_equip` (MainActionSlot; notifies HandIK both on, `WeaponAction`
+  UNLOCK_LEFT_HAND_IDLE, `PlayerAction` END EQUIP_MAIN_ITEM) can be replayed with `Montage_Play` on the player with
+  the weapon already in hand (no side effects seen). Remember the last one from `OnMontageStarted`.
+- Local-space blends take the short way per bone: blending two poses whose bone differs by ~180 deg flips direction
+  frame to frame and shows as a near full spin. The vanilla `MG_fp_ak74_weapon_grab` has the left hand 120-180 deg
+  from every weapon idle in frames 23-34 (hand at the chest): never blend out there.
+- An actor ticking in `TG_PostUpdateWork` runs after this frame's animation update: a montage started there poses the
+  mesh from the next frame, so show what it brings in (a weapon, a spawned mesh in its reference pose) 2 ticks later.
 
 ## Dead ends
 - Montage blend profiles as masks (UE 5.5 clears `ActiveBlendProfile` once the blend-in ends; BlendMask mode is not

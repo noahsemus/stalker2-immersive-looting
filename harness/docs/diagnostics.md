@@ -34,7 +34,10 @@
   the game's CRT (plain Release/Debug don't exist: MSB8013). Output `main.dll` → `ue4ss\Mods\<Probe>\dlls\main.dll`
   + a `mods.txt` line.
 - Never introduce a UE4SS type/function the probe hasn't exercised in a single-purpose build first:
-  `FWeakObjectPtr` crashes this game (RE-UE4SS allocates serial numbers through a Kismet call).
+  `FWeakObjectPtr` crashes this game (RE-UE4SS allocates serial numbers through a Kismet call). Reading a Blueprint
+  actor's **String (FString) variable** from Lua (`actor.SomeString` / `:ToString()`) crashed the game inside UE4SS
+  while a save loaded (ImmersiveLooting 2026-10-12): probe only bool / int / float variables; expose anything else as
+  numbers (a flag, a counter, a code).
 - UE4SS Lua limits: struct field values of game structs are opaque (`TrivialObject`, no accessor); `LoopAsync` work
   must go through `ExecuteInGameThread`; `RegisterKeyBind` twice in one process crashes (guard reloads with a global
   flag); calling anim functions from Lua crashes. Lua is fine for enumerating objects, names and zero-arg calls.
