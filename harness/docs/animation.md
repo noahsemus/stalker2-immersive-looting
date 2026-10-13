@@ -97,6 +97,20 @@ Mostly from ImmersiveDialogue 2.0-2.1 (walk in dialogue, arms, gestures) and Imm
   from every weapon idle in frames 23-34 (hand at the chest): never blend out there.
 - An actor ticking in `TG_PostUpdateWork` runs after this frame's animation update: a montage started there poses the
   mesh from the next frame, so show what it brings in (a weapon, a spawned mesh in its reference pose) 2 ticks later.
+- **Left-hand gestures over a held weapon (ImmersiveLooting 2026-10-13, verified in game):** build them per weapon
+  family on that family's own idle stance, as the game does (`MG_fp_ar_flashlight`, `MG_fp_pt_flashlight`, NVG per
+  family). Long-gun idles' left hands (rifle / SMG / sniper / shotgun) lie within ~0-64 deg (local) of
+  `fp_ar_idle_stand`, pistols within 24 deg of `AS_fp_pm_idle`; the vanilla AK grab's grip is 88 deg from a pistol's.
+  A gesture keyed on another family's grip flips in the LeftHand slot's blend-in, and the weapon layer's hand IK
+  (`AnimNotify_HandIK`) flips whenever it blends between two hand rotations ~180 deg apart: release it over ~0.06 s
+  before the wrist turns, re-engage it only once the hand is back near the grip. Turn the wrist only after the slot's
+  blend-in, one way round (no per-frame shortest path), half the turn into `jnt_l_fore_arm_roll`. The family stance's
+  grip is a few cm off each weapon's own grip: end the keyed path left of / below it so the IK's last stretch comes in
+  from the side away from the weapon (a straight return clipped through the barrel and wobbled).
+- A left-arm local-space additive in FullBody over another weapon's grip pose (to make one gesture fit all weapons)
+  looked "like jelly / alien": dead end.
+- ZST's watch check: LeftHand-slot montages with `AnimNotify_HandIKState`, its smooth hand-back comes from its own
+  `AnimBP_Player` override (`BPI_WatchPose.SetWatchPose(Alpha, PreserveGrip)`), not reusable without that override.
 
 ## Dead ends
 - Montage blend profiles as masks (UE 5.5 clears `ActiveBlendProfile` once the blend-in ends; BlendMask mode is not
