@@ -707,7 +707,7 @@ inreach = b_and(X1 + 2050, Y1 + 420, grab_active(X1 + 1850, Y1 + 400), early)
 bm = branch(X1 + 2150, Y1 + 150, "a reach already before its pocketing frame? (then the new item joins it)", inreach)
 g.link(sqr["then_1"], bm["execute"])
 GRAB_SEQ_BH = "/ImmersiveLooting/Runtime/AS_ImmLoot_GrabBH.AS_ImmLoot_GrabBH"
-TOUCH_SEQS = [f"/ImmersiveLooting/Runtime/AS_ImmLoot_Touch{i}.AS_ImmLoot_Touch{i}" for i in range(25)]   # 2026-10-10: corpse / stash
+TOUCH_SEQS = [f"/ImmersiveLooting/Runtime/AS_ImmLoot_TouchAr{i}.AS_ImmLoot_TouchAr{i}" for i in range(25)]   # corpse / stash, long guns (build x)   # 2026-10-10: corpse / stash
 # touch, weapon in hand (make_grab_seq build_touch): the hand reaches toward the body's / stash's centre. With a weapon the
 # arm rig follows the view (build d trace), so the centre's direction in VIEW axes picks the asset: elevation -45..+15 x
 # azimuth -30..+30, 15 deg bins, index ie * 5 + ia, stored in TouchAsset at the press
@@ -1098,6 +1098,12 @@ g.link(bst["then"], blr["execute"])
 g.link(blr["else"], mp["execute"])
 mpt = play_grab(X1 + 2750, Y1 - 450, TOUCH_SEQS[12], "left-hand touch, armed: hand out toward the body / stash (asset picked at the press)")
 mpt.pins["Asset"].extra = ""
+# build r (tester: "when the hand returns to the weapon it does the rotate and twist 360 thing"; Nexus, Tim0st): the 0.7 s
+# blend-out started at 0.97 s, in the vanilla grab's hand-at-the-chest frames (23-34), whose left hand is 120-180 deg
+# from every weapon idle's grip (local space): blending across ~180 deg flips the short way round from frame to frame,
+# a near full turn. 0.35 s starts it at frame ~40 (<= 100 deg from any rifle / pistol / shotgun idle)
+for _m in (mp, mpt):
+    _m.pins["BlendOutTime"].extra = 'DefaultValue="0.350000",'
 g.link(self_get("TouchAsset", "object", X1 + 2550, Y1 - 300, sub=ANIMSEQB), mpt["Asset"])
 g.link(blr["then"], mpt["execute"])
 g.link(bdt3["then"], mpt["execute"])
@@ -2103,6 +2109,24 @@ DOOR_PULL = "/ImmersiveLooting/Runtime/AS_ImmLoot_DoorPull.AS_ImmLoot_DoorPull"
 bdov = branch(XT + 3800, YT + 3300, "a door? its own push / pull asset (lower left), not the bin's", self_get("DoorTouch", "bool", XT + 3600, YT + 3450))
 for sa_ in _sa_all:
     g.link(sa_["then"], bdov["execute"])
+# build w (tester, pistol: "very obviously twisting when coming back"; probe: the touches' AK grip is 88 deg from every
+# pistol's support grip and their wrist rolls ~170 deg): with a pistol, a body / stash touch uses AS_ImmLoot_TouchPt<bin>
+# (make_grab_seq build_touch_pistol: built on the pistol idle, only the upper arm / forearm move, no wrist roll)
+TOUCH_PT = [f"/ImmersiveLooting/Runtime/AS_ImmLoot_TouchPt{i}.AS_ImmLoot_TouchPt{i}" for i in range(25)]
+_ptq = member_pure(OBJC, "GetMainHandEquipType", XT + 3800, YT + 6300, as_pc,
+                   [("ReturnValue", "byte", dict(sub=EN("/Script/Stalker2.EMainHandEquipmentType"), out=True))])["ReturnValue"]
+_pti = kml("Conv_ByteToInt", XT + 4000, YT + 6300, [("InByte", "byte", dict(extra='DefaultValue="0",')), ("ReturnValue", "int", dict(out=True))])
+g.link(_ptq, _pti["InByte"])
+bpt = branch(XT + 4100, YT + 6000, "build w: a pistol in hand (MainHandEquipmentType 1)? the pistol touch for this bin", int_eq(XT + 4100, YT + 6200, _pti["ReturnValue"], 1))
+g.link(bdov["else"], bpt["execute"])
+_prev = bpt
+for k in range(25):
+    bk = branch(XT + 4400 + 600 * k, YT + 6000, f"pistol, bin {k}?", int_eq(XT + 4300 + 600 * k, YT + 6200, self_get("TouchBin", "int", XT + 4100 + 600 * k, YT + 6200), k))
+    g.link(_prev["then" if k == 0 else "else"], bk["execute"])
+    sp_ = self_set("TouchAsset", "object", XT + 4700 + 600 * k, YT + 6000, "the pistol touch toward it", sub=ANIMSEQB)
+    sp_.pins["TouchAsset"].extra = f'DefaultObject="{TOUCH_PT[k]}",'
+    g.link(bk["then"], sp_["execute"])
+    _prev = bk
 barm = branch(XT + 3950, YT + 3000, "weapon in hand? (else the empty-hands door assets)", obj_q("HasItemInMainHand", XT + 3800, YT + 3150, as_pc))
 g.link(bdov["then"], barm["execute"])
 DOOR_PUSH_BH = "/ImmersiveLooting/Runtime/AS_ImmLoot_DoorPushBH.AS_ImmLoot_DoorPushBH"
@@ -2884,26 +2908,10 @@ bcl = branch(X4 + 300, Y4 + 4400, "backpack out, and its animation over (not hel
 _sqb = sequence(X4 - 400, Y4 + 4400, "backpack steps", 2)
 g.link(sq6["then_4"], _sqb["execute"])
 #   (6d below: the weapon back, then the cleanup)
-#   (probe) where the backpack is, in view axes, and whether its animation plays
-_bpr = branch(X4 + 300, Y4 + 5300, "backpack out? (probe)", is_valid(X4 + 100, Y4 + 5500, bag_actor(X4 - 100, Y4 + 5500)))
-g.link(_sqb["then_0"], _bpr["execute"])
+#   (release cleanup 2026-10-13: the backpack / hand probes of builds l-za removed)
 _bcm = lib_pure(GS, "GameplayStatics", "GetPlayerCameraManager", X4 - 300, Y4 + 5700,
                 [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)),
                  ("PlayerIndex", "int", dict(extra='DefaultValue="0",')), ("ReturnValue", "object", dict(sub=PCM, out=True))])["ReturnValue"]
-_bcl = member_pure(PCM, "GetCameraLocation", X4 - 100, Y4 + 5700, _bcm, [("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
-_bcr = member_pure(PCM, "GetCameraRotation", X4 - 100, Y4 + 5800, _bcm, [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"]
-_bbk = member_pure(SC_, "GetSocketLocation", X4 - 100, Y4 + 5900, bag_comp(X4 - 300, Y4 + 5900),
-                   [("InSocketName", "name", dict(extra='DefaultValue="jnt_backpack",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
-_brl = vop("Subtract_VectorVector", X4 + 100, Y4 + 5900, _bbk, _bcl)
-_bprs = []
-for k, (var, fn) in enumerate((("BagF", "GetForwardVector"), ("BagR", "GetRightVector"), ("BagU", "GetUpVector"))):
-    ax = kml(fn, X4 + 100, Y4 + 6000 + 100 * k, [("InRot", "struct", dict(sub=ROT)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
-    g.link(_bcr, ax["InRot"])
-    _bprs.append(set_from(var, "real", X4 + 600 + 300 * k, Y4 + 5300, vop("Dot_VectorVector", X4 + 300, Y4 + 6000 + 100 * k, _brl, ax["ReturnValue"], ret_sub="real"),
-                          "backpack in view axes (probe)" if k == 0 else "", subcat="double"))
-_bprs.append(set_from("BagPlay", "bool", X4 + 1500, Y4 + 5300, member_pure(SKC, "IsPlaying", X4 + 1300, Y4 + 5500, bag_comp(X4 + 1100, Y4 + 5500), [RB])["ReturnValue"], ""))
-chain(*_bprs)
-g.link(_bpr["then"], _bprs[0]["execute"])
 _bdes = member_call(ACTOR, "K2_DestroyActor", X4 + 600, Y4 + 4400, bag_actor(X4 + 400, Y4 + 4600), "the backpack goes")
 g.link(bcl["then"], _bdes["execute"])
 _sbm0 = self_set("BagMode", "bool", X4 + 900, Y4 + 4400, "", default="false")
@@ -2931,7 +2939,7 @@ chain(_bwd, member_call(SC_, "SetHiddenInGame", X4 + 600, Y4 + 6300, _wmc, "show
 #   build m, empty hands: the pitch-fix pose table at the view pitch while the bag is out (0 crouched: the low-crouch
 #   look turns the arms rigidly already), stopped when the bag is gone
 _pfm = lambda x, y: self_get("PitchFixMont", "object", x, y, sub=MONT)
-_sqpf = sequence(X4 - 400, Y4 + 8600, "pitch fix, bag shown, Out ended, weapon shown, then the probe", 6)
+_sqpf = sequence(X4 - 400, Y4 + 8600, "pitch fix, bag shown, Out ended, weapon shown", 5)
 g.link(_sqb2["then_2"], _sqpf["execute"])
 _bpfx = branch(X4 + 300, Y4 + 8600, "build m: the pitch fix running and the bag out? its frame from the view pitch",
               b_and(X4 + 200, Y4 + 8800, is_valid(X4, Y4 + 8800, _pfm(X4 - 200, Y4 + 8800)), is_valid(X4, Y4 + 8870, bag_actor(X4 - 200, Y4 + 8870))))
@@ -3018,82 +3026,6 @@ g.link(_sqpf["then_4"], _bws["execute"])
 _wme2 = member_pure(OBJC, "GetWeaponInHandsMeshComponent", X4 + 400, Y4 + 11400, as_pc, [("ReturnValue", "object", dict(sub=SKC, out=True))])["ReturnValue"]
 chain(_bws, member_call(SC_, "SetHiddenInGame", X4 + 600, Y4 + 11200, _wme2, "shown, coming up with the hands", [B("NewHidden", "false"), B("bPropagateToChildren", "true")]),
       self_set("WeaponShowTick", "int", X4 + 900, Y4 + 11200, "done", default="0"))
-#   (probe, build l: "the right arm clips through the flap, too far up") the right hand in the backpack's frame
-#   (jnt_backpack); the copied animation has it at (-1.2, -10.8, -1.3), the middle fingertip at (4.6, -1.6, 2.5)
-_bpr2 = branch(X4 + 300, Y4 + 7000, "backpack out? (probe: the right hand in its frame)", is_valid(X4 + 100, Y4 + 7200, bag_actor(X4 - 100, Y4 + 7200)))
-g.link(_sqpf["then_5"], _bpr2["execute"])
-_bbt = member_pure(SC_, "GetSocketTransform", X4 - 100, Y4 + 7300, bag_comp(X4 - 300, Y4 + 7300), [
-    ("InSocketName", "name", dict(extra='DefaultValue="jnt_backpack",')),
-    ("TransformSpace", "byte", dict(sub=EN("/Script/Engine.ERelativeTransformSpace"), extra='DefaultValue="RTS_World",')),
-    ("ReturnValue", "struct", dict(sub=XFORM, out=True))])["ReturnValue"]
-_rhp = []
-for k, bn in enumerate(("jnt_r_hand", "jnt_r_hand_middle_03")):
-    loc = member_pure(SC_, "GetSocketLocation", X4 - 100, Y4 + 7400 + 100 * k, mesh, [("InSocketName", "name", dict(extra=f'DefaultValue="{bn}",')),
-                                                                                       ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
-    itl = kml("InverseTransformLocation", X4 + 100, Y4 + 7400 + 100 * k, [("T", "struct", dict(sub=XFORM)), ("Location", "struct", dict(sub=VEC)),
-                                                                        ("ReturnValue", "struct", dict(sub=VEC, out=True))])
-    g.link(_bbt, itl["T"])
-    g.link(loc, itl["Location"])
-    brk = kml("BreakVector", X4 + 300, Y4 + 7400 + 100 * k, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
-                                                           ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
-    g.link(itl["ReturnValue"], brk["InVec"])
-    for j, ax in enumerate("XYZ"):
-        _rhp.append(set_from(("RHand" if k == 0 else "RFing") + ax, "real", X4 + 600 + 300 * (3 * k + j), Y4 + 7000, brk[ax],
-                             "right hand / middle fingertip in the backpack's frame (probe)" if j == 0 else "", subcat="double"))
-chain(*_rhp)
-g.link(_bpr2["then"], _rhp[0]["execute"])
-#   (probe, build l, tester: "a logger for the vanilla inventory, to see how the normal backpack animation looks") while
-#   the game uses its backpack (I key): the same measures on the game's own backpack mesh (the hand-item mesh that has
-#   jnt_backpack), plus where its root sits against the player's jnt_l_weapon / jnt_second_weapon (cm) and in view axes
-_sqv = sequence(X4 - 400, Y4 + 8000, "probe: the game's own backpack", 2)
-g.link(_bpr2["else"], _sqv["execute"])
-for vi, fn in enumerate(("GetSecondaryHandItemMeshComponent", "GetWeaponInHandsMeshComponent")):
-    vx, vy = X4 + 300, Y4 + 8000 + 1400 * vi
-    vcomp = member_pure(OBJC, fn, vx - 400, vy + 300, as_pc, [("ReturnValue", "object", dict(sub=SKC, out=True))])["ReturnValue"]
-    bvb = branch(vx, vy, f"the game using its backpack, and {fn.replace('Get', '').replace('Component', '')} has jnt_backpack? (probe)",
-                 b_and(vx - 100, vy + 200, member_pure(PC, "IsUsingBackpack", vx - 300, vy + 150, as_pc, [RB])["ReturnValue"],
-                       is_valid(vx - 300, vy + 220, vcomp),
-                       member_pure(SC_, "DoesSocketExist", vx - 300, vy + 290, vcomp, [("InSocketName", "name", dict(extra='DefaultValue="jnt_backpack",')), RB])["ReturnValue"]))
-    g.link(_sqv[f"then_{vi}"], bvb["execute"])
-    vbt = member_pure(SC_, "GetSocketTransform", vx - 100, vy + 400, vcomp, [
-        ("InSocketName", "name", dict(extra='DefaultValue="jnt_backpack",')),
-        ("TransformSpace", "byte", dict(sub=EN("/Script/Engine.ERelativeTransformSpace"), extra='DefaultValue="RTS_World",')),
-        ("ReturnValue", "struct", dict(sub=XFORM, out=True))])["ReturnValue"]
-    vsets = []
-    for k, bn in enumerate(("jnt_r_hand", "jnt_r_hand_middle_03")):
-        loc = member_pure(SC_, "GetSocketLocation", vx - 100, vy + 500 + 100 * k, mesh, [("InSocketName", "name", dict(extra=f'DefaultValue="{bn}",')),
-                                                                                      ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
-        itl = kml("InverseTransformLocation", vx + 100, vy + 500 + 100 * k, [("T", "struct", dict(sub=XFORM)), ("Location", "struct", dict(sub=VEC)),
-                                                                           ("ReturnValue", "struct", dict(sub=VEC, out=True))])
-        g.link(vbt, itl["T"])
-        g.link(loc, itl["Location"])
-        brk = kml("BreakVector", vx + 300, vy + 500 + 100 * k, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
-                                                              ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
-        g.link(itl["ReturnValue"], brk["InVec"])
-        for j, ax in enumerate("XYZ"):
-            vsets.append(set_from(("VRHand" if k == 0 else "VRFing") + ax, "real", vx + 300 + 300 * len(vsets), vy, brk[ax],
-                                  "the game's backpack: right hand / fingertip in its frame (probe)" if j == 0 else "", subcat="double"))
-    vroot = member_pure(SC_, "GetSocketLocation", vx - 100, vy + 800, vcomp, [("InSocketName", "name", dict(extra='DefaultValue="jnt_root",')),
-                                                                          ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
-    for k, (var, bn) in enumerate((("VAttL", "jnt_l_weapon"), ("VAttS", "jnt_second_weapon"))):
-        pl = member_pure(SC_, "GetSocketLocation", vx - 100, vy + 900 + 100 * k, mesh, [("InSocketName", "name", dict(extra=f'DefaultValue="{bn}",')),
-                                                                                     ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
-        dd = kml("Vector_Distance", vx + 100, vy + 900 + 100 * k, [("V1", "struct", dict(sub=VEC)), ("V2", "struct", dict(sub=VEC)), RD])
-        g.link(vroot, dd["V1"])
-        g.link(pl, dd["V2"])
-        vsets.append(set_from(var, "real", vx + 300 + 300 * len(vsets), vy, dd["ReturnValue"], "its root to the player's bone (probe)" if k == 0 else "", subcat="double"))
-    vbk = member_pure(SC_, "GetSocketLocation", vx - 100, vy + 1100, vcomp, [("InSocketName", "name", dict(extra='DefaultValue="jnt_backpack",')),
-                                                                         ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
-    vrl = vop("Subtract_VectorVector", vx + 100, vy + 1100, vbk, _bcl)
-    for k, (var, fn2) in enumerate((("VBagF", "GetForwardVector"), ("VBagR", "GetRightVector"), ("VBagU", "GetUpVector"))):
-        ax = kml(fn2, vx + 100, vy + 1200 + 100 * k, [("InRot", "struct", dict(sub=ROT)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
-        g.link(_bcr, ax["InRot"])
-        vsets.append(set_from(var, "real", vx + 300 + 300 * len(vsets), vy, vop("Dot_VectorVector", vx + 300, vy + 1200 + 100 * k, vrl, ax["ReturnValue"], ret_sub="real"),
-                              "its backpack in view axes (probe)" if k == 0 else "", subcat="double"))
-    vsets.append(self_set("VBagComp", "int", vx + 300 + 300 * len(vsets), vy, "which mesh had it (probe)", default=str(vi + 1)))
-    chain(*vsets)
-    g.link(bvb["then"], vsets[0]["execute"])
-
 g.layout_tree()
 # ---- 7 (1.1, hold F to use a loose item): the game starts the item's use animation (MainActionSlot, blend-in 0) the
 #      moment the hold completes and it owns the arms (probe: paused, it still hid our LeftHand reach; FullBody took the

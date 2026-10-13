@@ -235,8 +235,7 @@ try:
     build("AS_fp_backpack_inventory_in", "AS_ImmLoot_BagIn", "in")
     build("AS_fp_backpack_inventory_out", "AS_ImmLoot_BagOut", "out")
     build("AS_fp_backpack_inventory_idle", "AS_ImmLoot_BagIdle", "idle")   # build e (tester: "copy the ENTIRE vanilla animation": the right hand goes into the bag)
-    for s_, n_, m_ in (("in", "AS_ImmLoot_BagInAdd", "in"), ("idle", "AS_ImmLoot_BagIdleAdd", "idle"), ("out", "AS_ImmLoot_BagOutAdd", "out")):   # build g: empty hands
-        build(f"AS_fp_backpack_inventory_{s_}", n_, m_, add=True)
+    # (build g's additive copies AS_ImmLoot_Bag*Add are no longer built: unused since build k; removed for the release)
 except SystemExit:
     pass
 except Exception:

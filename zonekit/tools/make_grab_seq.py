@@ -47,6 +47,7 @@ def mul(a, s): return (a[0] * s, a[1] * s, a[2] * s)
 def dot(a, b): return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 def cross(a, b): return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
 def norm(a): return math.sqrt(dot(a, a))
+def dot4(a, b): return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
 def unit(a): n = norm(a); return mul(a, 1.0 / n) if n > 1e-9 else (0.0, 0.0, 0.0)
 
 
@@ -76,6 +77,19 @@ def weight(f):
     if f <= W_HOLD:
         return 1.0
     return 1.0 - smooth((f - W_HOLD) / (W_OUT - W_HOLD))
+
+
+def slerp_raw(a, b, t):
+    """Slerp along the path from a to b as given (no shortest-way flip)."""
+    d = max(-1.0, min(1.0, sum(x * y for x, y in zip(a, b))))
+    th = math.acos(d)
+    if math.sin(th) < 1e-6:
+        r = tuple(x + (y - x) * t for x, y in zip(a, b))
+    else:
+        sa, sb = math.sin((1 - t) * th) / math.sin(th), math.sin(t * th) / math.sin(th)
+        r = tuple(sa * x + sb * y for x, y in zip(a, b))
+    n = math.sqrt(sum(x * x for x in r))
+    return tuple(x / n for x in r)
 
 
 def slerp(a, b, t):
@@ -539,7 +553,7 @@ def finger_q(rest_q, opens, fists, b, wo, wf):
     return slerp(slerp(rest_q, opens[b], wo), fists[b], wf)
 
 
-def palm_q(src, facing):
+def palm_q(src, facing, up_vec=(0.0, 0.0, 1.0)):
     """A hand rotation (component / sequence space) with the palm toward `facing` and the fingers up: the push."""
     hp, hq0 = cs(src, HAND, FIST_K)
     loc = lambda b: qrot(qinv(hq0), unit(sub(cs(src, b, FIST_K)[0], hp)))
@@ -550,7 +564,7 @@ def palm_q(src, facing):
         palm_l = mul(palm_l, -1.0)
     q1 = q_between(palm_l, unit(facing))
     f1 = qrot(q1, f_l)
-    up0 = unit(add((0.0, 0.0, 1.0), mul(unit(facing), 0.8)))          # build 11: fingers up AND forward (less tall on screen)
+    up0 = unit(add(unit(up_vec), mul(unit(facing), 0.8)))             # build 11: fingers up AND forward (less tall on screen)
     up = unit(sub(up0, mul(unit(facing), dot(up0, unit(facing)))))
     f1p = unit(sub(f1, mul(unit(facing), dot(f1, unit(facing)))))
     return qmul(q_between(f1p, up), q1)
@@ -692,6 +706,238 @@ def build_touch(src, grab, path_h, path_q, nkeys):
             build_touch_one(src, grab, path_h, path_q, nkeys, f"{NAME_TOUCH}{ie * len(TOUCH_AZIMS) + ia}", float(elev), float(az))
 
 
+TOUCH_HOLD_K = 18   # the Blueprint holds the touch at 0.6 s (frame 18) while the loot window is open
+# build t (tester after build s, mirrored return: "no change"; r and s changed everything before frame 36 but nothing
+# after it): the left-hand IK came on at 1.2 s over the default 0.2 s with the hand in the vanilla AK grab's grip pose,
+# 35-98 deg (local) from the held weapon's own grip (pistols most): a quick wrist twist at the very end. Now the IK
+# comes on as the hand starts back (0.8 s = frame 24, the mirror of the reach's frame 12) over 0.5 s, so the hand
+# settles onto the real grip while it travels.
+TOUCH_IK_ON = (1.0, 0.35)   # build y: was (1.2, 0.25)
+# build v (build u = a left-arm additive in FullBody over the IK: "way worse, the hand is jelly / alien", reverted).
+# Probe build t: the flips are inside the IK's blends, where the IK's grip and our keyed hand are ~180 deg apart. The
+# reach-out turns the hand ~170 deg by frame 7 while the IK still held it (off at 0.036 s over 0.2 s): off now over
+# 0.06 s (the hand has turned ~25 deg by then); on at 1.2 s (frame 36, the start pose again) over 0.25 s.
+TOUCH_IK_OFF_BLEND = 0.06
+# build y (tester: "on the way back the hand goes too far right and clips through the gun, then moves left into place"):
+# the touch ends on the rifle stand idle's grip, the IK then slid it to the held weapon's own grip. The IK comes on at
+# frame 30 (the palm already back, <= 60 deg from the grip) over 0.35 s, so the hand converges on the real grip while
+# it travels in.
+
+
+def mirror_touch_return(seq):
+    """2026-10-13 build s (tester, armed, bag off: "when the hand returns to the weapon it twists awkwardly", also the
+    session's first report and Tim0st's on Nexus). The way back (frames 20-36) re-solved only the upper arm, forearm and
+    hand, with the elbow pole and the shoulder taken from the vanilla grab's own frames, where the vanilla hand goes to
+    the chest and flips back onto the grip (frames 23-34): the solved elbow swung over (upper arm 55-64 deg in one frame)
+    and the untouched roll / shoulder / finger tracks twisted with the vanilla motion. Now every left-arm track (the
+    LeftHand slot's mask: the shoulder down) plays the reach back in reverse after the hold: frame 18 + i = frame 18 - i,
+    the start pose (the grip, = the vanilla grab's frames 41-50) from 36 on, where the "left hand back on" IK notify is."""
+    n = AL.get_num_frames(seq)
+    tracks = [str(t) for t in AL.get_animation_track_names(seq)]
+    arm = [b for b in tracks if "jnt_l_shoulder" in [str(x) for x in AL.find_bone_path_to_root(seq, b)]]
+    H = TOUCH_HOLD_K
+    src_k = lambda k: k if k <= H else (2 * H - k if k <= 2 * H else 0)
+    keys = {}
+    for b in arm:
+        poses = [AL.get_bone_pose_for_frame(seq, b, k, False) for k in range(n + 1)]
+        sel = [poses[src_k(k)] for k in range(n + 1)]
+        keys[b] = ([t.translation for t in sel], [t.rotation for t in sel], [t.scale3d for t in sel])
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot touch return mirrored", True)
+    for b, (pos, rot, scl) in keys.items():
+        ctrl.set_bone_track_keys(b, pos, rot, scl, True)
+    ctrl.close_bracket(True)
+    return len(arm)
+
+
+NAME_TOUCH_PT = "AS_ImmLoot_TouchPt"
+PISTOL_BASE = "/Game/_STALKER2/Animations/Player/AnimSequences/pt/pm/Idle/AS_fp_pm_idle"
+ELBOW_REF = (-0.25, -0.82, -0.5)   # component space: back a little, left, down
+
+
+NAME_TOUCH_AR = "AS_ImmLoot_TouchAr"
+SPREAD_SEQ = "/Game/_STALKER2/Animations/Player/AnimSequences/Dialog_animations/AS_fp_dialogue_bothhands_statement"
+SPREAD_K = 70
+TOUCH_PALM_DOWN = (0.0, 0.0, -0.6)
+TOUCH_FINGERS_UP = (0.0, 0.1, 1.0)    # build z (tester: "twisted counter clockwise too much, like breaking the wrist"): was (0, -0.35, 1)
+TOUCH_EXIT = (2.0, -8.0, -6.0)          # build z / za: component space, cm, from the path's end: a little forward, left, down
+TOUCH_END_OFF = (1.0, -5.0, -4.0)       # build za: the path's end from the stand idle's grip: left and down
+RIFLE_BASE = "/Game/_STALKER2/Animations/Player/AnimSequences/ar/common/stand/fp_ar_idle_stand"
+TOUCH_FAMILIES = {"pt": (NAME_TOUCH_PT, PISTOL_BASE), "ar": (NAME_TOUCH_AR, RIFLE_BASE)}
+
+
+def build_touch_pistol(i, family="pt"):
+    """2026-10-13 build w (tester, pistol: "very obviously twisting when coming back"; probe build v: the hand turns up
+    to 116 deg in one tick at the start (the LeftHand slot's 0.2 s blend-in) and 23-30 deg a tick for ~0.3 s on the way
+    back). The touches start and end in the vanilla AK grab's grip, 9.7 cm and 88 deg from every pistol's support grip
+    (kora / apb / pm / udp / rhino agree within 2.6 cm and 24 deg), and their wrist turns ~170 deg with the vanilla
+    reach: blending them over a pistol pose flips, and the way back is a long wrist roll. With a pistol: these, built on
+    the pistol idle (AS_fp_pm_idle frame 0) for every left-arm track: the shoulder, fingers and roll bones stay at the
+    pistol grip; only the upper arm / forearm are solved toward the same point as AS_ImmLoot_Touch<i>, and the hand
+    keeps its pistol-grip wrist (no roll). Out by frame 12, held to 18 (the Blueprint's pause), back by 36 (reverse)."""
+    # build x (tester: pistol "no more twisting, but the hand still looks like it's holding a grip instead of a high
+    # five facing away from the player"; rifles still twist): the hand turns, the short way, from the grip to the palm
+    # facing the target (palm_q: fingers up) while the fingers open (the dialogue gesture's open hand), over the reach
+    # (frames 0-12) and back over the return; the same build on the rifle stand idle (fp_ar_idle_stand, within 0-64 deg
+    # of every rifle / SMG / sniper / shotgun idle's left hand) for every long gun: AS_ImmLoot_TouchAr<bin>
+    prefix, base_path = TOUCH_FAMILIES[family]
+    name = f"{prefix}{i}"
+    path = f"{DIR}/{name}"
+    tmpl = unreal.load_asset(f"{DIR}/{NAME}")   # release cleanup: the grab (same tracks / frames); the old AS_ImmLoot_Touch* are gone
+    if not EAL.does_asset_exist(path):
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, tmpl)
+    seq = unreal.load_asset(path)
+    base = unreal.load_asset(base_path)
+    grab_src = unreal.load_asset(SRC)
+    # build y (tester: "the fingers need to be spread out"): the most spread vanilla left hand with straight fingers
+    # (searched: dialogue / interactables / items / deaths; index-pinky 49 deg, curl 20 deg; the door hand's ~20)
+    sp_seq = unreal.load_asset(SPREAD_SEQ)
+    opens = {b: local(sp_seq, b, SPREAD_K)[1] for b in FINGERS}
+    n = AL.get_num_frames(tmpl)
+    ie, ia = divmod(i, len(TOUCH_AZIMS))
+    elev, azim = float(TOUCH_ELEVS[ie]), float(TOUCH_AZIMS[ia])
+    cam, _ = cs(base, "jnt_camera", 0)
+    er, ar = math.radians(elev), math.radians(azim)
+    dirv_e = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
+    sh_p, sh_q = cs(base, SHOULDER, 0)
+    a_l, f_l, h_l = local(base, ARM, 0), local(base, FORE, 0), local(base, HAND, 0)
+    a_q = qmul(sh_q, a_l[1]); A = add(sh_p, qrot(sh_q, a_l[0]))
+    f_q = qmul(a_q, f_l[1]); E = add(A, qrot(a_q, f_l[0]))
+    R = add(E, qrot(f_q, h_l[0]))
+    RQ = qmul(f_q, h_l[1])
+    l1, l2 = norm(sub(E, A)), norm(sub(R, E))
+    reach = (l1 + l2) * TOUCH_REACH
+    inv = lambda v: tuple((v[j] - TOUCH_MAP[j][1]) / TOUCH_MAP[j][0] for j in range(3))
+    u = tuple(dirv_e[j] / TOUCH_MAP[j][0] for j in range(3))
+    c_ = sub(add(cam, inv((0.0, 0.0, 0.0))), A)
+    qa, qb, qc = dot(u, u), 2 * dot(c_, u), dot(c_, c_) - reach * reach
+    disc = qb * qb - 4 * qa * qc
+    t = (-qb + math.sqrt(disc)) / (2 * qa) if disc > 0 else max(10.0, -qb / (2 * qa))
+    G = add(cam, inv(mul(dirv_e, t)))
+    hint = sub(E, A)
+    sched = ((0, 12, R, G), (12, 18, G, G), (18, 36, G, R))
+    tracks = [str(x) for x in AL.get_animation_track_names(tmpl)]
+    arm = [b for b in tracks if "jnt_l_shoulder" in [str(x) for x in AL.find_bone_path_to_root(tmpl, b)]]
+    keys = {}
+    for b in arm:
+        l = local(base, b, 0)
+        keys[b] = ([unreal.Vector(*l[0])] * (n + 1), [unreal.Quat(*l[1])] * (n + 1), [unreal.Vector(*l[2])] * (n + 1))
+    # build y (tester: "angled down and away from the player a bit, too robotic and upright"): the palm faces the target
+    # tilted ~30 deg down, the fingers lean out to the left ~20 deg
+    PQ = palm_q(grab_src, unit(add(dirv_e, TOUCH_PALM_DOWN)), TOUCH_FINGERS_UP)
+    if dot4(PQ, RQ) < 0:
+        PQ = tuple(-x for x in PQ)
+    out_w, kr, prev_tq = [], [], None
+    ROLL = "jnt_l_fore_arm_roll"
+    roll_l = local(base, ROLL, 0)[1]
+    ka, kf, kh = ([], []), ([], []), ([], [])
+    for k in range(n + 1):
+        bw, T0, T1 = 1.0, R, R
+        for f0, f1, P0, P1 in sched:
+            if f0 <= k <= f1:
+                bw, T0, T1 = smooth((k - f0) / max(f1 - f0, 1)), P0, P1
+                break
+        # build z (tester: "on the return the hand clips through the barrel to go back to the grip", pistols and
+        # rifles; probe: it came back from above the grip and passed it 3.5 cm to the right, 3-5 cm above): the hand
+        # leaves and rejoins the grip from the left and below (a quadratic curve through TOUCH_EXIT off the grip)
+        u_ = bw if T1 is G and T0 is R else (1.0 - bw if T0 is G and T1 is R else (1.0 if T0 is G else 0.0))
+        # build za (tester: still clips on the return, then "goes left and right slightly before it settles"; probe:
+        # the stand idle's grip R is ~3-4 cm right of / ~2.5 cm above the held weapon's own grip, so the hand came in
+        # past the real grip to R while the IK took over and pulled it back): the path ends left of and below R
+        # (TOUCH_END_OFF), the IK (on from frame 30) takes the hand from there to the real grip, from the left / below
+        Re_ = add(R, TOUCH_END_OFF)
+        P1_ = add(Re_, TOUCH_EXIT)
+        T = add(add(mul(Re_, (1 - u_) ** 2), mul(P1_, 2 * u_ * (1 - u_))), mul(G, u_ * u_))
+        to_t = sub(T, A)
+        d = max(abs(l1 - l2) + 0.01, min(reach, norm(to_t)))
+        dv = unit(to_t)
+        a = (l1 * l1 - l2 * l2 + d * d) / (2 * d)
+        h = math.sqrt(max(l1 * l1 - a * a, 0.0))
+        # the elbow: the pistol pose's own at rest, turning toward out-left-and-down as the hand goes out (the rest
+        # elbow's direction lines up with the reach to the low left bins: the solve flipped the elbow 30-35 deg a frame)
+        s_ = min(1.0, norm(sub(T, R)) / max(norm(sub(G, R)), 1e-6))
+        ref = unit(add(mul(unit(hint), 1.0 - s_), mul(ELBOW_REF, s_)))
+        pole = sub(ref, mul(dv, dot(ref, dv)))
+        pole = unit(pole) if norm(pole) > 1e-6 else unit(cross(dv, (0.0, 0.0, 1.0)))
+        E2 = add(A, add(mul(dv, a), mul(pole, h)))
+        T2 = add(A, mul(dv, d))
+        r1 = q_between(sub(E, A), sub(E2, A))
+        a_q2 = qmul(r1, a_q)
+        r2 = q_between(qrot(r1, sub(R, E)), sub(T2, E2))
+        f_q2 = qmul(r2, qmul(r1, f_q))
+        ka[1].append(unreal.Quat(*qmul(qinv(sh_q), a_q2)))
+        kf[1].append(unreal.Quat(*qmul(qinv(a_q2), f_q2)))
+        # the palm turn and the open fingers: frames 5-17 (after the LeftHand slot's 0.2 s blend-in, so the blend only
+        # ever spans the grip-to-grip gap), back over 19-31 (mirror), none from 36 on. The hand follows the swung
+        # forearm, then turns toward PQ; half of its turn about the forearm goes to the forearm roll bone (skin twist)
+        kk = k if k <= 18 else (36 - k if k <= 36 else 0)
+        wv = smooth(min(1.0, max(0.0, (kk - 5) / 12.0)))
+        tq = qmul(qinv(f_q2), PQ)
+        # one way round for the whole touch (some bins' palm target is ~180 deg from the grip: a per-frame shortest path
+        # switched sides between frames, 177 deg in one frame)
+        if prev_tq is None:
+            if dot4(tq, h_l[1]) < 0:
+                tq = tuple(-x for x in tq)
+        elif dot4(tq, prev_tq) < 0:
+            tq = tuple(-x for x in tq)
+        prev_tq = tq
+        hl = slerp_raw(h_l[1], tq, wv)
+        kh[1].append(unreal.Quat(*hl))
+        dlt = qmul(hl, qinv(h_l[1]))
+        ax_ = unit(h_l[0])
+        pr = dot(ax_, dlt[:3])
+        tw = (ax_[0] * pr, ax_[1] * pr, ax_[2] * pr, dlt[3])
+        tn = math.sqrt(sum(x * x for x in tw))
+        tw = tuple(x / tn for x in tw) if tn > 1e-9 else (0.0, 0.0, 0.0, 1.0)
+        kr.append(unreal.Quat(*qmul(slerp((0.0, 0.0, 0.0, 1.0), tw, 0.5), roll_l)))
+        out_w.append(wv)
+    keys[ARM] = (keys[ARM][0], ka[1], keys[ARM][2])
+    keys[FORE] = (keys[FORE][0], kf[1], keys[FORE][2])
+    keys[HAND] = (keys[HAND][0], kh[1], keys[HAND][2])
+    if ROLL in keys:
+        keys[ROLL] = (keys[ROLL][0], kr, keys[ROLL][2])
+    for b in FINGERS:
+        if b in keys:
+            rest = local(base, b, 0)[1]
+            keys[b] = (keys[b][0], [unreal.Quat(*finger_q(rest, opens, opens, b, wv, 0.0)) for wv in out_w], keys[b][2])
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot pistol touch", True)
+    for b, (pos, rot, scl) in keys.items():
+        ctrl.set_bone_track_keys(b, list(pos), list(rot), list(scl), True)
+    ctrl.close_bracket(True)
+    touch_notifies(seq, "touch")
+    cname = "left_hand_curve"
+    if cname in [str(x) for x in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]:
+        AL.remove_curve(seq, cname, False)
+    AL.add_curve(seq, cname, unreal.RawCurveTrackTypes.RCT_FLOAT, False)
+    AL.add_float_curve_keys(seq, cname, [0.0, 0.17, 1.1, 1.3, seq.get_play_length()], [0.0, 1.0, 1.0, 0.0, 0.0])
+    rel = sub(G, cam)
+    out.append(f"{name}: elev {elev:+.0f} az {azim:+.0f}, hand to ({rel[0]:.1f},{rel[1]:.1f},{rel[2]:.1f}) from the eye, "
+               f"{len(arm)} left-arm tracks, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
+
+
+def touch_notifies(seq, mode):
+    """The left-hand IK off just after the start, back on at the return (vanilla grab's HandIK notify kind)."""
+    for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
+        AL.remove_animation_notify_events_by_track(seq, tn)
+    track = "ImmLoot"
+    if track not in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
+        AL.add_animation_notify_track(seq, track, unreal.LinearColor(0.2, 0.8, 0.2, 1.0))
+    hand = None
+    for e in AL.get_animation_notify_events(unreal.load_asset(MONT)):
+        if e.notify is not None and e.notify.get_class().get_name() == "AnimNotify_HandIK":
+            hand = e.notify.get_editor_property("hand_to_apply")
+    hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
+    for t, end, bl in ((0.035907, None, None if mode != "touch" else TOUCH_IK_OFF_BLEND),
+                       ({"push": 1.27, "pull": 1.4}.get(mode, TOUCH_IK_ON[0]), 1.0, None if mode != "touch" else TOUCH_IK_ON[1])):
+        new = AL.add_animation_notify_event(seq, track, t, hik)
+        new.set_editor_property("hand_to_apply", hand)
+        if end is not None:
+            new.set_editor_property("end_value", end)
+        if bl is not None:
+            new.set_editor_property("blend_time", bl)
+
+
 def build_touch_one(src, grab, path_h, path_q, nkeys, name, TOUCH_ELEV, TOUCH_AZIM, mode="touch"):
     """2026-10-10, corpse / stash touch with a weapon: the same asset form as AS_ImmLoot_Grab (a copy of the vanilla
     grab, only the left arm re-solved, played from 0), which shows over a rifle, where the 180 s reach table never did
@@ -790,21 +1036,9 @@ def build_touch_one(src, grab, path_h, path_q, nkeys, name, TOUCH_ELEV, TOUCH_AZ
     for b, (pos, rot, scl) in keys.items():
         ctrl.set_bone_track_keys(b, pos, rot, scl, True)
     ctrl.close_bracket(True)
-    for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
-        AL.remove_animation_notify_events_by_track(seq, tn)
-    track = "ImmLoot"
-    if track not in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
-        AL.add_animation_notify_track(seq, track, unreal.LinearColor(0.2, 0.8, 0.2, 1.0))
-    hand = None
-    for e in AL.get_animation_notify_events(unreal.load_asset(MONT)):
-        if e.notify is not None and e.notify.get_class().get_name() == "AnimNotify_HandIK":
-            hand = e.notify.get_editor_property("hand_to_apply")
-    hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
-    for t, end in ((0.035907, None), ({"push": 1.27, "pull": 1.4}.get(mode, 1.2), 1.0)):
-        new = AL.add_animation_notify_event(seq, track, t, hik)
-        new.set_editor_property("hand_to_apply", hand)
-        if end is not None:
-            new.set_editor_property("end_value", end)
+    if mode == "touch":
+        out.append(f"TOUCH {name}: return mirrored on {mirror_touch_return(seq)} left-arm tracks")
+    touch_notifies(seq, mode)
     cname = "left_hand_curve"
     if cname in [str(c) for c in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]:
         AL.remove_curve(seq, cname, False)
@@ -1121,6 +1355,19 @@ def build_use_tables(src, tgt_rot, nkeys):
 
 
 try:
+    if ARGS.get("PART", "") == "touchpt":   # build w: the pistol touches; build x: and the long guns'
+        for fam in ("pt", "ar"):
+            for i in range(len(TOUCH_ELEVS) * len(TOUCH_AZIMS)):
+                build_touch_pistol(i, fam)
+        raise SystemExit
+    if ARGS.get("PART", "") == "touchret":   # only re-mirror the existing touch assets' return (build s)
+        for i in range(len(TOUCH_ELEVS) * len(TOUCH_AZIMS)):
+            s_ = unreal.load_asset(f"{DIR}/{NAME_TOUCH}{i}")
+            nm_ = mirror_touch_return(s_)
+            touch_notifies(s_, "touch")   # build t: the IK-on notify earlier and slower
+            ev_ = [(round(AL.get_anim_notify_event_trigger_time(e), 3), e.notify.get_editor_property("end_value"), round(e.notify.get_editor_property("blend_time"), 2)) for e in AL.get_animation_notify_events(s_) if e.notify]
+            out.append(f"{NAME_TOUCH}{i}: {nm_} tracks, IK notifies {ev_}, saved {EAL.save_loaded_asset(s_, only_if_is_dirty=False)}")
+        raise SystemExit
     src = unreal.load_asset(SRC)
     path = f"{DIR}/{NAME}"
     if not EAL.does_asset_exist(path):
@@ -1220,7 +1467,11 @@ try:
     out.append(f"curves: {[str(c) for c in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]}")
     out.append(f"saved: {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
     if ARGS.get("TOUCH", "1") == "1":
-        build_touch(src, seq, path_h, path_q, nkeys)
+        # (release cleanup 2026-10-13: the vanilla-grab touches AS_ImmLoot_Touch0..24 (build_touch) are no longer built:
+        # every armed body / stash touch is a family touch)
+        for fam in ("pt", "ar"):   # builds w, x
+            for i in range(len(TOUCH_ELEVS) * len(TOUCH_AZIMS)):
+                build_touch_pistol(i, fam)
     if ARGS.get("DOOR", "1") == "1":
         build_doors(src, seq, path_h, path_q, nkeys, tgt_rot)
     if ARGS.get("BH", "1") == "1":
@@ -1249,6 +1500,8 @@ try:
         # is the stance's own left hand on the grip
         build_bh_reach_table(src, seq, tgt_rot, nkeys, "/Game/_STALKER2/Animations/Player/AnimSequences/ar/common/stand/fp_ar_idle_stand",
                              "AS_ImmLoot_GrabAR")
+except SystemExit:
+    pass
 except Exception:
     import traceback
     out.append("EXCEPTION " + traceback.format_exc())

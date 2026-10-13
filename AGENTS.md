@@ -88,8 +88,12 @@ harness on 2026-10-09.
   frame, as hold F); MCM "Bag for bodies and stashes" (default off): the game's inventory bag animation copied
   (`AS_ImmLoot_BagIn/Idle/Out`, montages `AM_ImmLoot_Bag*` in LeftHand + RightHand), both hands' IK off for it, a
   weapon stays in the hands hidden and comes back with the game's last weapon equip; empty hands standing: pitch-fix
-  pose table `AS_ImmLoot_BagPitchFix` (FullBody); bag mesh `SK_bpa_pla_01` in the left hand. Next: build r (armed
-  grab / touch return spins: blend-out 0.35 s), not tested yet.
+  pose table `AS_ImmLoot_BagPitchFix` (FullBody); bag mesh `SK_bpa_pla_01` in the left hand. 
+- 2026-10-13 v1.2.0 released (Noah: "YESSSS perfeeeeccctttttttt. clean it up and get it ready for release", "cut a
+  release"): checkpoint-bag plus armed body / stash touches rebuilt per weapon family (`AS_ImmLoot_TouchAr` long guns,
+  `AS_ImmLoot_TouchPt` pistols: no twist, open spread palm facing the target, curved return from the left / below so
+  the hand never crosses the weapon; Tim0st's Nexus "inverted hand" report), cleanup (probes of this session removed,
+  30 unused assets deleted). Zip in `zonekit/builds/v1.2.0/`, GitHub release v1.2.0.
 
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,

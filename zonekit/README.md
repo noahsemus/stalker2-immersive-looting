@@ -372,3 +372,87 @@ mod go to `harness/docs/` instead (promote them).
   update, so the equip poses the weapon from the next frame).
 - Build q result (Noah): "bag is perfect, done and delivered". Checkpoint `checkpoint-bag` (paks in
   `zonekit/builds/checkpoint-bag/`).
+- After checkpoint-bag (Noah): bag off, a stash touch with a weapon, "when the
+  hand returns to the weapon it does the rotate and twist 360 thing" (the session's first report; Nexus, Tim0st).
+  Data: the armed grab / touch (copies of the vanilla `MG_fp_ak74_weapon_grab`, 1.667 s, played at 1.15) blended out
+  over 0.7 s from 0.97 s montage time = frame 29, inside the hand-at-the-chest frames 23-34 whose `jnt_l_hand` local
+  rotation is 120-180 deg from every weapon idle (ak74 173, dnipro 171, fora 170, pistols 142-162). A local-space blend
+  across ~180 deg flips direction as the frames change: the hand spins. By frame 40 every rifle / pistol / shotgun
+  idle is within 100 deg.
+- Build r: the armed grab (`mp`) and touch (`mpt`) blend out over 0.35 s (from frame ~40). Loose-item armed pickups
+  had the same blend.
+- Build r result (Noah): "still twisting awkwardly when returning to the weapon". Data: the touch's way back (frames
+  20-36) re-solved only upper arm / forearm / hand with the elbow pole and shoulder from the vanilla grab's own frames
+  (hand to the chest and flipped back onto the grip, 23-34): the solved upper arm swung 55-64 deg in single frames,
+  and the untouched roll / shoulder / finger tracks twisted with the vanilla motion.
+- Build s (assets only, `make_grab_seq.py --arg PART=touchret`; also in `build_touch_one`): every left-arm track of
+  `AS_ImmLoot_Touch0..24` plays the reach in reverse after the hold (frame 18 + i = frame 18 - i), the start pose
+  (the grip) from 36 on (the IK-on notify). Largest per-frame step now 29 deg (the reach-out's own). Blueprint as r.
+- Build s result (Noah): "no change". r and s changed everything before frame 36 and nothing after it, so the twist is
+  at the end: the left-hand IK came on at 1.2 s over 0.2 s with the hand in the vanilla AK grab's grip pose, 35-98 deg
+  (local) from the held weapon's own grip (ak74 idle 52, pistols 90-98).
+- Build t: touch IK-on at 0.8 s (the hand starts back) over 0.5 s (`TOUCH_IK_ON`, `touch_notifies`; assets via
+  `--arg PART=touchret`). Probe: per tick, the left hand's turn in the camera bone's frame (hand forward / up axes,
+  forearm up axis) for 2.5 s from the reach start or the way back: `TwStep`, `TwPos` (our montage position), `TwMax`
+  at `TwMaxPos` / `TwMaxT`, `TwSum`, `TwLate` (from montage 1.1 s), `NTwBig` (> 20 deg steps).
+- Build t result (Noah): "still looks like it's twisting". Probe (works): the hand's turn per tick stays under 15 deg
+  from the animation itself, but jumps 71-82 deg in one tick on the way out (montage 0.18-0.25 s) and 125 deg on the
+  way back (~1.0 s), each inside the left-hand IK's off / on blend: the IK's grip (the weapon's own `jnt_l_hand`
+  socket) and our keyed grip (the vanilla AK grab) are far apart, and the IK's blend between them flips.
+- Build u: armed body / stash touches are left-arm local-space additives (`AS_ImmLoot_TouchAdd0..24`, from the touch
+  assets, base frame 0, shoulder subtree only, no notifies, no curve; `make_grab_seq.py --arg PART=touchadd`) played in
+  FullBody (after the weapon layer and its IK, which stays on). Doors keep the LeftHand touch (`mpt`).
+- Build u result (Noah): "way worse: the normal reach out looks totally broken, like the hand is jelly or alien".
+  Reverted (assets deleted). Dead end: a left-arm local additive (against the AK grab's frame 0) over another
+  weapon's grip pose in FullBody.
+- Build v: the LeftHand touch of build t back; touch notifies: IK off at 0.036 s over 0.06 s (the reach-out turns the
+  hand ~170 deg by frame 7, the default 0.2 s blend crossed 180 deg = the way-out flip at 0.18-0.25 s), IK on at 1.2 s
+  (frame 36, the start pose again) over 0.25 s.
+- Build v result (Noah, pistol): "very obviously twisting when coming back". Probe: 76-116 deg in one tick at montage
+  0.10-0.20 s (the LeftHand slot's 0.2 s blend-in), 23-30 deg a tick for ~0.3 s on the way back. Data: the touches
+  start / end in the vanilla AK grab's grip, 9.7 cm / 88 deg from every pistol's support grip (kora / apb / pm / udp /
+  rhino within 2.6 cm / 24 deg of each other), and their wrist rolls ~170 deg with the vanilla reach.
+- Build w: with a pistol (`GetMainHandEquipType` = 1) the touch is `AS_ImmLoot_TouchPt<bin>` (`make_grab_seq.py --arg
+  PART=touchpt`): every left-arm track at `AS_fp_pm_idle` frame 0, only upper arm / forearm solved to the same point
+  (elbow pole turning from the pistol pose's own to out-left-down: the rest pole flipped the low-left bins 30-35 deg a
+  frame), hand at the pistol grip wrist (no roll); out by 12, held to 18, back by 36; max step 13.5 deg a frame.
+- Build w result (Noah): pistol "no more twisting, but the hand isn't facing away from the player, it looks like it is
+  still holding a grip instead of a high five facing away"; rifles still twist. Research: the game authors its own
+  left-hand gestures per weapon family (`MG_fp_ar_flashlight`, `MG_fp_pt_flashlight`, `MG_fp_bh_flashlight`, NVG
+  per family...). Long-gun idles' left hands (rifle / SMG / sniper / shotgun) lie within 0-64 deg of
+  `fp_ar_idle_stand` (m10, bucket, integral, m16 grip farthest), 32 deg from the old touches' start.
+- Build x: `build_touch_pistol(i, family)` for "pt" (`AS_fp_pm_idle` -> `AS_ImmLoot_TouchPt`) and "ar"
+  (`fp_ar_idle_stand` -> `AS_ImmLoot_TouchAr`, now every long gun's touch): the hand follows the swung forearm, then
+  turns one way round to the palm facing the target, fingers up (`palm_q`), the fingers opening (the dialogue open
+  hand), over frames 5-17 (after the slot's blend-in, so the blend only spans grip-to-grip gaps: <= 60 deg for most
+  weapons, 108 for the m10), back over 19-31; half the turn about the forearm goes to `jnt_l_fore_arm_roll`. Largest
+  per-frame step 14 deg (pistol), 28 deg (rifle, low-left bin: a ~170 deg palm turn).
+- Build x result (Noah): "the twisting is now totally gone". But: fingers should be spread, the hand angled down and
+  away a bit ("too robotic and upright"); on the way back the hand goes too far right (clipping the gun), then left
+  into place.
+- Build y: fingers from `AS_fp_dialogue_bothhands_statement` k70 (searched vanilla left hands with straight fingers:
+  max index-pinky spread 49-56 deg; the old door hand ~20); palm toward the target tilted ~30 deg down
+  (`TOUCH_PALM_DOWN`), fingers leaning out-left ~20 deg (`TOUCH_FINGERS_UP`; `palm_q` up vector). IK on at 1.0 s
+  (frame 30, palm already back) over 0.35 s so the hand converges on the real grip while travelling in. Probe adds the
+  hand's offset from the held weapon's left-hand socket in view axes (`TwGF/TwGR/TwGU` cm) and the farthest right
+  (`TwRMax` at `TwRMaxPos`).
+- Build y result (Noah): better; the hand "twisted counter clockwise too much, like breaking the wrist"; on the return
+  the hand clips through the barrel to the grip (pistols and rifles). Probe: on the way back the hand came from above
+  the grip and passed it 3.5 cm right / 3-5 cm above (rifle), straight down from above-left (pistol).
+- Build z (assets only): fingers lean `TOUCH_FINGERS_UP` (0, 0.1, 1) (was out-left); the hand path is a quadratic
+  curve through `TOUCH_EXIT` (2 fwd, 10 left, 5 down cm of the grip), so it leaves and rejoins the grip from the left
+  and below (checked: frames 30-34 at (1,-4,-2) .. (0,-1,0) cm of the grip).
+- Build z result (Noah): wrist angle good; still clips through pistols and rifles on the return; at the end "the hand
+  goes left and right slightly before it settles". Probe: rifle returns go from 4 cm left to 3 cm right of the
+  weapon's grip at montage 1.05-1.1 s (2 cm above), then back to 0: the stand idle's grip R sits ~3-4 cm right /
+  2.5 cm above the held rifle's own grip, and the IK (on from 1.0 s) pulled the hand back from R. ZST's watch check
+  (extracted, `zen_names`): montages in the LeftHand slot with `left_hand_curve` and an `AnimNotify_HandIKState`
+  window (Grip / Free variants), plus `BPI_WatchPose013.SetWatchPose013(Alpha, PreserveGrip)` implemented in its
+  own `AnimBP_Player` override: its smooth hand-back comes from that override, not available to us.
+- Build za (assets only): the touch path starts / ends at R + `TOUCH_END_OFF` (1 fwd, 5 left, 4 down cm), leaving and
+  rejoining through R + END + `TOUCH_EXIT` (2, -8, -6): the IK takes the hand to the real grip from the left / below.
+- Build za result (Noah): "YESSSS perfeeeeccctttttttt. clean it up and get it ready for release".
+- Release cleanup: probe chains of builds l-za removed from the actor graph (backpack view / right-hand / vanilla
+  backpack probes, the build t / y hand turn and grip-offset logger); unused assets deleted from the kit, the repo
+  mirror and NewPackages: `AS_ImmLoot_Touch0..24` (replaced by the family touches), `AS_ImmLoot_Bag*Add` (unused since
+  build k), `AS_ImmLoot_ArmHold`, `AS_ImmLoot_PickReach` (no referencers); the generators no longer build them.
