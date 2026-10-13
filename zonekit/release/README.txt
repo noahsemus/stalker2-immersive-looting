@@ -1,4 +1,4 @@
-Immersive Looting v1.1.1 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
+Immersive Looting v1.2.0 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
 When you pick something up, Skif reaches out with his left hand, takes it and pockets it,
 instead of the item just vanishing. Looting a body or a stash, he reaches out and touches
 it first. No UE4SS required.
@@ -31,12 +31,14 @@ WHAT IT DOES
     weapon, or to rest with empty hands). Holding the key picks up and carries a body
     exactly as in vanilla (no touch animation).
   - Holding the interact key on a food, drink or medicine item uses it as in vanilla: Skif
-    first takes it with his hand, then plays the game's own use animation.
+    first takes it with his hand, then plays the game's own use animation. Using an item
+    from a body's or stash's loot window works the same way.
   - Doors: Skif pushes a door open with his open hand or pulls it with his fist.
   - Optional Mod Configuration Menu (MCM) settings: "Body and stash animation" switches the
     touch on bodies, crates and bags off (their loot window then opens at once, as in
     vanilla); "Door animation" switches the door push / pull off. The mod works without MCM
-    installed.
+    installed. "Bag for bodies and stashes" (off by default): instead of the hand, Skif
+    takes out his backpack, the game's own inventory animation, while the loot window is open.
   - No reach (vanilla pickup) while sprinting, aiming, reloading, in dialogue or cutscenes,
     or with a detector or binoculars in hand.
   - Artifacts and mutant parts keep their own vanilla animations.
@@ -51,6 +53,12 @@ COMPATIBILITY
 Source and build instructions: https://github.com/noahsemus/stalker2-immersive-looting
 
 CHANGES
+  1.2.0  The hand no longer twists or flips when it goes back to the weapon after a body or
+         stash: the reach is now made for each kind of weapon (rifles, SMGs, snipers and
+         shotguns; pistols), the hand opens with the palm toward the body or stash, and it
+         goes back to the grip around the weapon, not through it. Using an item from the
+         loot window plays the grab-then-use, as when holding the interact key. New optional
+         MCM setting "Bag for bodies and stashes" (off by default).
   1.1.1  Holding the interact key to use an item shows the hand grab again (1.1.0 sent the
          hand off screen, so the use looked vanilla).
   1.1.0  New empty-hands pickup: the hand reaches to where the item is, standing and
