@@ -117,9 +117,10 @@ harness on 2026-10-09.
   never published on Nexus, its GitHub release and tag were replaced): checkpoint-131 plus "Disable item fly animation"
   (was "Hide items in the hand": the copy waits where the item lay, at the grab frame it is in the hand at once; MCM
   mod id "Immersive Looting  " with two trailing spaces drops the old toggle) and armed pickups per weapon family
-  (`AS_ImmLoot_GrabAr` / `GrabPt`: the touches' way back to the grip). Released = the paks Noah tested, unchanged (the
-  four unused actor variables and the unreferenced `AS_ImmLoot_Grab` template stay in; harmless). Zip in
-  `zonekit/builds/v1.3.0/`, GitHub release v1.3.0.
+  (`AS_ImmLoot_GrabAr` / `GrabPt`: the touches' way back to the grip). Then (Noah: "remove the leftovers and we'll
+  test again", then "cut a release") re-cut from the cleanup build: strafe-experiment nodes gone, 104 + 3 unused
+  variables removed, `AS_ImmLoot_Grab` / `GrabBH` / `Twist` deleted (NewContent 7.0 -> 5.4 MB). Zip in
+  `zonekit/builds/v1.3.0/`, GitHub release v1.3.0 (replaced twice; never on Nexus before this one).
 
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,

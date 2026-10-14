@@ -122,6 +122,14 @@ def cs(seq, bone, k):
     return p, q
 
 
+def load_tmpl(name, fallback):
+    """v1.3.0 release cleanup: AS_ImmLoot_Grab and AS_ImmLoot_GrabBH are build intermediates (the cook ships everything
+    in the plugin's Content, and nothing plays them): deleted after a full rebuild (PART=dropint). The partial builds
+    use them as templates for tracks / frames; without them, an asset made from them (same tracks and frames)."""
+    path = f"{DIR}/{name}"
+    return unreal.load_asset(path if EAL.does_asset_exist(path) else f"{DIR}/{fallback}")
+
+
 BASE_BH = "/Game/_STALKER2/Animations/Player/AnimSequences/bh/stand/fp_bh_idle_stand"
 NAME_BH = "AS_ImmLoot_GrabBH"
 
@@ -793,7 +801,7 @@ def build_touch_pistol(i, family="pt"):
     prefix, base_path = TOUCH_FAMILIES[family]
     name = f"{prefix}{i}"
     path = f"{DIR}/{name}"
-    tmpl = unreal.load_asset(f"{DIR}/{NAME}")   # release cleanup: the grab (same tracks / frames); the old AS_ImmLoot_Touch* are gone
+    tmpl = load_tmpl(NAME, "AS_ImmLoot_GrabAr")   # release cleanup: the grab (same tracks / frames); the old AS_ImmLoot_Touch* are gone
     if not EAL.does_asset_exist(path):
         unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, tmpl)
     seq = unreal.load_asset(path)
@@ -945,7 +953,7 @@ def build_grab_family(family):
     (it takes the hand to the real grip from the left / below)."""
     name = GRAB_FAMILY_NAMES[family]
     path = f"{DIR}/{name}"
-    tmpl = unreal.load_asset(f"{DIR}/{NAME}")
+    tmpl = load_tmpl(NAME, "AS_ImmLoot_GrabAr")
     if not EAL.does_asset_exist(path):
         unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, tmpl)
     seq = unreal.load_asset(path)
@@ -1044,7 +1052,7 @@ def build_door_family(family, mode):
     _prefix, base_path = TOUCH_FAMILIES[family]
     name = DOOR_FAMILY_NAMES[(family, mode)]
     path = f"{DIR}/{name}"
-    tmpl = unreal.load_asset(f"{DIR}/{NAME}")
+    tmpl = load_tmpl(NAME, "AS_ImmLoot_GrabAr")
     if not EAL.does_asset_exist(path):
         unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, tmpl)
     seq = unreal.load_asset(path)
@@ -1263,7 +1271,7 @@ def build_pat_table():
     pauses at 0.9 s while the loot window is open), back by 45. Both hands' IK off at the start and on at 1.4 s (the
     Blueprint hides a held weapon and draws it again after). Played through AM_ImmLoot_Pat (LeftHand + RightHand slot
     tracks, set once by hand in the montage editor), started at the segment."""
-    tmpl = unreal.load_asset(f"{DIR}/{NAME}")
+    tmpl = load_tmpl(NAME, "AS_ImmLoot_GrabAr")
     path = f"{DIR}/{NAME_PAT}"
     if not EAL.does_asset_exist(path):
         unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(NAME_PAT, DIR, tmpl)
@@ -1801,7 +1809,7 @@ def build_pick_pose():
     name = "AS_ImmLoot_PickPose"
     path = f"{DIR}/{name}"
     if not EAL.does_asset_exist(path):
-        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, unreal.load_asset(f"{DIR}/{NAME_BH}"))
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, load_tmpl(NAME_BH, "AS_ImmLoot_GrabBHAdd"))
     seq = unreal.load_asset(path)
     tracks = [str(t) for t in AL.get_animation_track_names(vod)]
     ctrl = seq.get_editor_property("controller")
@@ -1840,7 +1848,7 @@ def build_twist():
     name = "AS_ImmLoot_Twist"
     path = f"{DIR}/{name}"
     if not EAL.does_asset_exist(path):
-        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, unreal.load_asset(f"{DIR}/{NAME_BH}"))
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, load_tmpl(NAME_BH, "AS_ImmLoot_GrabBHAdd"))
     seq = unreal.load_asset(path)
     rots = []
     for i in range(181):
@@ -1877,7 +1885,7 @@ def build_arm_hold():
     name = "AS_ImmLoot_ArmHold"
     path = f"{DIR}/{name}"
     if not EAL.does_asset_exist(path):
-        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, unreal.load_asset(f"{DIR}/{NAME_BH}"))
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, load_tmpl(NAME_BH, "AS_ImmLoot_GrabBHAdd"))
     seq = unreal.load_asset(path)
     bones = [SHOULDER, ARM, FORE, HAND, "jnt_l_weapon"] + FINGERS + [b for b in ("jnt_l_arm_roll", "jnt_l_fore_arm_roll", "jnt_l_elbow") if True]
     tracks_b = [str(t) for t in AL.get_animation_track_names(base)]
@@ -1906,7 +1914,7 @@ def build_arm_hold():
 
 
 def build_use_tables(src, tgt_rot, nkeys):
-    template = unreal.load_asset(f"{DIR}/{NAME_BH}")
+    template = load_tmpl(NAME_BH, "AS_ImmLoot_GrabBHAdd")
     ar = unreal.AssetRegistryHelpers.get_asset_registry()
     opt = unreal.AssetRegistryDependencyOptions(include_soft_package_references=False, include_hard_package_references=True)
     only = ARGS.get("USE_ONLY", "")
@@ -1922,6 +1930,10 @@ def build_use_tables(src, tgt_rot, nkeys):
 
 try:
     pick_only = ARGS.get("PART", "") == "pickstand"   # 1.3.1: only the standing empty-hands pickup table (follow_pitch)
+    if ARGS.get("PART", "") == "dropint":   # v1.3.0: the build intermediates out of the plugin (they would ship)
+        for nm_ in (NAME, NAME_BH):
+            out.append(f"{nm_}: deleted {EAL.delete_asset(f'{DIR}/{nm_}') if EAL.does_asset_exist(f'{DIR}/{nm_}') else 'absent'}")
+        raise SystemExit
     if ARGS.get("PART", "") == "grabfam":   # n2j: the armed pickup per family, the touch's return
         for fam in ("ar", "pt"):
             build_grab_family(fam)
@@ -2011,7 +2023,7 @@ try:
             out.append(f"k{k:02d} w={w:.2f} hand=({H[0]:.1f},{H[1]:.1f},{H[2]:.1f}) -> ({T2[0]:.1f},{T2[1]:.1f},{T2[2]:.1f}) "
                        f"reach {norm(to_t):.1f}/{l1 + l2:.1f}")
     if pick_only:
-        build_use_table(src, tgt_rot, nkeys, unreal.load_asset(BASE_BH), "AS_ImmLoot_GrabBHAdd", unreal.load_asset(f"{DIR}/{NAME_BH}"),
+        build_use_table(src, tgt_rot, nkeys, unreal.load_asset(BASE_BH), "AS_ImmLoot_GrabBHAdd", load_tmpl(NAME_BH, "AS_ImmLoot_GrabBHAdd"),
                         out_dir=DIR, grip_seq="src", azims=list(range(-30, 61, 5)), dists=[60], follow_pitch=True)
         raise SystemExit
     ctrl = seq.get_editor_property("controller")
@@ -2063,7 +2075,7 @@ try:
     if ARGS.get("BH", "1") == "1":
         build_bh_reach_table(src, seq, tgt_rot, nkeys)   # build 12 (build_bh_table = checkpoint-b11)
     if ARGS.get("PICKADD", "0") == "1":    # build 38
-        build_use_table(src, tgt_rot, nkeys, unreal.load_asset(BASE_BH), "AS_ImmLoot_GrabBHAdd", unreal.load_asset(f"{DIR}/{NAME_BH}"),
+        build_use_table(src, tgt_rot, nkeys, unreal.load_asset(BASE_BH), "AS_ImmLoot_GrabBHAdd", load_tmpl(NAME_BH, "AS_ImmLoot_GrabBHAdd"),
                         out_dir=DIR, grip_seq="src", azims=list(range(-30, 61, 5)), dists=[60], follow_pitch=True)   # build 39; build 42: the vanilla grab's fingers; 1.3.1: follow_pitch
     if ARGS.get("ARMHOLD", "0") == "1":
         build_arm_hold()
@@ -2072,13 +2084,13 @@ try:
     if ARGS.get("PICKCROUCH", "0") == "1":    # build 41: crouched, its own rest pose (the stand table's delta barely moved the
         # crouched arm: build 40 probe, the hand ended where it started)
         build_use_table(src, tgt_rot, nkeys, unreal.load_asset("/Game/_STALKER2/Animations/Player/AnimSequences/bh/crouch/fp_bh_idle_crouch"),
-                        "AS_ImmLoot_GrabBHAddCrouch", unreal.load_asset(f"{DIR}/{NAME_BH}"), out_dir=DIR,
+                        "AS_ImmLoot_GrabBHAddCrouch", load_tmpl(NAME_BH, "AS_ImmLoot_GrabBHAdd"), out_dir=DIR,
                         grip_seq="src", azims=list(range(-30, 61, 5)), dists=[60], finger_base=unreal.load_asset(BASE_BH),
                         hand_roll=-35.0)   # build 46: -35 (tester: -70 "too far", the item clipped); build 45 (tester: crouched "rotate clockwise so the back of the hand faces up, now it faces left")   # build 42/44: the vanilla grab's fingers, from the standing rest
     if ARGS.get("PICKPOSE", "0") == "1":   # build 30: the pickup in our own use pose
         build_pick_pose()
         build_use_table(src, tgt_rot, nkeys, unreal.load_asset(f"{DIR}/AS_ImmLoot_PickPose"), "AS_ImmLoot_PickReach",
-                        unreal.load_asset(f"{DIR}/{NAME_BH}"), out_dir=DIR, lower_deg=7.0, max_dist=45.0)
+                        load_tmpl(NAME_BH, "AS_ImmLoot_GrabBHAdd"), out_dir=DIR, lower_deg=7.0, max_dist=45.0)
     if ARGS.get("USE", "0") == "1":
         build_use_tables(src, tgt_rot, nkeys)
     if ARGS.get("AR", "0") == "1":   # the rifle table never showed over a rifle (no left_hand_curve then); deleted for v1.0.0

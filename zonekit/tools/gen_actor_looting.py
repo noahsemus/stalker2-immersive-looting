@@ -3928,6 +3928,11 @@ g.link(_bgd["then"], member_call(ACTOR, "K2_DestroyActor", X7 + 1600, Y7 + 6100,
 # (builds 36-37, the game's left-hand IK driven through WeaponData.WeaponMesh: removed. 36: with empty hands there is no
 #  weapon mesh to move; 37: WeaponData's members are read-only to Blueprints ("Make Anim Player Weapon Data" has no pins))
 
+# v1.3.0 release cleanup: the strafe experiments (builds 47-55) were switched off in v1.1.1 (never wired: their nodes
+# compiled out); they are no longer emitted (STRAFE_EXPERIMENTS False drops their nodes and box, and AS_ImmLoot_Twist
+# is gone). The design for the real fix: zonekit/research/strafe/README.md
+STRAFE_EXPERIMENTS = False
+_n_strafe0, _b_strafe0 = len(g.nodes), len(g.boxes)
 TWX, TWY = X7 + 4000, Y7 + 13000
 g.box("EdGraphNode_Comment_936", TWX - 600, TWY - 300, 4200, 1300, "Build 47: strafing turns the body; the pickup's segment is re-picked every tick by the shoulder's turn (the hand stays on the item)")
 _twon = b_and(TWX - 300, TWY + 200, self_get("GrabBH", "bool", TWX - 500, TWY + 150), grab_active(TWX - 500, TWY + 250),
@@ -4056,6 +4061,14 @@ g.link(self_get("GrabMontage", "object", TWX + 1100, TWY + 150, sub=MONT), _msp[
 g.link(_newp, _msp["NewPosition"])
 g.link(_bsw["then"], _msp["execute"])
 chain(_msp, set_from("SegStart", "real", TWX + 1600, TWY, _segst, "", subcat="double"), inc("NTwSwitch", TWX + 1900, TWY, "count (probe)"))
+if not STRAFE_EXPERIMENTS:
+    for n_ in g.nodes[_n_strafe0:]:
+        for p_ in n_.pins.values():
+            for q_ in list(p_.links):
+                q_.links.remove(p_)
+            p_.links.clear()
+    del g.nodes[_n_strafe0:]
+    del g.boxes[_b_strafe0:]
 
 # build 35: the aim steps run first in the reach (brs.else -> Aim* -> reach steps)
 _brs_else = brs["else"]

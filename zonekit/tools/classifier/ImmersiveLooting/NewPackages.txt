@@ -2,8 +2,6 @@
 /ImmersiveLooting/Runtime/AS_ImmLoot_TouchPt21
 /ImmersiveLooting/Runtime/AS_ImmLoot_DoorPullBH
 /ImmersiveLooting/Runtime/AS_ImmLoot_DoorPushBH
-/ImmersiveLooting/Runtime/AS_ImmLoot_Grab
-/ImmersiveLooting/Runtime/AS_ImmLoot_GrabBH
 /ImmersiveLooting/Runtime/AS_ImmLoot_GrabBHAdd
 /ImmersiveLooting/Runtime/AS_ImmLoot_GrabBHAddCrouch
 /ImmersiveLooting/Runtime/AS_ImmLoot_PickPose
@@ -33,7 +31,6 @@
 /ImmersiveLooting/Runtime/AS_ImmLoot_TouchAr17
 /ImmersiveLooting/Runtime/AS_ImmLoot_TouchAr16
 /ImmersiveLooting/Runtime/AS_ImmLoot_TouchAr15
-/ImmersiveLooting/Runtime/AS_ImmLoot_Twist
 /ImmersiveLooting/Runtime/BP_ImmLootActor
 /ImmersiveLooting/Runtime/BP_ImmLootMCM
 /ImmersiveLooting/Runtime/BP_ImmLootSubsystem

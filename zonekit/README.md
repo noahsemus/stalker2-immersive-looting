@@ -606,3 +606,10 @@ mod go to `harness/docs/` instead (promote them).
   lies until the hand reaches it, then is in the hand at once). Tester: "do not keep the old toggle": mod id
   "Immersive Looting  " (two trailing spaces; the one-space id's entries stay in Noah's save, unlisted; settings back
   to their defaults once).
+- Release cleanup (tester: "remove the leftovers and we'll test again"): the strafe experiments' nodes (builds 47-55,
+  unwired since v1.1.1) are no longer emitted (`STRAFE_EXPERIMENTS` False; 3165 -> 3040 nodes), 104 unused actor
+  variables and 3 MCM ones removed (`BlueprintEditorLibrary.remove_unused_variables`; setup_assets / probe lists pruned),
+  deleted: `AS_ImmLoot_Twist` (strafe), `AS_ImmLoot_GrabBH` (18 MB, unreferenced since the additive tables), and
+  `AS_ImmLoot_Grab` (the family grabs' template; the editor would not delete it while it held it from this session's
+  builds, deleted from disk with the editor closed). Build intermediates now: `make_grab_seq.py` `load_tmpl` falls back
+  to `GrabAr` / `GrabBHAdd`, `PART=dropint` deletes the intermediates after a full rebuild. NewContent 7.0 -> 5.4 MB.
