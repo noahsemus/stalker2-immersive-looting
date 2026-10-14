@@ -95,6 +95,10 @@ harness on 2026-10-09.
   the hand never crosses the weapon; Tim0st's Nexus "inverted hand" report), cleanup (probes of this session removed,
   30 unused assets deleted). Zip in `zonekit/builds/v1.2.0/`, GitHub release v1.2.0.
 
+- Next (Noah, 2026-10-13): door overhaul: pick push vs pull from the door's real swing (lockers open toward you),
+  rebuild the door assets with the touch recipe in `zonekit/research/touch/README.md` (what fixed the v1.2.0 touch,
+  checks, probe loggers); door research in `zonekit/research/2026-10-13-door-research.md`.
+
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
   `CoreVariables.cfg:888-889`), visual in `MeshComponent`; pickup is instant and has no BP-visible "item added" event.
