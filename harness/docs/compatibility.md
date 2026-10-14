@@ -90,7 +90,7 @@ Read from the installed containers with `zen_names.py` (2026-09-30):
   into `<kit>\Stalker2\Mods\` with the editor closed; never select or cook the stub (never bundle MCM). Copy the
   "(Message)" API nodes from the example (search often picks the wrong ones); feed `ComboBoxOptions` an array with
   one empty string.
-- Dropdowns (ImmersiveLooting 2026-10-14, verified in game): Type 7 (`NewEnumerator7`), `ComboBoxOptions` = the labels,
+- Dropdowns (ImmersiveLooting 2026-10-14, types verified in the saved provider Blueprint): Type 7 (`NewEnumerator7`), `ComboBoxOptions` = the labels,
   `ComboBoxSelectedOption` = the index (register: the current value; default: the default index); read back with
   `GetModSetting`'s `ComboBoxSelectedOption`. **Paste-text trap:** a pin default written right after `PinName` survives
   for string pins but an enum pin's (`Type`) is reset on paste: write `DefaultValue=` where the editor does (after the
