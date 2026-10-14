@@ -589,3 +589,20 @@ mod go to `harness/docs/` instead (promote them).
   `PAT_WRIST_UP` 35 deg about the hand's own side axis (fingers toward the back of the hand), weighted with the turn
   (`wv`); right hand's axis mirrored through `C_hand`. Scan: fingers +79/+80 deg (component) vs n2e +46, both hands
   alike; the turn out stays one way (largest hand step 31-33 deg, as n2e; bending the target instead gave 46 deg steps).
+
+## 2026-10-14 — after checkpoint-131: Hide items, armed pickup return
+- Tester: "Hide items" works but the item vanishes at the F tap, before the hand gets there; it should stay, then be
+  in the hand at once when the reach is done (no animating into the hand). And armed: on the way back to the weapon
+  after the grab the hand "goes a little too far right and then recorrects; the stash return looks good, copy it".
+- n2j: (1) the copy always waits where the item lay (`PendingCopy` true); `HideItem` makes the pull into the hand
+  0.001 s instead of 0.12 s (step 5), so at the grab frame the item is in the hand at once. (2) armed pickups play
+  `AS_ImmLoot_GrabPt` (pistol, MainHandEquipmentType 1) / `AS_ImmLoot_GrabAr` (else), `ArmedGrab`:
+  `make_grab_seq.py` PART=grabfam `build_grab_family`: `AS_ImmLoot_Grab` unchanged to the pocket frame 26, then the
+  touch's return on the family stance (path from the pocket to TOUCH_END_OFF off the stance grip through TOUCH_EXIT,
+  arm solved, elbow from the pocket's toward the stance's, hand turn / shoulder / roll / fingers eased, ends frame 38),
+  IK on at 1.067 s over 0.35 s, left_hand_curve 0 / 1 / 1 at 1.1 / 0 at 1.3. Scan: the hand comes in from the left and
+  below (frame 30: 24 cm left, 16 cm below the stance grip; frame 38: (1, -5, -4)), never right of the grip.
+- n2j MCM: "Hide items in the hand" renamed "Disable item fly animation" (tester's name; hover: the item stays where it
+  lies until the hand reaches it, then is in the hand at once). Tester: "do not keep the old toggle": mod id
+  "Immersive Looting  " (two trailing spaces; the one-space id's entries stay in Noah's save, unlisted; settings back
+  to their defaults once).

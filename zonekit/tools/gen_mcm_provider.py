@@ -34,7 +34,8 @@ KSL = cls("/Script/Engine.KismetSystemLibrary")
 # (WBP_MCM_ModContainer: AllSettings filtered by ModID); there is no remove call. But it only lists mods added this
 # session (ActiveModIDs, AddUniqueModID). So retiring settings = a new mod id: the old id's entries stay in the save,
 # unlisted. The new id looks the same on screen (a trailing space). Next time: "Immersive Looting  " (two), etc.
-MOD_ID = "Immersive Looting "
+# n2j (tester: "do not keep the old toggle", after "Hide items in the hand" became "Disable item fly animation"): two
+MOD_ID = "Immersive Looting  "
 # 1.3.1 (tester: "consolidate some of the toggles in a dropdown"): two dropdowns and two toggles. MCM setting types
 # (E_MCM_SettingType, from MCM_ModExample1): NewEnumerator0 = Bool, NewEnumerator7 = Combo Box (ComboBoxOptions =
 # the labels, ComboBoxSelectedOption = the index, read back by GetModSetting's ComboBoxSelectedOption).
@@ -52,8 +53,9 @@ SETTINGS = [
      "combo", "StashMode", ["Hand", "Backpack", "Off"], 0),
     ("Door animation", "Skif's hand reaches for the door when you open, close or peek through it. Off: doors behave as in vanilla.",
      "bool", "TouchDoors", None, True),
-    ("Hide items in the hand", "Skif's hand still reaches for loose items, but the item itself is not shown flying into his hand: "
-                               "it goes straight into the inventory, as in vanilla.",
+    # n2j (tester: rename, "disable item fly animation"; was "Hide items in the hand")
+    ("Disable item fly animation", "The item stays where it lies until Skif's hand reaches it, then it is in his hand at once "
+                                   "(it does not fly into the hand).",
      "bool", "HideItem", None, False),
 ]
 P = "BP_MCM_ModExample1.BP_MCM_ModExample1:EventGraph."

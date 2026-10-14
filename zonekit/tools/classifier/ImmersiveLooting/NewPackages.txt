@@ -88,3 +88,5 @@
 /ImmersiveLooting/Runtime/AS_ImmLoot_DoorPullPt
 /ImmersiveLooting/Runtime/AS_ImmLoot_PatTable
 /ImmersiveLooting/Runtime/AM_ImmLoot_Pat
+/ImmersiveLooting/Runtime/AS_ImmLoot_GrabAr
+/ImmersiveLooting/Runtime/AS_ImmLoot_GrabPt

@@ -927,6 +927,101 @@ def build_touch_pistol(i, family="pt"):
 
 
 
+GRAB_FAMILY_NAMES = {"ar": "AS_ImmLoot_GrabAr", "pt": "AS_ImmLoot_GrabPt"}
+GRAB_POCKET_K = 26     # the armed grab's pocket frame (Blueprint PocketTime 0.87 s): the item is gone there
+GRAB_BACK_K = 38       # the way back to the grip ends here (12 frames, the touch's return speed)
+GRAB_IK_ON = (32 / 30.0, 0.35)
+
+
+def build_grab_family(family):
+    """n2j (tester, armed loose-item pickup: "once the item has been grabbed and the hand goes back, then it starts to
+    return to the weapon, it goes a little too far right and then recorrects; the stash hand return looks good, copy
+    that exact return"): AS_ImmLoot_Grab's way back is the vanilla AK grab's (to the AK stand grip; the IK then slid the
+    hand to the held weapon's grip, past it and back, as the touches did before build za). AS_ImmLoot_GrabAr / ...Pt:
+    AS_ImmLoot_Grab unchanged to the pocket frame (reach, grab, pocket), then the touch's return on the family stance
+    (fp_ar_idle_stand / AS_fp_pm_idle): the hand's path from the pocket to TOUCH_END_OFF off the stance grip through
+    TOUCH_EXIT (it comes in from the left and below), upper arm / forearm solved (the elbow from the pocket's toward the
+    stance's), the hand's turn, the shoulder / roll / fingers eased to the stance, the IK on from frame 32 over 0.35 s
+    (it takes the hand to the real grip from the left / below)."""
+    name = GRAB_FAMILY_NAMES[family]
+    path = f"{DIR}/{name}"
+    tmpl = unreal.load_asset(f"{DIR}/{NAME}")
+    if not EAL.does_asset_exist(path):
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, tmpl)
+    seq = unreal.load_asset(path)
+    base = unreal.load_asset(TOUCH_FAMILIES[family][1])
+    n = AL.get_num_frames(tmpl)
+    tracks = [str(x) for x in AL.get_animation_track_names(tmpl)]
+    arm = [b for b in tracks if SHOULDER in [str(x) for x in AL.find_bone_path_to_root(tmpl, b)]]
+    sh_parent = [str(x) for x in AL.find_bone_path_to_root(base, SHOULDER)][1]
+    pp_p, pp_q = cs(base, sh_parent, 0)
+    Pk, Ek = GRAB_POCKET_K, GRAB_BACK_K
+    gl = {b: local(tmpl, b, Pk) for b in arm}        # the pocket frame's left arm
+    st = {b: local(base, b, 0) for b in arm}         # the family stance's
+
+    def chain(L):
+        sh_q = qmul(pp_q, L[SHOULDER][1]); sh_p = add(pp_p, qrot(pp_q, L[SHOULDER][0]))
+        a_q = qmul(sh_q, L[ARM][1]); A = add(sh_p, qrot(sh_q, L[ARM][0]))
+        f_q = qmul(a_q, L[FORE][1]); E = add(A, qrot(a_q, L[FORE][0]))
+        h_q = qmul(f_q, L[HAND][1]); R = add(E, qrot(f_q, L[HAND][0]))
+        return sh_q, A, E, R, a_q, f_q, h_q
+    _, A_P, E_P, H_P, _, _, HQ_P = chain(gl)
+    _, A_S, E_S, R_S, _, _, RQ_S = chain(st)
+    if dot4(HQ_P, RQ_S) < 0:
+        RQ_S = tuple(-x for x in RQ_S)
+    Re_ = add(R_S, TOUCH_END_OFF)
+    P1_ = add(Re_, TOUCH_EXIT)
+    l1, l2 = norm(sub(E_P, A_P)), norm(sub(H_P, E_P))
+    pole_P, pole_S = unit(sub(E_P, A_P)), unit(sub(E_S, A_S))
+    keys = {b: ([], [], []) for b in arm}
+    for k in range(n + 1):
+        if k <= Pk:
+            for b in arm:
+                l = local(tmpl, b, k)
+                keys[b][0].append(unreal.Vector(*l[0])); keys[b][1].append(unreal.Quat(*l[1])); keys[b][2].append(unreal.Vector(*l[2]))
+            continue
+        w = smooth(min(1.0, (k - Pk) / float(Ek - Pk)))
+        L = {b: (gl[b][0], slerp(gl[b][1], st[b][1], w), gl[b][2]) for b in arm}
+        sh_q, A, E_ref, R_ref, a_ref, f_ref0, _ = chain(L)
+        T = add(add(mul(H_P, (1 - w) ** 2), mul(P1_, 2 * w * (1 - w))), mul(Re_, w * w))
+        to_t = sub(T, A)
+        d = max(abs(l1 - l2) + 0.01, min((l1 + l2) * 0.999, norm(to_t)))
+        dv = unit(to_t)
+        a = (l1 * l1 - l2 * l2 + d * d) / (2 * d)
+        h = math.sqrt(max(l1 * l1 - a * a, 0.0))
+        ref = unit(add(mul(pole_P, 1.0 - w), mul(pole_S, w)))
+        pole = sub(ref, mul(dv, dot(ref, dv)))
+        pole = unit(pole) if norm(pole) > 1e-6 else unit(cross(dv, (0.0, 0.0, 1.0)))
+        E2 = add(A, add(mul(dv, a), mul(pole, h)))
+        T2 = add(A, mul(dv, d))
+        r1 = q_between(sub(E_ref, A), sub(E2, A))
+        a_q2 = qmul(r1, a_ref)
+        f_ref = qmul(a_q2, L[FORE][1])
+        R2 = add(E2, qrot(f_ref, L[HAND][0]))
+        r2 = q_between(sub(R2, E2), sub(T2, E2))
+        f_q2 = qmul(r2, f_ref)
+        HQ = slerp(HQ_P, RQ_S, w)
+        solved = {ARM: qmul(qinv(sh_q), a_q2), FORE: qmul(qinv(a_q2), f_q2), HAND: qmul(qinv(f_q2), HQ)}
+        for b in arm:
+            rq = solved.get(b, L[b][1])
+            keys[b][0].append(unreal.Vector(*L[b][0])); keys[b][1].append(unreal.Quat(*rq)); keys[b][2].append(unreal.Vector(*L[b][2]))
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot family grab", True)
+    for b, (pos, rot, scl) in keys.items():
+        ctrl.set_bone_track_keys(b, pos, rot, scl, True)
+    ctrl.close_bracket(True)
+    touch_notifies(seq, "grab")
+    cname = "left_hand_curve"
+    if cname in [str(x) for x in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]:
+        AL.remove_curve(seq, cname, False)
+    AL.add_curve(seq, cname, unreal.RawCurveTrackTypes.RCT_FLOAT, False)
+    AL.add_float_curve_keys(seq, cname, [0.0, 0.17, 1.1, 1.3, seq.get_play_length()], [0.0, 1.0, 1.0, 0.0, 0.0])
+    ev_ = [(round(AL.get_anim_notify_event_trigger_time(e), 3), round(e.notify.get_editor_property("blend_time"), 2))
+           for e in AL.get_animation_notify_events(seq) if e.notify]
+    out.append(f"{name}: pocket {Pk} -> grip-side end {Ek}, end off the stance grip {tuple(round(x, 1) for x in TOUCH_END_OFF)}, "
+               f"IK {ev_}, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
+
+
 DOOR_FAMILY_NAMES = {("ar", "push"): "AS_ImmLoot_DoorPushAr", ("ar", "pull"): "AS_ImmLoot_DoorPullAr",
                      ("pt", "push"): "AS_ImmLoot_DoorPushPt", ("pt", "pull"): "AS_ImmLoot_DoorPullPt"}
 DOOR_ARC = (3.0, -4.0, -14.0)      # door build B: the curve's control point from the path's end (component cm): the hand
@@ -1372,7 +1467,8 @@ def touch_notifies(seq, mode):
             hand = e.notify.get_editor_property("hand_to_apply")
     hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
     for t, end, bl in ((0.035907, None, None if mode != "touch" else TOUCH_IK_OFF_BLEND),
-                       ({"push": 1.27, "pull": 1.4}.get(mode, TOUCH_IK_ON[0]), 1.0, None if mode != "touch" else TOUCH_IK_ON[1])):
+                       ({"push": 1.27, "pull": 1.4, "grab": GRAB_IK_ON[0]}.get(mode, TOUCH_IK_ON[0]), 1.0,
+                        {"touch": TOUCH_IK_ON[1], "grab": GRAB_IK_ON[1]}.get(mode))):
         new = AL.add_animation_notify_event(seq, track, t, hik)
         new.set_editor_property("hand_to_apply", hand)
         if end is not None:
@@ -1826,6 +1922,10 @@ def build_use_tables(src, tgt_rot, nkeys):
 
 try:
     pick_only = ARGS.get("PART", "") == "pickstand"   # 1.3.1: only the standing empty-hands pickup table (follow_pitch)
+    if ARGS.get("PART", "") == "grabfam":   # n2j: the armed pickup per family, the touch's return
+        for fam in ("ar", "pt"):
+            build_grab_family(fam)
+        raise SystemExit
     if ARGS.get("PART", "") == "pat":   # both hands on bodies
         build_pat_table()
         raise SystemExit

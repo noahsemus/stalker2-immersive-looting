@@ -35,11 +35,16 @@ WHAT IT DOES
     from a body's or stash's loot window works the same way.
   - Doors: Skif pushes a door with his open hand or pulls it toward him, whichever way the door
     actually moves (open or close, from either side). Lockers, closets and cabinets too.
-  - Optional Mod Configuration Menu (MCM) settings: "Body and stash animation" switches the
-    touch on bodies, crates and bags off (their loot window then opens at once, as in
-    vanilla); "Door animation" switches the door push / pull off. The mod works without MCM
-    installed. "Bag for bodies and stashes" (off by default): instead of the hand, Skif
-    takes out his backpack, the game's own inventory animation, while the loot window is open.
+  - Bodies, both hands (MCM, off by default): Skif pats the body down with both hands,
+    three pats in different places, while the loot window is open. A weapon in hand is
+    put out of sight and drawn again after.
+  - Optional Mod Configuration Menu (MCM) settings (the mod works without MCM installed):
+      Looting bodies: Hand (default), Both hands, Backpack (Skif takes out his backpack,
+        the game's own inventory animation), or Off (the loot window opens at once).
+      Looting stashes: Hand (default), Backpack, or Off.
+      Door animation: on (default) or off.
+      Disable item fly animation (off by default): the item stays where it lies until
+        the hand reaches it, then it is in the hand at once instead of flying into it.
   - No reach (vanilla pickup) while sprinting, aiming, reloading, in dialogue or cutscenes,
     or with a detector or binoculars in hand.
   - Artifacts and mutant parts keep their own vanilla animations.
@@ -59,6 +64,16 @@ CHANGES
          pushed. Closets and cabinets get the hand too. With a weapon out the door hand no
          longer goes through the gun: it leaves and comes back in an arc under the weapon,
          and the push is a real shove.
+         MCM: the body and stash options are now two dropdowns (Hand, Both hands for
+         bodies, Backpack, Off) instead of checkboxes; your MCM settings for this mod go
+         back to their defaults once. New: "Both hands" pats the body down; "Disable item
+         fly animation" (off by default).
+         Picking something up with a weapon out: the hand goes straight back onto the grip
+         (no more sliding past it and back), for pistols and long guns.
+         Standing with empty hands, the sleeve no longer stretches at the edge of the screen
+         when picking something up or touching a stash (with wide viewmodel FOV mods).
+         Backpack looting: no more stuck backpack when looting quickly, the backpack shows
+         on every body, and a quick tap on a body no longer picks it up.
   1.2.0  The hand no longer twists or flips when it goes back to the weapon after a body or
          stash: the reach is now made for each kind of weapon (rifles, SMGs, snipers and
          shotguns; pistols), the hand opens with the palm toward the body or stash, and it

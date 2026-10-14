@@ -113,6 +113,14 @@ harness on 2026-10-09.
   interact (a tap carried the body), stale carry hold reset, tap-carry drop as the last resort. Unused actor variables
   `HoldComp` / `HoldOffComp` / `NHoldOff` / `NHoldOn` to delete before the release.
 
+- 2026-10-14 v1.3.0 re-released (Noah: "cut a release. this is perfect! this is the true 1.3.0"; the first 1.3.0 was
+  never published on Nexus, its GitHub release and tag were replaced): checkpoint-131 plus "Disable item fly animation"
+  (was "Hide items in the hand": the copy waits where the item lay, at the grab frame it is in the hand at once; MCM
+  mod id "Immersive Looting  " with two trailing spaces drops the old toggle) and armed pickups per weapon family
+  (`AS_ImmLoot_GrabAr` / `GrabPt`: the touches' way back to the grip). Released = the paks Noah tested, unchanged (the
+  four unused actor variables and the unreferenced `AS_ImmLoot_Grab` template stay in; harmless). Zip in
+  `zonekit/builds/v1.3.0/`, GitHub release v1.3.0.
+
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
   `CoreVariables.cfg:888-889`), visual in `MeshComponent`; pickup is instant and has no BP-visible "item added" event.

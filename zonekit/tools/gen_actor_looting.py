@@ -622,8 +622,10 @@ g.link(br1["then"], dis1["execute"])
 g.link(dis1["then"], np1["execute"])
 sp1 = self_set("PendingReach", "bool", X1 + 900, Y1 - 300, "reach pending", default="true")
 # 1.3.1 MCM "Hide items in the hand" (Nexus, Farsot: "it looks like you're force pulling items"; off by default): no copy
-sc1 = set_from("PendingCopy", "bool", X1 + 1200, Y1 - 300, b_not(X1 + 1100, Y1 - 150, self_get("HideItem", "bool", X1 + 900, Y1 - 150)),
-               "with a flying copy (unless HideItem)")
+# n2j (tester: "the item disappears right as I tap F, before the hand gets there; it should disappear and appear in
+# the hand instantly once the reach is done"): the copy always waits where the item lay; HideItem only makes the
+# hand take it at once at the grab frame (no pull into the hand, step 5)
+sc1 = self_set("PendingCopy", "bool", X1 + 1200, Y1 - 300, "with a copy (HideItem: taken at once, step 5)", default="true")
 chain(np1, sp1, sc1)
 
 # ---- 3: run a pending reach (from a pickup or a closed loot window): skip, or montage (+ flying copy) ----
@@ -1119,7 +1121,23 @@ sss = {"execute": sss0["execute"], "then": _p35[-1]["then"]}
 # hand goes fully out toward the ground ahead, is held at 0.6 s while the window is open, then comes straight back.
 blr = branch(X1 + 2600, Y1 - 300, "a corpse / stash touch? (hand fully out) else the item grab", self_get("LootReach", "bool", X1 + 2400, Y1 - 200))
 g.link(bst["then"], blr["execute"])
-g.link(blr["else"], mp["execute"])
+# n2j (tester: armed pickup "goes a little too far right on the way back to the weapon, then recorrects; copy the stash
+# return"): per weapon family, AS_ImmLoot_GrabAr / ...Pt (make_grab_seq build_grab_family: the grab to the pocket, then
+# the touch's return on the family stance)
+_gbt = kml("Conv_ByteToInt", X1 + 2300, Y1, [("InByte", "byte", dict(extra='DefaultValue="0",')), ("ReturnValue", "int", dict(out=True))])
+_gbe = kml("EqualEqual_IntInt", X1 + 2450, Y1, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="1",')), RB])
+g.link(_gbt["ReturnValue"], _gbe["A"])
+_bgp = branch(X1 + 2600, Y1 - 150, "n2j: a pistol (MainHandEquipmentType 1)? the pistol grab (else the long-gun grab)", _gbe["ReturnValue"])
+g.link(member_pure(OBJC, "GetMainHandEquipType", X1 + 2100, Y1, as_pc,
+                   [("ReturnValue", "byte", dict(sub=EN("/Script/Stalker2.EMainHandEquipmentType"), out=True))])["ReturnValue"], _gbt["InByte"])
+g.link(blr["else"], _bgp["execute"])
+for _ex, _nm, _yy in ((_bgp["then"], "AS_ImmLoot_GrabPt", -250), (_bgp["else"], "AS_ImmLoot_GrabAr", -100)):
+    _sa = self_set("ArmedGrab", "object", X1 + 2650, Y1 + _yy, _nm, sub=ANIMSEQB)
+    _sa.pins["ArmedGrab"].extra = f'DefaultObject="/ImmersiveLooting/Runtime/{_nm}.{_nm}",'
+    g.link(_ex, _sa["execute"])
+    g.link(_sa["then"], mp["execute"])
+mp.pins["Asset"].extra = ""
+g.link(self_get("ArmedGrab", "object", X1 + 2550, Y1 + 50, sub=ANIMSEQB), mp["Asset"])
 mpt = play_grab(X1 + 2750, Y1 - 450, TOUCH_SEQS[12], "left-hand touch, armed: hand out toward the body / stash (asset picked at the press)")
 mpt.pins["Asset"].extra = ""
 # build r (tester: "when the hand returns to the weapon it does the rotate and twist 360 thing"; Nexus, Tim0st): the 0.7 s
@@ -2761,7 +2779,9 @@ grab_at = d_op("Add_DoubleDouble", X3 - 300, Y3 + 650, self_get("ReachStart", "r
                     self_get("PlayRate", "real", X3 - 700, Y3 + 800, subcat="double")))
 since_grab = d_op("Subtract_DoubleDouble", X3 - 100, Y3 + 650, now(X3 - 300, Y3 + 750), grab_at)
 cl = kml("FClamp", X3 + 100, Y3 + 650, [D("Value"), D("Min", "0.0"), D("Max", "1.0"), RD])
-g.link(d_op("Divide_DoubleDouble", X3 - 100, Y3 + 750, since_grab, b_const="0.12"), cl["Value"])
+_pull = kml("SelectFloat", X3 - 300, Y3 + 850, [D("A", "0.001"), D("B", "0.12"), ("bPickA", "bool", dict(extra='DefaultValue="false",')), RD])
+g.link(self_get("HideItem", "bool", X3 - 500, Y3 + 900), _pull["bPickA"])   # n2j: HideItem = in the hand at once
+g.link(d_op("Divide_DoubleDouble", X3 - 100, Y3 + 750, since_grab, _pull["ReturnValue"]), cl["Value"])
 alpha = cl["ReturnValue"]
 _bone_w = member_pure(SKC, "GetSocketLocation", X3 - 900, Y3 + 900, mesh,
                    [("InSocketName", "name", dict(extra=f'DefaultValue="{HAND}",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
