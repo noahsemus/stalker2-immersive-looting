@@ -101,6 +101,17 @@ harness on 2026-10-09.
   downward arc under the weapon, accelerating push stroke); the old armed `AS_ImmLoot_DoorPush/Pull` deleted. Door
   research `zonekit/research/2026-10-13-door-research.md`, touch recipe `zonekit/research/touch/README.md`. Zip in
   `zonekit/builds/v1.3.0/`, GitHub release v1.3.0. Not tested by Noah: lockers / closets / cabinets.
+  Noah never published 1.3.0 on Nexus; work goes on toward the next release on top of it.
+
+- 2026-10-14 checkpoint-131 (Noah: "backpack seems fixed, the patting animation looks good, let's checkpoint this";
+  paks in `zonekit/builds/checkpoint-131/`): MCM dropdowns "Looting bodies" (Hand / Both hands / Backpack / Off),
+  "Looting stashes" (Hand / Backpack / Off), "Door animation", "Hide items in the hand" (new ModID with a trailing
+  space retires the old checkboxes); both-hands pat on bodies (`AS_ImmLoot_PatTable` / `AM_ImmLoot_Pat`: three arcing
+  pats, hands bent up at the wrist, out of view before the weapon's equip); standing empty-hands pickup turns the
+  shoulder with the view (EMPERORTECH's stretched sleeve); fast bag looting (our equip replay no longer skips a press,
+  F seen down without "just pressed" counts as a press); bodies: no tap-interaction switch-off and never an injected
+  interact (a tap carried the body), stale carry hold reset, tap-carry drop as the last resort. Unused actor variables
+  `HoldComp` / `HoldOffComp` / `NHoldOff` / `NHoldOn` to delete before the release.
 
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,

@@ -53,6 +53,7 @@ SKA = cls("/Script/Engine.SkeletalMeshActor")
 ANIMI = cls("/Script/Engine.AnimInstance")
 MONT = cls("/Script/Engine.AnimMontage")
 ICOMP = cls("/Script/Stalker2.InteractionComponent")
+HOLDC = cls("/Script/Stalker2.HoldComponent")
 IIC = "/Script/Stalker2.InteractableItemContainer"
 GS = cls("/Script/Engine.GameplayStatics")
 KML = cls("/Script/Engine.KismetMathLibrary")
@@ -620,7 +621,9 @@ np1 = inc("NPickups", X1 + 600, Y1, "count pickups")
 g.link(br1["then"], dis1["execute"])
 g.link(dis1["then"], np1["execute"])
 sp1 = self_set("PendingReach", "bool", X1 + 900, Y1 - 300, "reach pending", default="true")
-sc1 = self_set("PendingCopy", "bool", X1 + 1200, Y1 - 300, "with a flying copy", default="true")
+# 1.3.1 MCM "Hide items in the hand" (Nexus, Farsot: "it looks like you're force pulling items"; off by default): no copy
+sc1 = set_from("PendingCopy", "bool", X1 + 1200, Y1 - 300, b_not(X1 + 1100, Y1 - 150, self_get("HideItem", "bool", X1 + 900, Y1 - 150)),
+               "with a flying copy (unless HideItem)")
 chain(np1, sp1, sc1)
 
 # ---- 3: run a pending reach (from a pickup or a closed loot window): skip, or montage (+ flying copy) ----
@@ -632,6 +635,26 @@ g.link(br3["then"], spr["execute"])
 
 # skip conditions (each also a bit in SkipBits for the probe)
 SX, SY = X1 + 400, Y1 + 600
+
+
+def _ieq(x, y, var, val):
+    n = kml("EqualEqual_IntInt", x, y, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra=f'DefaultValue="{val}",')), RB])
+    g.link(self_get(var, "int", x - 200, y), n["A"])
+    return n["ReturnValue"]
+
+
+#   n2f (tester, bag on bodies, looting fast: "sometimes the backpack doesn't appear"; probe: the press came during the
+#   last bag's weapon draw, i.e. our replay of the game's equip, and was skipped as "action"; the skipped touch then left a
+#   1 s "wait for an item's use" that stopped the next bag): our own equip replay is no reason to skip a bag or a pat
+#   (both hide the weapon and replay the draw after; the replay is stopped when they start)
+_tib = lambda x, y: self_get("TouchIsBody", "bool", x, y)
+_hides = b_or(SX - 200, SY + 1200,
+              b_and(SX - 300, SY + 1200, _tib(SX - 500, SY + 1200), b_or(SX - 400, SY + 1260, _ieq(SX - 500, SY + 1260, "BodyMode", 1), _ieq(SX - 500, SY + 1330, "BodyMode", 2))),
+              b_and(SX - 300, SY + 1400, b_not(SX - 400, SY + 1400, _tib(SX - 600, SY + 1400)), _ieq(SX - 500, SY + 1470, "StashMode", 1)))
+_replay_ours = lambda x, y: d_op("GreaterEqual_DoubleDouble", x, y, self_get("EquipReplayAt", "real", x - 200, y, subcat="double"),
+                                 self_get("GameMontageAt", "real", x - 200, y + 70, subcat="double"), ret=RB)
+_ours = b_and(SX, SY + 1200, self_get("LootReach", "bool", SX - 200, SY + 1130), b_not(SX - 100, SY + 1620, self_get("DoorTouch", "bool", SX - 300, SY + 1620)),
+              _hides, _replay_ours(SX - 100, SY + 1550))
 conds = [
     ("sprint", obj_q("IsSprinting", SX, SY, as_pc)),
     ("aim", obj_q("IsAiming", SX, SY + 80, as_pc)),
@@ -642,7 +665,8 @@ conds = [
                                                     d_op("Subtract_DoubleDouble", SX - 100, SY + 200, now(SX - 300, SY + 200),
                                                          self_get("GameMontageAt", "real", SX - 300, SY + 260, subcat="double")),
                                                     b_const="0.3", ret=RB)),
-                     b_not(SX + 200, SY + 130, self_get("UseMode", "bool", SX, SY + 130)))),
+                     b_not(SX + 200, SY + 130, self_get("UseMode", "bool", SX, SY + 130)),
+                     b_not(SX + 200, SY + 1100, _ours))),   # n2f
     ("lefthand", b_and(SX + 240, SY + 240, slot_active(SX, SY + 240, anim, "LeftHand"),
                        b_not(SX + 200, SY + 320, grab_active(SX, SY + 320)),
                        b_not(SX + 200, SY + 290, self_get("UseMode", "bool", SX, SY + 290)))),
@@ -1271,10 +1295,17 @@ def bag_anim(x, y, asset, comment):
 
 
 BX, BY = X1 + 2300, Y1 - 2400
-g.box("EdGraphNode_Comment_942", BX - 80, BY - 200, 5200, 900, "Bag looting: the inventory's bag animation instead of the hand (setting BagLoot)")
+g.box("EdGraphNode_Comment_942", BX - 80, BY - 200, 5200, 900, "Bag looting: the inventory's bag animation instead of the hand (MCM Body / Stash looting = Backpack)")
+#   1.3.1 MCM dropdowns: a body with "Body looting" = Backpack (2), a stash with "Stash looting" = Backpack (1)
+_bgb = kml("EqualEqual_IntInt", BX - 500, BY + 270, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="2",')), RB])
+g.link(self_get("BodyMode", "int", BX - 700, BY + 270), _bgb["A"])
+_bgt = kml("EqualEqual_IntInt", BX - 500, BY + 340, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="1",')), RB])
+g.link(self_get("StashMode", "int", BX - 700, BY + 340), _bgt["A"])
+_bgs = {"ReturnValue": b_or(BX - 300, BY + 270, b_and(BX - 400, BY + 230, self_get("TouchIsBody", "bool", BX - 600, BY + 200), _bgb["ReturnValue"]),
+                            b_and(BX - 400, BY + 330, b_not(BX - 500, BY + 400, self_get("TouchIsBody", "bool", BX - 700, BY + 400)), _bgt["ReturnValue"]))}
 bbag = branch(BX, BY, "a body / stash, the bag setting on? the bag comes out (else the hand)",
-              b_and(BX - 100, BY + 200, self_get("LootReach", "bool", BX - 300, BY + 200), self_get("BagLoot", "bool", BX - 300, BY + 270)))
-g.link(bdt3["else"], bbag["execute"])
+              b_and(BX - 100, BY + 200, self_get("LootReach", "bool", BX - 300, BY + 200), _bgs["ReturnValue"]))
+#   (n2: the both-hands branch comes first: see below)
 g.link(bbag["else"], bst["execute"])
 #   build k (tester: "the bag animation as a layer that only moves the arms, over Skif's own posture"; builds a-j: over
 #   MainActionSlot / FullBody / the game's backpack posture: camera taken, arms wrong, a crash): the copied In / Idle /
@@ -1310,6 +1341,27 @@ _sbw1 = self_set("BagWeapon", "bool", BX + 450, BY - 300, "show it after the bag
 _whm = member_pure(OBJC, "GetWeaponInHandsMeshComponent", BX + 100, BY - 600, as_pc, [("ReturnValue", "object", dict(sub=SKC, out=True))])["ReturnValue"]
 _whd = member_call(SC_, "SetHiddenInGame", BX + 300, BY - 450, _whm, "the weapon hidden (still in the hands)", [B("NewHidden", "true"), B("bPropagateToChildren", "true")])
 chain(_bbw, _whd, _sbw1)
+
+
+def stop_replay(x, y, before):
+    """n2f: our replay of the game's equip still playing (the press came during the last bag's / pat's draw)? it stops
+    (0.1 s) and its weapon show is cancelled: the bag / pat hides the weapon and replays the draw after. Inserted in
+    front of `before` (its incoming exec links move to the check)."""
+    b = branch(x, y, "n2f: our equip replay is what plays? it stops", _replay_ours(x - 150, y + 200))
+    for l_ in list(before["execute"].links):
+        before["execute"].links.remove(l_); l_.links.remove(before["execute"])
+        g.link(l_, b["execute"])
+    ms = member_call(ANIMI, "Montage_Stop", x + 300, y, anim, "out (0.1 s)", [
+        ("InBlendOutTime", "real", dict(subcat="float", extra='DefaultValue="0.100000",')), ("Montage", "object", dict(sub=MONT))])
+    ms.pins["Montage"].const = True
+    g.link(self_get("LastEquipMont", "object", x + 100, y + 200, sub=MONT), ms["Montage"])
+    sw = self_set("WeaponShowTick", "int", x + 600, y, "no weapon show", default="0")
+    chain(b, ms, sw)
+    g.link(sw["then"], before["execute"])
+    g.link(b["else"], before["execute"])
+
+
+stop_replay(BX - 300, BY - 800, _bbw)
 _sbw2 = self_set("BagWeapon", "bool", BX + 450, BY - 150, "empty hands", default="false")
 g.link(_bbw["else"], _sbw2["execute"])
 mbi = montage_play(BX + 600, BY, anim, AM_BAG_IN, None, "the bag comes out: the arms (LeftHand + RightHand)")
@@ -1376,16 +1428,89 @@ _bhid = member_call(ACTOR, "SetActorHiddenInGame", BX + 3150, BY - 200, bag_acto
 _bsht = kml("Add_IntInt", BX + 3300, BY - 100, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="3",')), ("ReturnValue", "int", dict(out=True))])
 g.link(self_get("NTicks", "int", BX + 3100, BY - 50), _bsht["A"])
 _bshs = set_from("BagShowTick", "int", BX + 3450, BY - 200, _bsht["ReturnValue"], "shown from this tick")
+_bold = branch(BX + 1400, BY - 400, "1.3.1: a bag still out from the last body? it goes first", is_valid(BX + 1300, BY - 250, bag_actor(BX + 1100, BY - 250)))
+_boldd = member_call(ACTOR, "K2_DestroyActor", BX + 1700, BY - 400, bag_actor(BX + 1500, BY - 250), "the old bag")
 chain(mbi, grab_is(BX + 600, BY, AM_BAG_IN),
       self_set("GrabBH", "bool", BX + 900, BY, "", default="false"),
       self_set("SegStart", "real", BX + 1200, BY, "", default="0.0", subcat="double"),
       self_set("BagAdd", "bool", BX + 1350, BY, "the bag over the weapon's stance", default="false"),
-      _bsp, set_from("BagActor", "object", BX + 1800, BY, _bsp["ReturnValue"], "the backpack", sub=SKA),
+      _bold)
+#   1.3.1 (Nexus, MonaPona: "after looting multiple bodies very quickly the backpack glitched out and never went back
+#   to normal"; picture: the bag fills the bottom of the view with the rifle on it): a bag started while the last one was
+#   still on its way out replaced BagActor and the old bag stayed in the left hand for good. The old one goes first.
+g.link(_bold["then"], _boldd["execute"])
+g.link(_boldd["then"], _bsp["execute"])
+g.link(_bold["else"], _bsp["execute"])
+chain(_bsp, set_from("BagActor", "object", BX + 1800, BY, _bsp["ReturnValue"], "the backpack", sub=SKA),
       _bmob, _bmsh, _bcol, _batt, _bvb, _bab, _bhid, _bshs, bag_anim(BX + 3300, BY, BAG_ANIM_IN, "the bag's half"),
       self_set("BagMode", "bool", BX + 3600, BY, "bag looting", default="true"),
       set_from("BagAt", "real", BX + 3900, BY, now(BX + 3750, BY + 200), "", subcat="double"),
       set_from("ReachStart", "real", BX + 4200, BY, now(BX + 4050, BY + 200), "", subcat="double"),
       inc("NBag", BX + 4500, BY, "count (probe)"))
+
+# ---- n2 (1.3.1; Nexus, Scorpius34: "loot corpses with both hands"; tester: "the right hand goes out the same way the
+#      left does, as if patting down and checking the body on the ground"): MCM "Both hands on bodies" (PatLoot, off).
+#      AS_ImmLoot_PatTable (make_grab_seq build_pat_table): 75 segments = family (0 rifle stance, 1 pistol, 2 empty
+#      hands) x the 25 touch bins, played through AM_ImmLoot_Pat (LeftHand + RightHand slot tracks) from the segment.
+#      A weapon is hidden for it (both hands are busy) and drawn again with the game's last equip after it (as the bag);
+#      empty hands standing get the bag's pitch fix (the arms turn with the view). ----
+AM_PAT = "/ImmersiveLooting/Runtime/AM_ImmLoot_Pat.AM_ImmLoot_Pat"
+PX, PY_ = BX, BY - 1500
+g.box("EdGraphNode_Comment_960", PX - 80, PY_ - 400, 5600, 1100, "Both hands on bodies (MCM Body looting = Both hands): the two-hand pat-down")
+_pmb = kml("EqualEqual_IntInt", PX - 300, PY_ + 270, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="1",')), RB])
+g.link(self_get("BodyMode", "int", PX - 500, PY_ + 270), _pmb["A"])
+bpat = branch(PX, PY_, "n2: a body, the both-hands setting on? both hands pat it down (else the bag / the hand)",
+              b_and(PX - 100, PY_ + 200, self_get("LootReach", "bool", PX - 300, PY_ + 200), _pmb["ReturnValue"],
+                    self_get("TouchIsBody", "bool", PX - 300, PY_ + 340)))
+g.link(bdt3["else"], bpat["execute"])
+g.link(bpat["else"], bbag["execute"])
+_pwq = member_pure(OBJC, "GetMainHandEquipType", PX - 300, PY_ + 500, as_pc,
+                   [("ReturnValue", "byte", dict(sub=EN("/Script/Stalker2.EMainHandEquipmentType"), out=True))])["ReturnValue"]
+_pwi = kml("Conv_ByteToInt", PX - 100, PY_ + 500, [("InByte", "byte", dict(extra='DefaultValue="0",')), ("ReturnValue", "int", dict(out=True))])
+g.link(_pwq, _pwi["InByte"])
+_parm = obj_q("HasItemInMainHand", PX - 100, PY_ + 600, as_pc)
+#   family: 0 rifle stance, 1 pistol, 2 empty hands
+_pfam1 = kml("SelectInt", PX + 100, PY_ + 500, [("A", "int", dict(extra='DefaultValue="1",')), ("B", "int", dict(extra='DefaultValue="0",')), B("bPickA"),
+                                                ("ReturnValue", "int", dict(out=True))])
+_peqi = kml("EqualEqual_IntInt", PX - 100, PY_ + 700, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="1",')), RB])
+g.link(_pwi["ReturnValue"], _peqi["A"])
+g.link(_peqi["ReturnValue"], _pfam1["bPickA"])
+_pfam = kml("SelectInt", PX + 300, PY_ + 500, [("A", "int"), ("B", "int", dict(extra='DefaultValue="2",')), B("bPickA"), ("ReturnValue", "int", dict(out=True))])
+g.link(_pfam1["ReturnValue"], _pfam["A"])
+g.link(_parm, _pfam["bPickA"])
+_pidx = kml("Add_IntInt", PX + 500, PY_ + 500, [("A", "int"), ("B", "int"), ("ReturnValue", "int", dict(out=True))])
+_pmul = kml("Multiply_IntInt", PX + 400, PY_ + 600, [("A", "int"), ("B", "int", dict(extra='DefaultValue="25",')), ("ReturnValue", "int", dict(out=True))])
+g.link(_pfam["ReturnValue"], _pmul["A"])
+g.link(_pmul["ReturnValue"], _pidx["A"])
+g.link(self_get("TouchBin", "int", PX + 300, PY_ + 700), _pidx["B"])
+_pcv = kml("Conv_IntToDouble", PX + 600, PY_ + 600, [("InInt", "int"), RD])
+g.link(_pidx["ReturnValue"], _pcv["InInt"])
+_pseg = d_op("Multiply_DoubleDouble", PX + 700, PY_ + 500, _pcv["ReturnValue"], b_const="1.7")
+_pbw = branch(PX + 300, PY_ - 300, "n2: a weapon in hand? hidden (both hands are busy), drawn again after", _parm)
+g.link(bpat["then"], _pbw["execute"])
+stop_replay(PX - 200, PY_ - 800, _pbw)
+_pwm = member_pure(OBJC, "GetWeaponInHandsMeshComponent", PX + 300, PY_ - 500, as_pc, [("ReturnValue", "object", dict(sub=SKC, out=True))])["ReturnValue"]
+_phd = member_call(SC_, "SetHiddenInGame", PX + 600, PY_ - 300, _pwm, "hidden (still in the hands)", [B("NewHidden", "true"), B("bPropagateToChildren", "true")])
+_psw1 = self_set("BagWeapon", "bool", PX + 900, PY_ - 300, "show it after", default="true")
+chain(_pbw, _phd, _psw1)
+_psw2 = self_set("BagWeapon", "bool", PX + 600, PY_ - 150, "empty hands", default="false")
+g.link(_pbw["else"], _psw2["execute"])
+_mpf2 = play_bag(PX + 900, PY_ - 150, BAG_PITCH, "empty hands: the arms turn with the view (the bag's pitch fix)", 0.15, 0.25)
+_mpf2.pins["SlotNodeName"].extra = 'DefaultValue="FullBody",'
+_ppf2 = member_call(ANIMI, "Montage_Pause", PX + 1500, PY_ - 150, anim, "held; its frame from the view", [("Montage", "object", dict(sub=MONT))])
+g.link(_mpf2["ReturnValue"], _ppf2["Montage"])
+chain(_psw2, _mpf2, set_from("PitchFixMont", "object", PX + 1200, PY_ - 150, _mpf2["ReturnValue"], "the pose table", sub=MONT), _ppf2)
+_mpp = montage_play(PX + 1800, PY_, anim, AM_PAT, None, "both hands: the segment for the family and the bin (rate 0.78: slower, eased pats)")
+_mpp.pins["InPlayRate"].extra = 'DefaultValue="0.780000",'   # n2c
+g.link(_pseg, _mpp["InTimeToStartMontageAt"])
+g.link(_psw1["then"], _mpp["execute"])
+g.link(_ppf2["then"], _mpp["execute"])
+chain(_mpp, grab_is(PX + 2100, PY_, AM_PAT, "our montage"),
+      self_set("GrabBH", "bool", PX + 2400, PY_, "", default="false"),
+      set_from("SegStart", "real", PX + 2700, PY_, _pseg, "the segment's start", subcat="double"),
+      self_set("PatMode", "bool", PX + 3000, PY_, "both hands", default="true"),
+      inc("NPat", PX + 3300, PY_, "count (probe)"))
+g.link([n_ for n_ in g.nodes if n_.comment == "count (probe)"][-1]["then"], srs["execute"])
 #   c) the flying copy
 FX, FY = X1 + 1850, Y1 + 900
 sfs = set_from("FlyStart", "real", FX, FY, now(FX - 150, FY + 200), "flight starts", subcat="double")
@@ -1689,6 +1814,12 @@ def reach_over(x, y, exec_in, comment="reach over"):
     return ns[-1]
 
 
+#   n2f: a skipped press (sprint, aim, a game action...) on a body / stash / door: no touch, the window is the game's
+_bsk = branch(X1 + 2150, Y1 - 450, "n2f: a skipped touch? its state cleared (no window retries, no stale wait)", self_get("LootReach", "bool", X1 + 1950, Y1 - 300))
+g.link(_buw["else"], _bsk["execute"])
+reach_over(X1 + 2450, Y1 - 450, _bsk["then"], "touch skipped")
+
+
 def bag_out(x, y, exec_in):
     """1.1.2: the bag goes back (Out), player and backpack together."""
     mbo = montage_play(x + 300, y, anim, AM_BAG_OUT, None, "the bag goes back: the arms")
@@ -1830,7 +1961,7 @@ def tap_active(x, y, on, comment):
     return b["execute"], [c["then"], b["else"]]
 
 
-sqt = sequence(XT, YT, "touch steps", 9)
+sqt = sequence(XT, YT, "touch steps", 11)
 g.link(sq5["then_4"], sqt["execute"])
 
 #   T0: idle and window closed: is what we look at a corpse / stash? (re-evaluated every tick)
@@ -1864,15 +1995,26 @@ alive = obj_q("IsAlive", XT + 800, YT + 100, cob["AsObj"])
 dbc = member_pure(ACTOR, "GetComponentByClass", XT + 800, YT + 200, cob["AsObj"], [
     ("ComponentClass", "class", dict(sub=ACOMP, extra='DefaultObject="/Script/Stalker2.DeadBody",')),
     ("ReturnValue", "object", dict(sub=ACOMP, out=True))])["ReturnValue"]
+_bmo = kml("NotEqual_IntInt", XT + 850, YT + 280, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="3",')), RB])
+g.link(self_get("BodyMode", "int", XT + 650, YT + 280), _bmo["A"])
 corpse = b_and(XT + 1050, YT + 100, b_not(XT + 950, YT + 50, alive), is_valid(XT + 1000, YT + 200, dbc),
-               self_get("TouchBodies", "bool", XT + 850, YT + 280))   # setting (MCM): off = bodies stay vanilla
+               _bmo["ReturnValue"])   # MCM "Body looting" Off (3) = bodies stay vanilla
 sl_c = set_from("Lootable", "bool", XT + 1100, YT - 300, corpse, "a corpse?")
 g.link(cob["then"], sl_c["execute"])
 #     its tap interaction (DeadBody = "search"; the carry is a separate DeadBodyHoldComponent we never touch)
 stc = set_from("TapComp", "object", XT + 1400, YT - 300, member_pure(ACTOR, "GetComponentByClass", XT + 1200, YT - 100, cob["AsObj"], [
     ("ComponentClass", "class", dict(sub=ACOMP, extra='DefaultObject="/Script/Stalker2.DeadBody",')),
     ("ReturnValue", "object", dict(sub=ICOMP, out=True))])["ReturnValue"], "its search interaction", sub=ICOMP)
-g.link(sl_c["then"], stc["execute"])
+_stb = set_from("TouchIsBody", "bool", XT + 1250, YT - 450, corpse, "both hands (n2): a body?")
+chain(sl_c, _stb, stc)
+#     n2h: and its carry (hold) interaction (T10 resets a stale hold)
+_shc = set_from("BodyHold", "object", XT + 1700, YT - 300, member_pure(ACTOR, "GetComponentByClass", XT + 1500, YT - 100, cob["AsObj"], [
+    ("ComponentClass", "class", dict(sub=ACOMP, extra='DefaultObject="/Script/Stalker2.DeadBodyHoldComponent",')),
+    ("ReturnValue", "object", dict(sub=HOLDC, out=True))])["ReturnValue"], "n2h: its carry interaction", sub=HOLDC)
+for l_ in list(stc["then"].links):
+    stc["then"].links.remove(l_); l_.links.remove(stc["then"])
+    g.link(_shc["then"], l_)
+g.link(stc["then"], _shc["execute"])
 #     1.0.1l's per-body ReturnLeftHandOnItemEnded removed in 1.0.1m (carry still dead with it; back to 1.0.1i, which
 #     carried: the reset once per world only)
 cic = exec_pins(Node(g, BG + "K2Node_DynamicCast", nm("K2Node_DynamicCast"), XT + 900, YT + 400, "an item container?",
@@ -1882,7 +2024,9 @@ cic.pin("Object", "object", sub=OBJ)
 cic.pin("AsInteractable Item Container", "object", sub=cls(IIC), out=True)
 cic.pin("bSuccess", "bool", out=True)
 g.link(lo(XT + 700, YT + 600), cic["Object"])
-g.link(cob["CastFailed"], cic["execute"])
+_stb0 = self_set("TouchIsBody", "bool", XT + 700, YT + 300, "not a body", default="false")
+chain(_stb0, cic)
+g.link(cob["CastFailed"], _stb0["execute"])
 if not CORPSE_TOUCH:
     g.link(sq0["then_1"], cic["execute"])
 # the instance name starts with its class name (BP_StaticItemContainer_C_...); a class pin cannot feed GetObjectName
@@ -1898,9 +2042,11 @@ def str_starts(x, y, a, lit):
     return n["ReturnValue"]
 
 
+_smo = kml("NotEqual_IntInt", XT + 1700, YT + 820, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="2",')), RB])
+g.link(self_get("StashMode", "int", XT + 1500, YT + 820), _smo["A"])
 stash = b_and(XT + 1850, YT + 700, b_not(XT + 1700, YT + 700, b_or(XT + 1600, YT + 700, str_starts(XT + 1500, YT + 650, _cn["ReturnValue"], "BP_StaticItemContainer_C"),
                                         str_starts(XT + 1500, YT + 750, _cn["ReturnValue"], "BP_SkeletalItemContainer_C"))),
-               self_get("TouchBodies", "bool", XT + 1700, YT + 820))   # setting (MCM): off = stashes stay vanilla
+               _smo["ReturnValue"])   # MCM "Stash looting" Off (2) = stashes stay vanilla
 sl_s = set_from("Lootable", "bool", XT + 1300, YT + 400, stash, "a stash (not a loose item)?")
 g.link(cic["then"], sl_s["execute"])
 sts = set_from("TapComp", "object", XT + 1600, YT + 400, member_pure(ACTOR, "GetComponentByClass", XT + 1400, YT + 600, cic["AsInteractable Item Container"], [
@@ -1938,10 +2084,62 @@ inj = inject_interact(XT + 1400, YT + 1800, "press the game's interact: opens th
 ts3 = self_set("TouchState", "int", XT + 1750, YT + 1800, "window requested", default="3")
 toa = set_from("TouchOpenAt", "real", XT + 2050, YT + 1800, now(XT + 1900, YT + 2000), "", subcat="double")
 nto = inc("NTouch", XT + 2350, YT + 1800, "count touches")
-g.link(bt1["then"], _e1)
+#   n2i (tester: a tap still carried the body with the backpack; probe: the window did not open at that tap's release
+#   (pressed 0.24 s after the last window closed), our injected interact 3 s later found the body's carry hold
+#   started and the game carried it at once): a BODY never gets an injected interact. No window by now: the touch /
+#   bag waits as if requested (TouchState 3; the player's next tap opens the window, T2 brings it back after 1 s)
+_bt1b = branch(XT + 700, YT + 1650, "n2i: a body? no injected interact (it can finish a carry)", self_get("TouchIsBody", "bool", XT + 500, YT + 1800))
+g.link(bt1["then"], _bt1b["execute"])
+g.link(_bt1b["else"], _e1)
+_ts3b = self_set("TouchState", "int", XT + 1000, YT + 1550, "no window yet: as if requested", default="3")
+chain(_bt1b, _ts3b, set_from("TouchOpenAt", "real", XT + 1300, YT + 1550, now(XT + 1150, YT + 1450), "", subcat="double"),
+      inc("NBodyNoInject", XT + 1600, YT + 1550, "count (probe)"))
 _sra = set_from("ReenableAt", "real", XT + 1700, YT + 1600, now(XT + 1550, YT + 1450), "its tap interaction is on again since", subcat="double")
 _ts5 = self_set("TouchState", "int", XT + 2000, YT + 1600, "wait for the game to target it again", default="5")
 chain(_s1, _sra, _ts5)
+#   T10 (n2h): the body we look at has its carry hold "started" (HoldComponent.IsHoldStarted) while F has been up for
+#   0.15 s and the left hand is free (not carrying)? A stale hold: the next tap would finish the carry at once. Its hold
+#   interaction is switched off for one tick (reset), then on again
+_hcv = lambda x, y: self_get("BodyHold", "object", x, y, sub=HOLDC)
+_sq10 = sequence(XT + 300, YT + 16000, "n2h: stale carry hold", 2)
+g.link(sqt["then_10"], _sq10["execute"])
+_hrv = lambda x, y: self_get("HoldResetComp", "object", x, y, sub=HOLDC)
+_b10a = branch(XT + 600, YT + 16000, "reset last tick? back on", is_valid(XT + 500, YT + 16150, _hrv(XT + 300, YT + 16150)))
+g.link(_sq10["then_0"], _b10a["execute"])
+_c10a = member_call(ICOMP, "SetInteractionActive", XT + 900, YT + 16000, _hrv(XT + 700, YT + 16150), "its hold back on",
+                    [("bActive", "bool", dict(extra='DefaultValue="true",'))])
+chain(_b10a, _c10a, self_set("HoldResetComp", "object", XT + 1200, YT + 16000, "done", sub=HOLDC))
+_hst = member_pure(HOLDC, "IsHoldStarted", XT + 300, YT + 16500, _hcv(XT + 100, YT + 16500), [RB])["ReturnValue"]
+_stale = b_and(XT + 500, YT + 16450, self_get("TouchIsBody", "bool", XT + 300, YT + 16400), is_valid(XT + 300, YT + 16430, _hcv(XT + 100, YT + 16430)), _hst,
+               b_not(XT + 300, YT + 16570, self_get("KeyHeld", "bool", XT + 100, YT + 16570)),
+               d_op("Greater_DoubleDouble", XT + 300, YT + 16640,
+                    d_op("Subtract_DoubleDouble", XT + 100, YT + 16640, now(XT - 100, YT + 16640), self_get("KeySeenAt", "real", XT - 100, YT + 16710, subcat="double")),
+                    b_const="0.15", ret=RB),
+               b_not(XT + 300, YT + 16780, obj_q("IsLeftHandBusy", XT + 100, YT + 16780, as_pc)))
+_sh10 = set_from("HoldStale", "bool", XT + 600, YT + 16300, _stale, "probe")
+g.link(_sq10["then_1"], _sh10["execute"])
+_b10 = branch(XT + 900, YT + 16300, "a stale hold on the body we look at? reset it", self_get("HoldStale", "bool", XT + 700, YT + 16450))
+g.link(_sh10["then"], _b10["execute"])
+_c10 = member_call(ICOMP, "SetInteractionActive", XT + 1200, YT + 16300, _hcv(XT + 1000, YT + 16450), "its hold off (one tick)",
+                   [("bActive", "bool", dict(extra='DefaultValue="false",'))])
+chain(_b10, _c10, set_from("HoldResetComp", "object", XT + 1500, YT + 16300, _hcv(XT + 1300, YT + 16450), "on again next tick", sub=HOLDC),
+      inc("NStaleHold", XT + 1800, YT + 16300, "count (probe)"))
+#   T9 (n2g): a carry started from a tap? the game's own drop (Obj.DropCorpse, with its animation) once it holds the
+#   body (false until then); after 2.5 s (or F held again) given up
+_b9 = branch(XT + 600, YT + 15300, "n2g: a carry from a tap waiting to be dropped?", self_get("TapCarry", "bool", XT + 400, YT + 15450))
+g.link(sqt["then_9"], _b9["execute"])
+_b9l = branch(XT + 900, YT + 15300, "for 2.5 s already, or F held again (another pick-up: an artifact...)? given up",
+              b_or(XT + 900, YT + 15450, d_op("Greater_DoubleDouble", XT + 800, YT + 15450,
+                   d_op("Subtract_DoubleDouble", XT + 600, YT + 15450, now(XT + 400, YT + 15450), self_get("TapCarryAt", "real", XT + 400, YT + 15520, subcat="double")),
+                   b_const="2.5", ret=RB), self_get("KeyHeld", "bool", XT + 700, YT + 15600)))
+g.link(_b9["then"], _b9l["execute"])
+g.link(_b9l["then"], self_set("TapCarry", "bool", XT + 1200, YT + 15150, "given up", default="false")["execute"])
+_dc9 = member_call(OBJC, "DropCorpse", XT + 1200, YT + 15300, as_pc, "the game's drop (its animation; bPlayAnimation defaults true)",
+                   [("ReturnValue", "bool", dict(out=True))])
+g.link(_b9l["else"], _dc9["execute"])
+_b9d = branch(XT + 1500, YT + 15300, "dropped?", _dc9["ReturnValue"])
+g.link(_dc9["then"], _b9d["execute"])
+chain(_b9d, self_set("TapCarry", "bool", XT + 1800, YT + 15300, "done", default="false"), inc("NTapCarry", XT + 2100, YT + 15300, "count (probe)"))
 #   T8: 0.12 s after the tap interaction is on again: press the game's interact (the window); no window after 0.35 s:
 #   press again (twice at most)
 sq8w = sequence(XT + 300, YT + 13000, "window press steps", 2)
@@ -1950,7 +2148,11 @@ bw5 = branch(XT + 600, YT + 13000, "waited 0.12 s since its tap interaction came
              b_and(XT + 500, YT + 13200, int_eq(XT + 300, YT + 13200, tstate(XT + 100, YT + 13200), 5),
                    d_op("GreaterEqual_DoubleDouble", XT + 300, YT + 13300,
                         d_op("Subtract_DoubleDouble", XT + 100, YT + 13300, now(XT - 100, YT + 13300),
-                             self_get("ReenableAt", "real", XT - 100, YT + 13370, subcat="double")), b_const="0.12", ret=RB)))
+                             self_get("ReenableAt", "real", XT - 100, YT + 13370, subcat="double")), b_const="0.12", ret=RB),
+                   # 1.3.1 (tester: bag on bodies, looting fast: "no window for the body, then my inventory opens"; probe:
+                   # the press came while the last bag's weapon draw was playing, the window never opened, 2 retries,
+                   # then a game montage and a draw): no interact while a game action (MainActionSlot) plays
+                   b_not(XT + 300, YT + 13440, slot_active(XT + 100, YT + 13440, anim, "MainActionSlot"))))
 g.link(sq8w["then_0"], bw5["execute"])
 g.link(bw5["then"], inj["execute"])
 chain(inj, ts3, toa, nto, self_set("InjRetries", "int", XT + 2650, YT + 1800, "", default="0"))
@@ -1959,6 +2161,11 @@ bwr = branch(XT + 600, YT + 13600, "window asked for 0.35 s ago and not open? pr
              b_and(XT + 500, YT + 13800, int_eq(XT + 300, YT + 13800, tstate(XT + 100, YT + 13800), 3),
                    b_not(XT + 300, YT + 13870, self_get("InvOpen", "bool", XT + 100, YT + 13870)),
                    d_op("GreaterEqual_DoubleDouble", XT + 300, YT + 13940, _tsince, b_const="0.35", ret=RB),
+                   b_not(XT + 300, YT + 14080, slot_active(XT + 100, YT + 14080, anim, "MainActionSlot")),   # 1.3.1
+                   # n2f: not when a window opened since the press (the player closed it: the retry opened it again)
+                   d_op("Less_DoubleDouble", XT + 300, YT + 14150, self_get("OpenAt", "real", XT + 100, YT + 14150, subcat="double"),
+                        self_get("TouchPressAt", "real", XT + 100, YT + 14220, subcat="double"), ret=RB),
+                   b_not(XT + 300, YT + 14290, self_get("TouchIsBody", "bool", XT + 100, YT + 14290)),   # n2i: never on a body
                    kml("Less_IntInt", XT + 300, YT + 14010, [("A", "int"), ("B", "int", dict(extra='DefaultValue="2",')), RB])["ReturnValue"]))
 _lii = [n_ for n_ in g.nodes if any('MemberName="Less_IntInt"' in b_ for b_ in n_.body)][-1]
 g.link(self_get("InjRetries", "int", XT + 100, YT + 14010), _lii["A"])
@@ -2026,15 +2233,23 @@ tr = [set_from("ItemCenter", "struct", XT + 500, YT + 3700, _tgb["Origin"], "rea
       self_set("LootReach", "bool", XT + 1400, YT + 3700, "touch: hold at the touch frame", default="true"),
       self_set("LootPaused", "bool", XT + 1700, YT + 3700, "", default="false"),
       self_set("LootReverse", "bool", XT + 2000, YT + 3700, "", default="false"),
+      self_set("LootWait", "bool", XT + 2300, YT + 3700, "n2f: no stale wait for an item's use", default="false"),
       self_set("TouchState", "int", XT + 2600, YT + 3700, "reaching", default="2")]
 chain(*tr)
 _ep, _xp = tap_active(XT + 500, YT + 3300, False, "its tap interaction off (the game would open the window at the release)")
-g.link(bpress["then"], _ep)
+#   n2h (tester: a tap picked a body up; "the body pickup should never happen in the first place"): a BODY's search
+#   interaction is no longer switched off at the press. With it off the game's hold interaction was the only one left
+#   for that press (the window still opened at the release, through it), and a later tap could finish a carry at once.
+#   The game's own tap (window at the release) and hold (carry) now run untouched; stashes as before
+_bpb = branch(XT + 300, YT + 3150, "n2h: a body? its interactions untouched (vanilla tap / hold)", self_get("TouchIsBody", "bool", XT + 100, YT + 3250))
+g.link(bpress["then"], _bpb["execute"])
+g.link(_bpb["else"], _ep)
 _sp = self_set("TapOff", "bool", XT + 1200, YT + 3300, "", default="true")
 for q_ in _xp:
     g.link(q_, _sp["execute"])
-chain(_sp, set_from("TouchPressAt", "real", XT + 1500, YT + 3300, now(XT + 1350, YT + 3500), "pressed", subcat="double"),
-      self_set("TouchState", "int", XT + 1800, YT + 3300, "pressed: tap or hold?", default="1"))
+_stp = set_from("TouchPressAt", "real", XT + 1500, YT + 3300, now(XT + 1350, YT + 3500), "pressed", subcat="double")
+chain(_sp, _stp, self_set("TouchState", "int", XT + 1800, YT + 3300, "pressed: tap or hold?", default="1"))
+g.link(_bpb["then"], _stp["execute"])
 #     a body: its pelvis bone (the mesh component's bounds stay at the standing height: build e aimed 21 deg UP at a
 #     corpse), else (stash, mutant without that bone) the bounds centre set above
 for q_ in list(tr[0]["then"].links):
@@ -2240,8 +2455,12 @@ PCC = cls("/Script/Engine.PlayerController")
 kd0 = self_set("KeyDown", "bool", XT + 400, YT + 5800, "this tick", default="false")
 ku0 = self_set("KeyUp", "bool", XT + 700, YT + 5800, "", default="false")
 kh0 = self_set("KeyHeld", "bool", XT + 1000, YT + 5650, "", default="false")
-chain(kd0, ku0, kh0)
-g.link(sqt["then_6"], kd0["execute"])
+#   n2g (tester, looting fast: "the backpack didn't come out, and then I picked up the body when I was tapping F";
+#   probe: both times F was seen down (IsInputKeyDown) for 1-2 ticks but WasInputKeyJustPressed never fired, so our
+#   press never ran: the game opened its plain window / started the carry): F down now and up last tick = a press too
+_khp = set_from("KeyHeldPrev", "bool", XT + 100, YT + 5650, self_get("KeyHeld", "bool", XT - 100, YT + 5750), "n2g: held last tick?")
+chain(_khp, kd0, ku0, kh0)
+g.link(sqt["then_6"], _khp["execute"])
 qk = member_pure(EISI, "QueryKeysMappedToAction", XT + 700, YT + 6100, subt["ReturnValue"], [
     ("Action", "object", dict(sub=IA_CLS, extra=f'DefaultObject="{IA_INTERACT}",')), ("ReturnValue", "struct", dict(sub=KEY, out=True))])
 qk.pins["self"].cat = "interface"
@@ -2280,7 +2499,15 @@ bjr = branch(XT + 1400, YT + 6100, "just released?", _jr["ReturnValue"])
 g.link(bjp["else"], bjr["execute"])
 g.link(bjr["then"], self_set("KeyUp", "bool", XT + 1700, YT + 6100, "", default="true")["execute"])
 bkd = branch(XT + 2000, YT + 5800, "pressed this tick?", self_get("KeyDown", "bool", XT + 1800, YT + 6000))
-g.link(fek["Completed"], bkd["execute"])
+_bed = branch(XT + 1700, YT + 5300, "n2g: F down now, up last tick, no 'just pressed'? a press all the same",
+              b_and(XT + 1600, YT + 5450, self_get("KeyHeld", "bool", XT + 1400, YT + 5400), b_not(XT + 1500, YT + 5470, self_get("KeyHeldPrev", "bool", XT + 1300, YT + 5470)),
+                    b_not(XT + 1500, YT + 5540, self_get("KeyDown", "bool", XT + 1300, YT + 5540))))
+g.link(fek["Completed"], _bed["execute"])
+_sed = self_set("KeyDown", "bool", XT + 2000, YT + 5300, "", default="true")
+chain(_bed, _sed, set_from("InteractPressAt", "real", XT + 2300, YT + 5300, now(XT + 2150, YT + 5200), "pressed at", subcat="double"),
+      inc("NPressEdge", XT + 2600, YT + 5300, "count (probe)"))
+g.link([n_ for n_ in g.nodes if n_.comment == "count (probe)"][-1]["then"], bkd["execute"])
+g.link(_bed["else"], bkd["execute"])
 g.link(bkd["then"], bpress["execute"])
 # ---- doors (1.0.2, tester: "play the hand animation when opening and closing doors"; peeking (hold) the same) ----
 # The game opens / closes / peeks the door itself at the press; we never touch its input. At the press, if the game's
@@ -2799,7 +3026,10 @@ g.link(self_get("DoorTouch", "bool", X4 + 300, Y4 - 1650), _sto["bPickA"])
 _sbg = kml("SelectFloat", X4 + 700, Y4 - 1900, [D("A", "1.4"), D("B"), B("bPickA"), RD])   # build e: the bag In plays to its end (the right hand into the bag)
 g.link(_sto["ReturnValue"], _sbg["B"])
 g.link(self_get("BagMode", "bool", X4 + 500, Y4 - 1950), _sbg["bPickA"])
-_touch_at = _sbg["ReturnValue"]
+_spt = kml("SelectFloat", X4 + 900, Y4 - 2000, [D("A", "1.233"), D("B"), B("bPickA"), RD])   # n2c: the pats end at frame 37
+g.link(_sbg["ReturnValue"], _spt["B"])
+g.link(self_get("PatMode", "bool", X4 + 700, Y4 - 2050), _spt["bPickA"])
+_touch_at = _spt["ReturnValue"]
 at_touch = d_op("GreaterEqual_DoubleDouble", X4 + 900, Y4 - 1700, _pos2["ReturnValue"],
                 d_op("Add_DoubleDouble", X4 + 700, Y4 - 1600, seg0(X4 + 500, Y4 - 1600), _touch_at), ret=RB)
 bhold = branch(X4 + 1100, Y4 - 1500, "touching the corpse / stash? hold there",
@@ -2928,7 +3158,9 @@ def loot_use_go(x, y, exec_in):
     bmf = self_set("BagMode", "bool", x + 800, y - 400, "", default="false")
     chain(slfg, sug, bbv, bdv, bmf, slt)
     g.link(bbv["else"], slt["execute"])
-    ro = reach_over(x + 600, y, slt["then"])
+    _spm = self_set("PatMode", "bool", x + 450, y + 200, "n2: the pat is over", default="false")
+    g.link(slt["then"], _spm["execute"])
+    ro = reach_over(x + 600, y, _spm["then"])
     chain(ro, self_set("LootUse", "bool", x + 2100, y, "", default="false"),
           self_set("LootWait", "bool", x + 2400, y, "", default="false"),
           self_set("PendingCopy", "bool", x + 2700, y, "no copy", default="false"),
@@ -2975,7 +3207,15 @@ bcl = branch(X4 + 300, Y4 + 4400, "backpack out, and its animation over (not hel
                         b_and(X4, Y4 + 4700, b_not(X4 - 100, Y4 + 4700, self_get("LootPaused", "bool", X4 - 300, Y4 + 4700)), b_not(X4 - 100, Y4 + 4770, _bpl)),
                         b_and(X4, Y4 + 4850, b_not(X4 - 100, Y4 + 4850, grab_active(X4 - 300, Y4 + 4850)),
                               d_op("Greater_DoubleDouble", X4 - 100, Y4 + 4920, self_get("GameMontageAt", "real", X4 - 300, Y4 + 4920, subcat="double"),
-                                   self_get("BagAt", "real", X4 - 300, Y4 + 4990, subcat="double"), ret=RB)))))
+                                   self_get("BagAt", "real", X4 - 300, Y4 + 4990, subcat="double"), ret=RB)),
+                        # 1.3.1 watchdog: no touch out, none of the bag montages playing, 1 s after it started
+                        b_and(X4, Y4 + 5050, b_not(X4 - 100, Y4 + 5050, self_get("LootReach", "bool", X4 - 300, Y4 + 5050)),
+                              b_not(X4 - 100, Y4 + 5120, montage_active(X4 - 300, Y4 + 5120, anim, AM_BAG_IN)),
+                              b_not(X4 - 100, Y4 + 5190, montage_active(X4 - 300, Y4 + 5190, anim, AM_BAG_IDLE)),
+                              b_not(X4 - 100, Y4 + 5260, montage_active(X4 - 300, Y4 + 5260, anim, AM_BAG_OUT)),
+                              d_op("Greater_DoubleDouble", X4 - 100, Y4 + 5330,
+                                   d_op("Subtract_DoubleDouble", X4 - 300, Y4 + 5330, now(X4 - 500, Y4 + 5330), self_get("BagAt", "real", X4 - 500, Y4 + 5400, subcat="double")),
+                                   b_const="1.0", ret=RB)))))
 _sqb = sequence(X4 - 400, Y4 + 4400, "backpack steps", 2)
 g.link(sq6["then_4"], _sqb["execute"])
 #   (6d below: the weapon back, then the cleanup)
@@ -3002,7 +3242,8 @@ g.link(_sqb["then_1"], _sqb2["execute"])
 g.link(_sqb2["then_0"], bcl["execute"])
 _bwd = branch(X4 + 300, Y4 + 6300, "our hidden weapon, the bag gone? shown again",
               b_and(X4 + 200, Y4 + 6500, self_get("BagWeapon", "bool", X4, Y4 + 6450),
-                    b_not(X4 + 100, Y4 + 6520, is_valid(X4 - 100, Y4 + 6520, bag_actor(X4 - 300, Y4 + 6520)))))
+                    b_not(X4 + 100, Y4 + 6520, is_valid(X4 - 100, Y4 + 6520, bag_actor(X4 - 300, Y4 + 6520))),
+                    b_not(X4 + 100, Y4 + 6590, self_get("PatMode", "bool", X4 - 100, Y4 + 6590))))
 g.link(_sqb2["then_1"], _bwd["execute"])
 _wmc = member_pure(OBJC, "GetWeaponInHandsMeshComponent", X4 + 300, Y4 + 6700, as_pc, [("ReturnValue", "object", dict(sub=SKC, out=True))])["ReturnValue"]
 chain(_bwd, member_call(SC_, "SetHiddenInGame", X4 + 600, Y4 + 6300, _wmc, "shown", [B("NewHidden", "false"), B("bPropagateToChildren", "true")]),
@@ -3010,10 +3251,11 @@ chain(_bwd, member_call(SC_, "SetHiddenInGame", X4 + 600, Y4 + 6300, _wmc, "show
 #   build m, empty hands: the pitch-fix pose table at the view pitch while the bag is out (0 crouched: the low-crouch
 #   look turns the arms rigidly already), stopped when the bag is gone
 _pfm = lambda x, y: self_get("PitchFixMont", "object", x, y, sub=MONT)
-_sqpf = sequence(X4 - 400, Y4 + 8600, "pitch fix, bag shown, Out ended, weapon shown", 5)
+_sqpf = sequence(X4 - 400, Y4 + 8600, "pitch fix, bag shown, Out ended, weapon shown, pat end", 6)
 g.link(_sqb2["then_2"], _sqpf["execute"])
 _bpfx = branch(X4 + 300, Y4 + 8600, "build m: the pitch fix running and the bag out? its frame from the view pitch",
-              b_and(X4 + 200, Y4 + 8800, is_valid(X4, Y4 + 8800, _pfm(X4 - 200, Y4 + 8800)), is_valid(X4, Y4 + 8870, bag_actor(X4 - 200, Y4 + 8870))))
+              b_and(X4 + 200, Y4 + 8800, is_valid(X4, Y4 + 8800, _pfm(X4 - 200, Y4 + 8800)),
+                    b_or(X4 + 100, Y4 + 8900, is_valid(X4, Y4 + 8870, bag_actor(X4 - 200, Y4 + 8870)), self_get("PatMode", "bool", X4 - 200, Y4 + 8940))))
 g.link(_sqpf["then_0"], _bpfx["execute"])
 _pfr = member_pure(PCM, "GetCameraRotation", X4 - 300, Y4 + 9000, _bcm, [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"]
 _pfb = kml("BreakRotator", X4 - 100, Y4 + 9000, [("InRot", "struct", dict(sub=ROT)), ("Roll", "real", dict(subcat="float", out=True)),
@@ -3036,7 +3278,8 @@ g.link(_pfm(X4 + 400, Y4 + 8800), _pfp["Montage"])
 g.link(_pfs["ReturnValue"], _pfp["NewPosition"])
 g.link(_bpfx["then"], _pfp["execute"])
 _bpe = branch(X4 + 300, Y4 + 9400, "build m: the pitch fix running and the bag gone? it goes",
-              b_and(X4 + 200, Y4 + 9600, is_valid(X4, Y4 + 9600, _pfm(X4 - 200, Y4 + 9600)), b_not(X4 + 100, Y4 + 9670, is_valid(X4 - 100, Y4 + 9670, bag_actor(X4 - 300, Y4 + 9670)))))
+              b_and(X4 + 200, Y4 + 9600, is_valid(X4, Y4 + 9600, _pfm(X4 - 200, Y4 + 9600)), b_not(X4 + 100, Y4 + 9670, is_valid(X4 - 100, Y4 + 9670, bag_actor(X4 - 300, Y4 + 9670))),
+                    b_not(X4 + 100, Y4 + 9740, self_get("PatMode", "bool", X4 - 100, Y4 + 9740))))
 g.link(_sqpf["then_1"], _bpe["execute"])
 _pfst = member_call(ANIMI, "Montage_Stop", X4 + 600, Y4 + 9400, anim, "out with the bag", [
     ("InBlendOutTime", "real", dict(subcat="float", extra='DefaultValue="0.300000",')), ("Montage", "object", dict(sub=MONT))])
@@ -3085,7 +3328,8 @@ g.link(_leq(X4 + 1600, Y4 + 10800), _mpe["MontageToPlay"])
 #   from the next frame (this tick runs after the animation update), so the weapon is shown 2 ticks later
 _wst = kml("Add_IntInt", X4 + 2000, Y4 + 10800, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="2",')), ("ReturnValue", "int", dict(out=True))])
 g.link(self_get("NTicks", "int", X4 + 1800, Y4 + 10850), _wst["A"])
-chain(_beq2, _mpe, set_from("WeaponShowTick", "int", X4 + 2100, Y4 + 10600, _wst["ReturnValue"], "the weapon shown from this tick"),
+chain(_beq2, _mpe, set_from("EquipReplayAt", "real", X4 + 1800, Y4 + 10450, now(X4 + 1650, Y4 + 10350), "n2f: our replay (vs GameMontageAt)", subcat="double"),
+      set_from("WeaponShowTick", "int", X4 + 2100, Y4 + 10600, _wst["ReturnValue"], "the weapon shown from this tick"),
       self_set("BagWeapon", "bool", X4 + 2400, Y4 + 10600, "", default="false"))
 _wgt = kml("Greater_IntInt", X4 - 100, Y4 + 11340, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="0",')), RB])
 g.link(self_get("WeaponShowTick", "int", X4 - 300, Y4 + 11340), _wgt["A"])
@@ -3094,6 +3338,45 @@ _bws = branch(X4 + 300, Y4 + 11200, "build q: the equip under way 2 ticks? the w
               b_and(X4 + 200, Y4 + 11300, kml_int_gt(X4 - 100, Y4 + 11270, self_get("WeaponShowTick", "int", X4 - 300, Y4 + 11270), "0"),
                     b_not(X4 + 100, Y4 + 11340, _wgt["ReturnValue"])))
 g.link(_sqpf["then_4"], _bws["execute"])
+#   n2: the pat at its segment's end (frame 48)? it goes, the hidden weapon comes back with the game's equip
+_ppos = member_pure(ANIMI, "Montage_GetPosition", X4 - 100, Y4 + 12300, anim, [("Montage", "object", dict(sub=MONT, extra=f'DefaultObject="{AM_PAT}",')),
+                                                                             ("ReturnValue", "real", dict(subcat="float", out=True))])
+_ppos.pins["Montage"].const = True
+_pend = branch(X4 + 300, Y4 + 12200, "n2: both hands back (segment + 1.6 s)? the pat goes, the weapon is drawn",
+               b_and(X4 + 200, Y4 + 12400, self_get("PatMode", "bool", X4, Y4 + 12400),
+                     d_op("GreaterEqual_DoubleDouble", X4 + 100, Y4 + 12500, _ppos["ReturnValue"],
+                          d_op("Add_DoubleDouble", X4 - 100, Y4 + 12550, self_get("SegStart", "real", X4 - 300, Y4 + 12550, subcat="double"), b_const="1.6"), ret=RB)))
+g.link(_sqpf["then_5"], _pend["execute"])
+_ppa = member_call(ANIMI, "Montage_Pause", X4 + 600, Y4 + 12200, anim, "held there", [("Montage", "object", dict(sub=MONT, extra=f'DefaultObject="{AM_PAT}",'))])
+_ppa.pins["Montage"].const = True
+_pcl = [stop_mont(X4 + 900, Y4 + 12200, AM_PAT, 0.3, "out (0.3 s)"),
+        self_set("PatMode", "bool", X4 + 1200, Y4 + 12200, "", default="false"),
+        self_set("Reaching", "bool", X4 + 1500, Y4 + 12200, "no hand-back recovery", default="false")]
+chain(_pend, _ppa, *_pcl)
+_peq = branch(X4 + 1800, Y4 + 12200, "n2: our hidden weapon, an equip remembered? the game's equip brings it up",
+              b_and(X4 + 1700, Y4 + 12400, self_get("BagWeapon", "bool", X4 + 1500, Y4 + 12400), is_valid(X4 + 1500, Y4 + 12470, self_get("LastEquipMont", "object", X4 + 1300, Y4 + 12470, sub=MONT))))
+g.link(_pcl[-1]["then"], _peq["execute"])
+_mpe2 = montage_play(X4 + 2100, Y4 + 12200, anim, "None", None, "the weapon's equip (the game's)")
+g.link(self_get("LastEquipMont", "object", X4 + 1900, Y4 + 12400, sub=MONT), _mpe2["MontageToPlay"])
+_wst2 = kml("Add_IntInt", X4 + 2300, Y4 + 12400, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="2",')), ("ReturnValue", "int", dict(out=True))])
+g.link(self_get("NTicks", "int", X4 + 2100, Y4 + 12450), _wst2["A"])
+chain(_peq, _mpe2, set_from("EquipReplayAt", "real", X4 + 2100, Y4 + 12050, now(X4 + 1950, Y4 + 11950), "n2f: our replay (vs GameMontageAt)", subcat="double"),
+      set_from("WeaponShowTick", "int", X4 + 2400, Y4 + 12200, _wst2["ReturnValue"], "the weapon shown from this tick"),
+      self_set("BagWeapon", "bool", X4 + 2700, Y4 + 12200, "", default="false"))
+#   n2: a pat cut short (our montage gone with no touch out: a game montage, an item used from the window)? cleared, the
+#   weapon is shown by 6d
+_pcut = branch(X4 + 300, Y4 + 12800, "n2: the pat cut (not playing, no touch out)? cleared",
+               b_and(X4 + 200, Y4 + 13000, self_get("PatMode", "bool", X4, Y4 + 13000),
+                     b_not(X4, Y4 + 13070, self_get("LootReach", "bool", X4 - 200, Y4 + 13070)),
+                     b_not(X4, Y4 + 13140, self_get("LootPaused", "bool", X4 - 200, Y4 + 13140)),
+                     b_not(X4, Y4 + 13210, montage_active(X4 - 200, Y4 + 13210, anim, AM_PAT))))
+_sqpe = sequence(X4 + 100, Y4 + 12000, "pat end / pat cut", 2)
+for l_ in list(_sqpf["then_5"].links):
+    _sqpf["then_5"].links.remove(l_); l_.links.remove(_sqpf["then_5"])
+g.link(_sqpf["then_5"], _sqpe["execute"])
+g.link(_sqpe["then_0"], _pend["execute"])
+g.link(_sqpe["then_1"], _pcut["execute"])
+chain(_pcut, self_set("PatMode", "bool", X4 + 600, Y4 + 12800, "", default="false"), inc("NPatCut", X4 + 900, Y4 + 12800, "count (probe)"))
 _wme2 = member_pure(OBJC, "GetWeaponInHandsMeshComponent", X4 + 400, Y4 + 11400, as_pc, [("ReturnValue", "object", dict(sub=SKC, out=True))])["ReturnValue"]
 chain(_bws, member_call(SC_, "SetHiddenInGame", X4 + 600, Y4 + 11200, _wme2, "shown, coming up with the hands", [B("NewHidden", "false"), B("bPropagateToChildren", "true")]),
       self_set("WeaponShowTick", "int", X4 + 900, Y4 + 11200, "done", default="0"))
@@ -3172,7 +3455,7 @@ _sgn7 = set_from("GameMontageName", "string", X7 + 1150, Y7 + 550, on7["ReturnVa
 g.link(sga7["then"], _sgn7["execute"])
 #   (probe, numbers only: a String read from UE4SS crashed the game) what kind of montage, and how long
 _kind = None
-for code, lit in ((4, "backpack"), (2, "equip"), (1, "unequip"), (3, "_use")):   # later wins
+for code, lit in ((5, "inventory"), (6, "interact"), (7, "pick"), (4, "backpack"), (2, "equip"), (1, "unequip"), (3, "_use")):   # later wins; 5-7: 1.3.1 probe
     s_ = kml("SelectInt", X7 + 1300 + 100 * code, Y7 + 200, [("A", "int", dict(extra=f'DefaultValue="{code}",')), ("B", "int", dict(extra='DefaultValue="0",')),
                                                             B("bPickA"), ("ReturnValue", "int", dict(out=True))])
     g.link(_has(X7 + 1100 + 100 * code, Y7 + 100, lit), s_["bPickA"])
@@ -3194,7 +3477,21 @@ _bun = branch(X7 + 2400, Y7 + 550, "build f: the unequip before an item used fro
 _beq = branch(X7 + 2400, Y7 + 300, "build p: a weapon's equip? remembered (the bag's close replays it)",
               b_and(X7 + 2300, Y7 + 400, int_eq(X7 + 2100, Y7 + 400, self_get("GameMontageKind", "int", X7 + 1900, Y7 + 400), 2),
                     b_not(X7 + 2200, Y7 + 450, _has(X7 + 2000, Y7 + 450, "_bh_"))))
-g.link(_sgl["then"], _beq["execute"])
+#   n2g: the game's pick-up (carry) montage started though F is up and was pressed less than HoldToDrag ago (a tap; the
+#   probe: a 0.06 s tap carried the body within a tick): remembered, the carry is dropped (T9)
+_btc = branch(X7 + 2400, Y7 + 1000, "n2g: the carry's pick-up started from a tap? dropped (T9)",
+              b_and(X7 + 2300, Y7 + 1150, int_eq(X7 + 2100, Y7 + 1150, self_get("GameMontageKind", "int", X7 + 1900, Y7 + 1150), 7),
+                    b_not(X7 + 2100, Y7 + 1220, self_get("KeyHeld", "bool", X7 + 1900, Y7 + 1220)),
+                    d_op("Less_DoubleDouble", X7 + 2100, Y7 + 1290,
+                         d_op("Subtract_DoubleDouble", X7 + 1900, Y7 + 1290, now(X7 + 1700, Y7 + 1290),
+                              self_get("InteractPressAt", "real", X7 + 1700, Y7 + 1360, subcat="double")),
+                         self_get("HoldToDrag", "real", X7 + 1900, Y7 + 1430, subcat="double"), ret=RB)))
+g.link(_sgl["then"], _btc["execute"])
+_stc = self_set("TapCarry", "bool", X7 + 2700, Y7 + 1000, "drop it", default="true")
+chain(_btc, _stc, set_from("TapCarryAt", "real", X7 + 3000, Y7 + 1000, now(X7 + 2850, Y7 + 1150), "", subcat="double"),
+      inc("NTapCarryPick", X7 + 3300, Y7 + 1000, "count (probe)"))
+g.link([n_ for n_ in g.nodes if n_.comment == "count (probe)"][-1]["then"], _beq["execute"])
+g.link(_btc["else"], _beq["execute"])
 _sle = set_from("LastEquipMont", "object", X7 + 2700, Y7 + 300, ev7["Montage"], "the weapon's equip", sub=MONT)
 chain(_beq, _sle)
 g.link(_sle["then"], _bun["execute"])

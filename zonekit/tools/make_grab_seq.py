@@ -570,6 +570,17 @@ def palm_q(src, facing, up_vec=(0.0, 0.0, 1.0)):
     return qmul(q_between(f1p, up), q1)
 
 
+def hand_axes(src):
+    """palm_q's hand-local finger direction and palm normal (the palm toward the item)."""
+    hp, hq0 = cs(src, HAND, FIST_K)
+    f_l = qrot(qinv(hq0), unit(sub(cs(src, "jnt_l_hand_middle_01", FIST_K)[0], hp)))
+    lat = qrot(qinv(hq0), unit(sub(cs(src, "jnt_l_hand_index_01", FIST_K)[0], cs(src, "jnt_l_hand_pinky_01", FIST_K)[0])))
+    palm_l = unit(cross(f_l, lat))
+    if dot(qrot(hq0, palm_l), (1.0, 0.0, 0.0)) < 0:
+        palm_l = mul(palm_l, -1.0)
+    return f_l, palm_l
+
+
 def door_sched(mode, R, N, G, PB):
     """(from frame, to frame, from point, to point), 30 fps. Push: out to just short of the door by 14, a 0.4 s forward
     stroke 14-26 (the Blueprint pauses at 26 = 0.867 s), held to 30, back by 48. Pull: out to the door by 16, held to 22
@@ -1085,6 +1096,269 @@ def build_door_family(family, mode):
                f"saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
 
 
+
+NAME_PAT = "AS_ImmLoot_PatTable"
+PAT_FAMILIES = (("ar", RIFLE_BASE), ("pt", PISTOL_BASE), ("bh", BASE_BH))   # segment = family index * 25 + bin
+PAT_SEG = 51                       # frames per segment (30 fps): out 0-10, pats 10-27, held at 27 (0.9 s), back 27-45
+# n2c (tester: "still too fast and it pats too many times: only 3 pats, slow and eased, but not too slow"): three
+# pats in turn (left, right, left), each a smooth dip over 9 frames; the montage plays at PAT_RATE (0.78: ~0.38 s a pat,
+# out ~0.43 s, back ~0.47 s), the table's length unchanged (the hand-set montage keeps working)
+PAT_OUT_K = 10
+PAT_HOLD_K = 37                    # the Blueprint holds here: 37 / 30 = 1.233 s of montage time
+PAT_BACK_K = 48
+PAT_COUNT = 3
+# n2d (tester: "pat in different places, as if searching the body"; "on leaving the window the hands should go fully out
+# of view before the equip brings the weapon up: now you see the weapon appear, then the equip"): each pat lands on its
+# own spot (component cm from the hand's target: X forward, Y right, Z up), the hand gliding between them; with a weapon
+# the hands go back DOWN out of view (PAT_DROP from the stance grip), not to the grip, and the IK stays off (the game's
+# equip that follows switches it on)
+PAT_SPOTS = {"l": ((7.0, -4.0, 0.0), (-6.0, 5.0, 0.0)),      # left: pat 1, pat 3
+             "r": ((-5.0, 3.0, 0.0), (6.0, -3.0, 0.0))}      # right: where it waits, pat 2
+PAT_DROP = (-6.0, 0.0, -42.0)
+# n2e (tester: "still robotic: it moves, then goes down and up; it should be one smooth motion, an eased pat, moving,
+# pat, in an arc, natural"): each hand follows one continuous path over the pat timeline (x 0..3): it arrives hovering
+# PAT_HOVER above its first spot, drops onto it (eased in, so it lands with some speed), lifts in an arc of PAT_ARC to
+# the next spot and lands again, and lifts off at the end; the left pats at x 0.5 and 2.5, the right at 1.5
+PAT_HOVER, PAT_PRESS, PAT_ARC = 3.0, 1.5, 6.0
+PAT_CONTACTS = {"l": (0.5, 2.5), "r": (1.5,)}
+
+
+def pat_off(s, x):
+    """The hand's offset from its target at pat time x (0..PAT_COUNT): (X fwd, Y right, Z up) cm."""
+    sp = PAT_SPOTS[s]
+    ct = PAT_CONTACTS[s]
+    # waypoints: (time, spot, height); between two contacts an arc
+    if s == "l":
+        pts = [(0.0, sp[0], PAT_HOVER), (ct[0], sp[0], -PAT_PRESS), (ct[1], sp[1], -PAT_PRESS), (float(PAT_COUNT), sp[1], PAT_HOVER)]
+    else:
+        pts = [(0.0, sp[0], PAT_HOVER), (ct[0], sp[1], -PAT_PRESS), (float(PAT_COUNT), sp[1], PAT_HOVER)]
+    for (t0, p0, z0), (t1, p1, z1) in zip(pts, pts[1:]):
+        if t0 <= x <= t1:
+            t = (x - t0) / max(t1 - t0, 1e-6)
+            hz = smooth(t)
+            h = add(p0, mul(sub(p1, p0), hz))
+            if z0 < 0 and z1 < 0:                       # contact to contact: lift in an arc
+                z = -PAT_PRESS + PAT_ARC * math.sin(math.pi * t)
+            elif z1 < 0:                                # hover -> contact: accelerating down (lands with some speed)
+                z = z0 + (z1 - z0) * (t * t)
+            else:                                       # contact -> hover: decelerating up
+                z = z0 + (z1 - z0) * (1 - (1 - t) * (1 - t))
+            return (h[0], h[1], h[2] + z)
+    return add(sp[-1], (0.0, 0.0, PAT_HOVER))
+PAT_WRIST_UP = 35.0                # n2i: the hand bent up at the wrist (fingers toward the back of the hand), degrees
+PAT_SPREAD = 26.0                 # cm between the hands (component Y): the right hand's target right of the left's
+PAT_DIP = 4.0                      # cm each pat goes down
+PAT_IK = ((0.035907, 0.0, 0.06), (1.47, 1.0, 0.3))   # both hands' IK: off at the start, on at frame 44
+
+
+def _mirror_q(q):
+    """A component-space rotation reflected across the XZ plane (left <-> right)."""
+    return (-q[0], q[1], -q[2], q[3])
+
+
+def build_pat_table():
+    """2026-10-14 (Nexus, Scorpius34: "loot corpses with both hands"; tester: "the right hand goes out the same way the
+    left does, as if patting down and checking the body on the ground"; not the mutant looting animation, it uses a
+    knife): AS_ImmLoot_PatTable, one long sequence of 75 segments of 51 frames: family (rifle stand idle / pistol idle /
+    bare-hands stand idle) x the 25 touch bins. Both arms, each from its own stance, built like the v1.2.0 touch
+    (zonekit/research/touch/README.md): every arm track at the stance, upper arm / forearm solved, elbow pole turning
+    out and down, a curved path out (left: through the left / below exit, right: mirrored), the hand following the
+    forearm then turning one way round to palm down toward the body (right: the left's orientation mirrored), fingers
+    opening (the dialogue gesture's spread hands), two pats (the hands dip in turn), held at frame 27 (the Blueprint
+    pauses at 0.9 s while the loot window is open), back by 45. Both hands' IK off at the start and on at 1.4 s (the
+    Blueprint hides a held weapon and draws it again after). Played through AM_ImmLoot_Pat (LeftHand + RightHand slot
+    tracks, set once by hand in the montage editor), started at the segment."""
+    tmpl = unreal.load_asset(f"{DIR}/{NAME}")
+    path = f"{DIR}/{NAME_PAT}"
+    if not EAL.does_asset_exist(path):
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(NAME_PAT, DIR, tmpl)
+    seq = unreal.load_asset(path)
+    grab_src = unreal.load_asset(SRC)
+    sp_seq = unreal.load_asset(SPREAD_SEQ)
+    tracks = [str(x) for x in AL.get_animation_track_names(tmpl)]
+    sides = {}
+    for s in ("l", "r"):
+        arm = [b for b in tracks if f"jnt_{s}_shoulder" in [str(x) for x in AL.find_bone_path_to_root(tmpl, b)]]
+        fingers = [b for b in arm if b.startswith(f"jnt_{s}_hand_")]
+        sides[s] = dict(arm=arm, fingers=fingers, SH=f"jnt_{s}_shoulder", ARM=f"jnt_{s}_arm", FORE=f"jnt_{s}_fore_arm",
+                        HAND=f"jnt_{s}_hand", ROLL=f"jnt_{s}_fore_arm_roll",
+                        opens={b: local(sp_seq, b, SPREAD_K)[1] for b in fingers},
+                        sign=-1.0 if s == "l" else 1.0)
+    # the right hand's orientation = the left's mirrored, corrected by the two hands' reference-pose difference
+    ref = tmpl.get_editor_property("skeleton").get_reference_pose()
+    def ref_cs(b):
+        t = ref.get_ref_bone_pose(b, unreal.AnimPoseSpaces.WORLD)
+        return (t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w)
+    C_hand = qmul(qinv(_mirror_q(ref_cs("jnt_l_hand"))), ref_cs("jnt_r_hand"))
+    _fl, _pl = hand_axes(grab_src)
+    WRIST_AX = {"l": unit(cross(_fl, mul(_pl, -1.0)))}   # n2i: hand-local axis bending the fingers toward the back of the hand
+    _mv = lambda v: (v[0], -v[1], v[2])   # reflected across XZ; right pose = mirror(left) * C_hand, so v_r = C_hand^-1 M(v_l)
+    _flr, _plr = qrot(qinv(C_hand), _mv(_fl)), qrot(qinv(C_hand), _mv(_pl))
+    WRIST_AX["r"] = unit(cross(_flr, mul(_plr, -1.0)))
+    keys = {b: ([], [], []) for s in sides.values() for b in s["arm"]}
+    nseg = 0
+    for fam, base_path in PAT_FAMILIES:
+        base = unreal.load_asset(base_path)
+        cam, _ = cs(base, "jnt_camera", 0)
+        st = {}
+        for s, d in sides.items():
+            sh_p, sh_q = cs(base, d["SH"], 0)
+            a_l, f_l, h_l = local(base, d["ARM"], 0), local(base, d["FORE"], 0), local(base, d["HAND"], 0)
+            a_q = qmul(sh_q, a_l[1]); A = add(sh_p, qrot(sh_q, a_l[0]))
+            f_q = qmul(a_q, f_l[1]); E = add(A, qrot(a_q, f_l[0]))
+            R = add(E, qrot(f_q, h_l[0]))
+            st[s] = dict(sh_q=sh_q, a_q=a_q, f_q=f_q, A=A, E=E, R=R, h_l=h_l, l1=norm(sub(E, A)), l2=norm(sub(R, E)),
+                         rest={b: local(base, b, 0) for b in d["arm"]}, roll_l=local(base, d["ROLL"], 0)[1])
+        for ie, elev in enumerate(TOUCH_ELEVS):
+            for ia, azim in enumerate(TOUCH_AZIMS):
+                er, ar = math.radians(elev), math.radians(azim)
+                dirv_e = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
+                L = st["l"]
+                reach_l = (L["l1"] + L["l2"]) * TOUCH_REACH
+                inv = lambda v: tuple((v[j] - TOUCH_MAP[j][1]) / TOUCH_MAP[j][0] for j in range(3))
+                u = tuple(dirv_e[j] / TOUCH_MAP[j][0] for j in range(3))
+                c_ = sub(add(cam, inv((0.0, 0.0, 0.0))), L["A"])
+                qa, qb, qc = dot(u, u), 2 * dot(c_, u), dot(c_, c_) - reach_l * reach_l
+                disc = qb * qb - 4 * qa * qc
+                t = (-qb + math.sqrt(disc)) / (2 * qa) if disc > 0 else max(10.0, -qb / (2 * qa))
+                GL = add(cam, inv(mul(dirv_e, t)))
+                goals = {"l": GL, "r": add(GL, (0.0, PAT_SPREAD, 0.0))}
+                # n2f (tester: "rotate the hands up, toward the sky; they're a little too far rotated down, so it doesn't
+                # look fully like a pat"): n2f tilted the palm normal AWAY from the body's direction (-0.25): tester "tilted
+                # the wrong way, the wrists look broken, the hands way too far down". A palm normal tilted toward the
+                # body's direction lifts the fingers (n2e: +0.35 * dirv_e, ~10 deg up with the view's downward part);
+                # n2g: the horizontal direction only, PAT_PALM_UP 0.55. Tester: "looks like it was when I first asked; the
+                # hand needs to go up, rotate it up". Scan: n2e -> n2g raised the fingers 12 deg but the wrist bend stayed
+                # 30 deg (the hand turned about the forearm, not up). n2i: n2e's palm; the hand is then bent up at the
+                # wrist about its own side axis by PAT_WRIST_UP, as a local rotation on top of the turn (below: bending
+                # the target instead made the turn out take the long way, 214 deg in 7 frames)
+                PQL = palm_q(grab_src, unit(add((0.0, 0.0, -1.0), mul(dirv_e, 0.35))), (dirv_e[0], dirv_e[1], 0.0))
+                PQ = {"l": PQL, "r": qmul(_mirror_q(PQL), C_hand)}
+                for s, d in sides.items():
+                    S = st[s]
+                    G = goals[s]
+                    sg = d["sign"]
+                    Re = add(S["R"], (TOUCH_END_OFF[0], -sg * TOUCH_END_OFF[1], TOUCH_END_OFF[2]))
+                    Cc = add(Re, (TOUCH_EXIT[0], -sg * TOUCH_EXIT[1], TOUCH_EXIT[2]))
+                    reach = (S["l1"] + S["l2"]) * TOUCH_REACH
+                    eref = (ELBOW_REF[0], -sg * ELBOW_REF[1], ELBOW_REF[2])
+                    hint = sub(S["E"], S["A"])
+                    RQ = qmul(S["f_q"], S["h_l"][1])
+                    pq = PQ[s] if dot4(PQ[s], RQ) >= 0 else tuple(-x for x in PQ[s])
+                    prev_tq = None
+                    mine = (0, 2) if s == "l" else (1,)   # which of the three pats this hand makes
+                    spots = PAT_SPOTS[s]
+                    armed = fam in ("ar", "pt")
+                    Dn = add(S["R"], (PAT_DROP[0], -sg * PAT_DROP[1], PAT_DROP[2]))   # armed: the way back ends below the view
+                    for k in range(PAT_SEG):
+                        if k <= PAT_OUT_K:
+                            u_ = smooth(k / float(PAT_OUT_K))
+                        elif k <= PAT_HOLD_K:
+                            u_ = 1.0
+                        elif k <= PAT_BACK_K:
+                            u_ = 1.0 - smooth((k - PAT_HOLD_K) / float(PAT_BACK_K - PAT_HOLD_K))
+                        else:
+                            u_ = 0.0
+                        # n2e: one continuous path through the pat timeline (pat_off: hover, arcs between spots)
+                        xs = 0.0 if k <= PAT_OUT_K else (PAT_COUNT if k >= PAT_HOLD_K else (k - PAT_OUT_K) / float(PAT_HOLD_K - PAT_OUT_K) * PAT_COUNT)
+                        off = pat_off(s, xs)
+                        Gk = add(G, off)
+                        if armed and k > PAT_HOLD_K:
+                            # with a weapon: from the last spot down out of view (a little out to the side on the way)
+                            w_ = smooth(min(1.0, (k - PAT_HOLD_K) / float(PAT_BACK_K - PAT_HOLD_K)))
+                            Cd = add(mul(add(Gk, Dn), 0.5), (0.0, sg * 6.0, 0.0))
+                            T = add(add(mul(Gk, (1 - w_) ** 2), mul(Cd, 2 * w_ * (1 - w_))), mul(Dn, w_ * w_))
+                        else:
+                            T = add(add(mul(Re, (1 - u_) ** 2), mul(Cc, 2 * u_ * (1 - u_))), mul(Gk, u_ * u_))
+                        to_t = sub(T, S["A"])
+                        l1, l2 = S["l1"], S["l2"]
+                        dd = max(abs(l1 - l2) + 0.01, min(reach, norm(to_t)))
+                        dv = unit(to_t)
+                        a = (l1 * l1 - l2 * l2 + dd * dd) / (2 * dd)
+                        h = math.sqrt(max(l1 * l1 - a * a, 0.0))
+                        s_ = min(1.0, norm(sub(T, Re)) / max(norm(sub(G, Re)), 1e-6))
+                        rf = unit(add(mul(unit(hint), 1.0 - s_), mul(eref, s_)))
+                        pole = sub(rf, mul(dv, dot(rf, dv)))
+                        pole = unit(pole) if norm(pole) > 1e-6 else unit(cross(dv, (0.0, 0.0, 1.0)))
+                        E2 = add(S["A"], add(mul(dv, a), mul(pole, h)))
+                        T2 = add(S["A"], mul(dv, dd))
+                        r1 = q_between(sub(S["E"], S["A"]), sub(E2, S["A"]))
+                        a_q2 = qmul(r1, S["a_q"])
+                        r2 = q_between(qrot(r1, sub(S["R"], S["E"])), sub(T2, E2))
+                        f_q2 = qmul(r2, qmul(r1, S["f_q"]))
+                        kk = k if k <= PAT_HOLD_K else (2 * PAT_HOLD_K - k if k <= 2 * PAT_HOLD_K else 0)
+                        wv = smooth(min(1.0, max(0.0, (kk - 5) / 7.0))) if k <= PAT_HOLD_K else smooth(min(1.0, max(0.0, (PAT_HOLD_K + 9 - k) / 9.0)))
+                        tq = qmul(qinv(f_q2), pq)
+                        if prev_tq is None:
+                            if dot4(tq, S["h_l"][1]) < 0:
+                                tq = tuple(-x for x in tq)
+                        elif dot4(tq, prev_tq) < 0:
+                            tq = tuple(-x for x in tq)
+                        prev_tq = tq
+                        hl = slerp_raw(S["h_l"][1], tq, wv)
+                        dlt = qmul(hl, qinv(S["h_l"][1]))
+                        ax_ = unit(S["h_l"][0])
+                        pr = dot(ax_, dlt[:3])
+                        tw = (ax_[0] * pr, ax_[1] * pr, ax_[2] * pr, dlt[3])
+                        tn = math.sqrt(sum(x * x for x in tw))
+                        tw = tuple(x / tn for x in tw) if tn > 1e-9 else (0.0, 0.0, 0.0, 1.0)
+                        _bt = math.radians(PAT_WRIST_UP) * wv / 2   # n2i: bent up at the wrist as the hand turns out
+                        _ax = WRIST_AX[s]
+                        hl_b = qmul(hl, (_ax[0] * math.sin(_bt), _ax[1] * math.sin(_bt), _ax[2] * math.sin(_bt), math.cos(_bt)))
+                        solved = {d["ARM"]: qmul(qinv(S["sh_q"]), a_q2), d["FORE"]: qmul(qinv(a_q2), f_q2), d["HAND"]: hl_b,
+                                  d["ROLL"]: qmul(slerp((0.0, 0.0, 0.0, 1.0), tw, 0.5), S["roll_l"])}
+                        for b in d["arm"]:
+                            l = S["rest"][b]
+                            if b in solved:
+                                rq = solved[b]
+                            elif b in d["opens"]:
+                                rq = slerp(l[1], d["opens"][b], wv)
+                            else:
+                                rq = l[1]
+                            keys[b][0].append(unreal.Vector(*l[0]))
+                            keys[b][1].append(unreal.Quat(*rq))
+                            keys[b][2].append(unreal.Vector(*l[2]))
+                nseg += 1
+        out.append(f"{NAME_PAT}: family {fam} done ({nseg} segments)")
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot pat table", True)
+    ctrl.remove_all_bone_tracks(True)
+    ctrl.set_number_of_frames(unreal.FrameNumber(nseg * PAT_SEG - 1), True)
+    for b, (pos, rot, scl) in keys.items():
+        ctrl.add_bone_curve(b, True)
+        ctrl.set_bone_track_keys(b, pos, rot, scl, True)
+    ctrl.close_bracket(True)
+    for tn_ in [str(x) for x in AL.get_animation_notify_track_names(seq)]:
+        AL.remove_animation_notify_events_by_track(seq, tn_)
+    track = "ImmLoot"
+    if track not in [str(x) for x in AL.get_animation_notify_track_names(seq)]:
+        AL.add_animation_notify_track(seq, track, unreal.LinearColor(0.2, 0.8, 0.2, 1.0))
+    hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
+    for i in range(nseg):
+        for t_, end, bl in (PAT_IK if i >= 50 else PAT_IK[:1]):   # n2d: with a weapon (segments 0-49) no IK-on
+            ev = AL.add_animation_notify_event(seq, track, i * PAT_SEG / 30.0 + t_, hik)
+            ev.set_editor_property("hand_to_apply", unreal.AnimationHands.BOTH_HAND)
+            ev.set_editor_property("blend_time", bl)
+            ev.set_editor_property("end_value", end)
+    for cn in [str(x) for x in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]:
+        AL.remove_curve(seq, cn, False)
+    AL.add_curve(seq, "left_hand_curve", unreal.RawCurveTrackTypes.RCT_FLOAT, False)
+    AL.add_float_curve_keys(seq, "left_hand_curve", [0.0, seq.get_play_length()], [1.0, 1.0])
+    out.append(f"{NAME_PAT}: {nseg} segments x {PAT_SEG} frames, len {seq.get_play_length():.2f} s, "
+               f"{len(AL.get_animation_notify_events(seq))} notifies, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
+    mpath = f"{DIR}/AM_ImmLoot_Pat"
+    if not EAL.does_asset_exist(mpath):
+        f_ = unreal.AnimMontageFactory()
+        f_.set_editor_property("source_animation", seq)
+        unreal.AssetToolsHelpers.get_asset_tools().create_asset("AM_ImmLoot_Pat", DIR, unreal.AnimMontage, f_)
+    m = unreal.load_asset(mpath)
+    bi = m.get_editor_property("blend_in"); bi.set_editor_property("blend_time", 0.2); m.set_editor_property("blend_in", bi)
+    bo = m.get_editor_property("blend_out"); bo.set_editor_property("blend_time", 0.3); m.set_editor_property("blend_out", bo)
+    m.set_editor_property("enable_auto_blend_out", False) if hasattr(m, "enable_auto_blend_out") else None
+    out.append(f"AM_ImmLoot_Pat: slots {[str(x) for x in AL.get_montage_slot_names(m)]} (needs LeftHand + RightHand), "
+               f"saved {EAL.save_loaded_asset(m, only_if_is_dirty=False)}")
+
+
 def touch_notifies(seq, mode):
     """The left-hand IK off just after the start, back on at the return (vanilla grab's HandIK notify kind)."""
     for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
@@ -1256,7 +1530,15 @@ def finger_open(f):
     return 1.0 - smoother((f - 10) / 3)
 
 
-def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, lower_deg=0.0, max_dist=None, grip_seq=None, azims=None, finger_base=None, hand_roll=0.0, dists=None):
+def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, lower_deg=0.0, max_dist=None, grip_seq=None, azims=None, finger_base=None, hand_roll=0.0, dists=None, follow_pitch=False):
+    """follow_pitch (1.3.1, Nexus EMPERORTECH: "standing, an extremely stretched and distorted texture on the sleeve,
+    starting from the shoulder, when picking up items and inspecting stashes; not when crouching"; with a wider weapon
+    viewmodel FOV): standing, the bare-hands look additive leaves the arms level while the camera pitches, so looking
+    down at an item the shoulder and upper arm come into the bottom-left of the view close to the camera, where the
+    arms' first-person FOV squeeze stretches them; crouched, the look turns the arms with the view. With follow_pitch the
+    shoulder (and the arm with it) turns about jnt_spine_03 by the row's elevation (the view pitch when looking at the
+    item), eased in over the reach and out on the way back (jnt_l_shoulder keyed too), as the crouched posture does;
+    the arm is solved from the turned shoulder, so the hand still lands on the item."""
     dists_ = dists or DISTS
     azims_ = azims or AZIMS
     sp_p, sp_q = cs(base, "jnt_spine_03", 0)
@@ -1281,7 +1563,13 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, low
     fk = {b: ([], [], []) for b in fbase}
     fgrip_ = {b: local(grip_seq, b, 0)[1] for b in FINGERS} if grip_seq not in (None, "src") else None
     out.append(f"{name}: table arm root (from the eye) {tuple(round(x - c, 2) for x, c in zip(A, cam))} abs {tuple(round(x, 2) for x in A)}, reach {l1 + l2:.2f}")
+    sh_parent = [str(x) for x in AL.find_bone_path_to_root(base, SHOULDER)][1]
+    pp_p, pp_q = cs(base, sh_parent, 0)
+    if follow_pitch:
+        keys[SHOULDER] = ([], [], [])
     for ie, elev in enumerate(ELEVS):
+      th_ = math.radians(-elev) if follow_pitch else 0.0
+      Wfull = (0.0, math.sin(th_ / 2), 0.0, math.cos(th_ / 2))
       for dd in dists_:
         for az in azims_:
             er, ar = math.radians(elev), math.radians(az)
@@ -1301,6 +1589,15 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, low
             bias = (0.0, 0.0, 0.0)   # build 20: none (build 19 landed exactly where aimed)
             G = sub(sub(item, qrot(GQp, wpn)), bias)
             for f in range(SEG2):
+                # follow_pitch: the shoulder rig turned by the view pitch, eased in by frame 10, out over 16-36
+                wfp = smoother(min(1.0, f / 10.0)) if f <= 16 else (1.0 - smoother(min(1.0, (f - 16) / 20.0)))
+                Wf = slerp((0.0, 0.0, 0.0, 1.0), Wfull, wfp)
+                sh_qf = qmul(Wf, sh_q)
+                sh_pf = add(sp_p, qrot(Wf, sub(sh_p, sp_p)))
+                a_q0 = qmul(sh_qf, ba[1]); A = add(sh_pf, qrot(sh_qf, ba[0]))
+                f_q0 = qmul(a_q0, bf[1]); E = add(A, qrot(a_q0, bf[0]))
+                RQ = qmul(f_q0, bh[1]); R = add(E, qrot(f_q0, bh[0]))
+                H = R
                 if f <= 12:                     # out: eased, arcing up and out, the wrist turning ahead of the arm
                     bw = smoother(f / 12)
                     T = add(add(R, mul(sub(G, R), bw)), mul(ARC_OUT, math.sin(math.pi * bw)))
@@ -1352,7 +1649,11 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, low
                 if f == 0 or f >= 39:       # exactly the paused frame's own arm (no jump when the use goes on)
                     solved = {ARM: ba[1], FORE: bf[1], HAND: bh[1]}
                 else:
-                    solved = {ARM: qmul(qinv(sh_q), a_q2), FORE: qmul(qinv(a_q2), f_q2), HAND: qmul(qinv(f_q2), hq)}
+                    solved = {ARM: qmul(qinv(sh_qf), a_q2), FORE: qmul(qinv(a_q2), f_q2), HAND: qmul(qinv(f_q2), hq)}
+                if follow_pitch:
+                    keys[SHOULDER][0].append(unreal.Vector(*bsh[0]))
+                    keys[SHOULDER][1].append(unreal.Quat(*(bsh[1] if (f == 0 or f >= 39) else qmul(qinv(pp_q), sh_qf))))
+                    keys[SHOULDER][2].append(unreal.Vector(*bsh[2]))
                 for b, l in ((ARM, ba), (FORE, bf), (HAND, bh)):
                     keys[b][0].append(unreal.Vector(*l[0]))
                     keys[b][1].append(unreal.Quat(*solved[b]))
@@ -1524,6 +1825,10 @@ def build_use_tables(src, tgt_rot, nkeys):
 
 
 try:
+    pick_only = ARGS.get("PART", "") == "pickstand"   # 1.3.1: only the standing empty-hands pickup table (follow_pitch)
+    if ARGS.get("PART", "") == "pat":   # both hands on bodies
+        build_pat_table()
+        raise SystemExit
     if ARGS.get("PART", "") == "doorfam":   # door build B: the doors with a weapon, per family
         for fam in ("ar", "pt"):
             for md in ("push", "pull"):
@@ -1605,6 +1910,10 @@ try:
         if k % 3 == 0:
             out.append(f"k{k:02d} w={w:.2f} hand=({H[0]:.1f},{H[1]:.1f},{H[2]:.1f}) -> ({T2[0]:.1f},{T2[1]:.1f},{T2[2]:.1f}) "
                        f"reach {norm(to_t):.1f}/{l1 + l2:.1f}")
+    if pick_only:
+        build_use_table(src, tgt_rot, nkeys, unreal.load_asset(BASE_BH), "AS_ImmLoot_GrabBHAdd", unreal.load_asset(f"{DIR}/{NAME_BH}"),
+                        out_dir=DIR, grip_seq="src", azims=list(range(-30, 61, 5)), dists=[60], follow_pitch=True)
+        raise SystemExit
     ctrl = seq.get_editor_property("controller")
     ctrl.open_bracket("ImmLoot raised grab", True)
     for b, (pos, rot, scl) in keys.items():
@@ -1655,7 +1964,7 @@ try:
         build_bh_reach_table(src, seq, tgt_rot, nkeys)   # build 12 (build_bh_table = checkpoint-b11)
     if ARGS.get("PICKADD", "0") == "1":    # build 38
         build_use_table(src, tgt_rot, nkeys, unreal.load_asset(BASE_BH), "AS_ImmLoot_GrabBHAdd", unreal.load_asset(f"{DIR}/{NAME_BH}"),
-                        out_dir=DIR, grip_seq="src", azims=list(range(-30, 61, 5)), dists=[60])   # build 39; build 42: the vanilla grab's fingers
+                        out_dir=DIR, grip_seq="src", azims=list(range(-30, 61, 5)), dists=[60], follow_pitch=True)   # build 39; build 42: the vanilla grab's fingers; 1.3.1: follow_pitch
     if ARGS.get("ARMHOLD", "0") == "1":
         build_arm_hold()
     if ARGS.get("TWIST", "0") == "1":

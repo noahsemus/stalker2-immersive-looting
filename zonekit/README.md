@@ -475,3 +475,117 @@ mod go to `harness/docs/` instead (promote them).
   Blueprint's hold.
 - v1.3.0 (Noah: "cut a release"): door builds A-C; release cleanup: the replaced armed `AS_ImmLoot_DoorPush` /
   `DoorPull` deleted (kit, mirror, NewPackages; `build_doors` no longer builds them).
+- After v1.3.0 (not published; Noah: keep building on it). Nexus feedback: Farsot (MCM option to not show the item
+  in the hand: "looks like you're force pulling items"), Scorpius34 (loot corpses with both hands), bug MonaPona
+  (1.2.0: "after looting multiple bodies very quickly the backpack glitched out and never went back to normal";
+  picture: the bag fills the bottom of the view with the scoped rifle on it).
+- Build n1: bag: a bag started while the last one was still on its way out replaced `BagActor` and the old one stayed
+  attached to the left hand for good: the old bag is destroyed first; cleanup watchdog (no touch out, no bag montage
+  active, 1 s after it started). MCM "Hide items in the hand" (`HideItem`, off): no flying copy at a pickup.
+- Build n2: both hands on bodies (Nexus, Scorpius34; tester: not the mutant-looting animation (knife), "the right hand
+  out the same way as the left, as if patting down the body"): `AS_ImmLoot_PatTable` (`make_grab_seq.py --arg PART=pat`):
+  75 segments of 51 frames = family (rifle stance, pistol, bare hands) x the 25 touch bins; both arms from their own
+  stance with the touch recipe (right hand: the left's palm-down orientation mirrored), out by 13, two alternating pats,
+  held at 27 (0.9 s), back by 45; both hands' IK off / on; through `AM_ImmLoot_Pat` (LeftHand + RightHand slot tracks set
+  by hand). Weapon hidden and drawn again with the last equip (as the bag); bare hands standing get the bag pitch fix.
+  Pat end at segment + 1.6 s, a cut pat is cleared (`NPatCut`).
+- MCM consolidation (tester: "consolidate some of the toggles in a dropdown"): "Body looting" (Hand / Both hands /
+  Backpack / Off -> `BodyMode`), "Stash looting" (Hand / Backpack / Off -> `StashMode`), "Door animation", "Hide
+  items in the hand". MCM combo boxes = setting type `NewEnumerator7` with `ComboBoxOptions` labels and
+  `ComboBoxSelectedOption` (from MCM_ModExample1). `TouchBodies` / `BagLoot` / `PatLoot` are no longer read.
+- n2b: pats slower (held at frame 33 = 1.1 s, out by 11, back by 47; same table length so the hand-set montage keeps
+  working; the Blueprint holds the pat at 1.1 s). Montage checked: LeftHand + RightHand tracks, both the table.
+- Nexus EMPERORTECH (1.1.1 with Weapon Reposition Project and Weapon Viewmodel FOV +20%): standing, the sleeve is
+  stretched from the shoulder when picking up items and touching stashes with empty hands; crouched it is fine. Data:
+  the standing and crouched pickup tables keep the arm equally far from the camera (31-38 cm for items below); the
+  difference is the posture: standing, the bare-hands look leaves the arms level while the camera pitches, so looking
+  down the shoulder and upper arm sit in the bottom-left of the view near the camera, where the arms' FOV squeeze
+  (MF_Foreground) stretches them; crouched, the look turns the arms with the view.
+- Fix: `build_use_table(..., follow_pitch=True)` for `AS_ImmLoot_GrabBHAdd` (`make_grab_seq.py --arg PART=pickstand`):
+  `jnt_l_shoulder` keyed too, turned about `jnt_spine_03` by the row's elevation (the view pitch when looking at the
+  item), eased in by frame 10 and out over 16-36; the arm solved from the turned shoulder (the hand still lands on the
+  item).
+- MCM fixes: (1) the combo types were lost on paste (a pin default written right after `PinName` is reset for enum
+  pins): `defaults()` now writes `DefaultValue` where the editor does; combos renamed "Looting bodies" / "Looting
+  stashes". (2) Dead settings ("Body looting" / "Stash looting" bools from that build, 1.2's "Body and stash animation"
+  / "Bag for bodies and stashes") stay in the save and are listed: MCM (decompiled `BP_MCM_Manager`,
+  `WBP_MCM_ModContainer`) lists all saved settings of a mod id but only mod ids added this session; no remove call.
+  New mod id `"Immersive Looting "` (trailing space): the old id's entries are no longer listed. Saved values reset
+  once to the defaults.
+- n2c (tester: "still too fast and pats too many times: only 3 pats, slow and eased, not too slow"): three pats in
+  turn (left, right, left), smooth dips over 9 frames each (frames 10-37), held at 37 (1.233 s montage time), back by
+  48; `AM_ImmLoot_Pat` played at 0.78 (~0.38 s a pat). Table length unchanged (the hand-set montage still matches).
+- n2d (tester: "pat in different places, as if searching the body"; "leaving the window the hands should go fully out of
+  view before the equip; now you see the weapon appear, then the equip"): each pat on its own spot (`PAT_SPOTS`: left
+  pats 1 and 3 ~11 cm apart, right waits then pats 2), the hand gliding between them; with a weapon the way back goes
+  down out of view (`PAT_DROP`, ~35-40 cm below the stance grip by frame 48) and the table has no IK-on for the weapon
+  families (the game's equip switches it on). Fallback without a remembered equip (right after a load): the hidden
+  weapon is shown with the hands still down (IK off until the game's next IK notify).
+- n2e (tester: pats "still robotic: moves, then down and up; should be one smooth eased motion in an arc"): `pat_off`:
+  one continuous path per hand over the pat timeline: hovers 3 cm above its first spot, drops onto it eased in, lifts in
+  a 6 cm arc to the next spot and lands, lifts off at the end.
+- Bag on bodies, looting fast (tester: "sometimes the bag doesn't play and the window opens at once; sometimes no
+  window for the body, then my inventory opens"). Probe: (a) most presses had the loot window open within 0.1 s of the
+  tap (the game's own tap opened it before the bag showed); (b) one press came 34 ms after the last bag's weapon draw
+  started: bag In took 2.7 s, the injected interact opened nothing, 2 retries, then a game montage (kind 0) and a draw.
+  Fix (b): no injected interact while a game action plays (`MainActionSlot` active). Probe: montage kinds 5 inventory,
+  6 interact, 7 pick, to name that montage next time. (a) not changed yet.
+- n2e tested (tester): "sleeve looks fixed" (EMPERORTECH, `follow_pitch`); pats "a lot better"; bag looting fast "definitely
+  better" but at speed the bag sometimes still does not appear, and once a tap on a body picked it up (carry).
+- n2f, pat (tester: "rotate the hands up, toward the sky; a little too far rotated down, it doesn't look fully like a
+  pat"): the palm was tilted toward the body's direction (fingers forward and down, ~12 deg); now `PAT_PALM_UP` 0.25
+  tilts it back (fingers forward and ~14 deg up). Pat table rebuilt (patscan: no step above 39 deg, arms unchanged).
+- n2f, bag at speed. Probe (session 14:31): (1) twice a press came during the last bag's weapon draw (our replay of the
+  game's equip, `MainActionSlot`) more than 0.3 s in and was skipped as "action" (SkipBits 4): no bag. The skipped touch
+  still ran the touch states: at its window's close it counted as "an item used from the window" (our montage stopped),
+  set `LootWait`, and 1 s later that wait stopped the NEXT bag's In (NYield 1, BagPlay never true): a second missing bag.
+  In the other case the player closed the window and the retry (`bwr`, TouchState 3, window not open) opened it again.
+  Fixes: our own equip replay (`EquipReplayAt` >= `GameMontageAt`) no longer skips a bag / pat press, and the bag / pat
+  start stops it (0.1 s) and cancels its weapon show; a skipped press on a body / stash / door clears its touch state
+  (`reach_over`); every body / stash press clears `LootWait`; the retry needs no window opened since the press
+  (`OpenAt` < `TouchPressAt`). (2) The carry on a tap (t 190.06): the F press was never a "just pressed" for the
+  player controller (`InteractPressAt` unchanged, the key seen down 1-2 ticks), 0.36 s after the loot window closed;
+  the game started the carry (unequip, kind 7 "pick") within a tick. Reading: F went down while the window was still
+  closing (the UI took the press), so the game saw a key already held = a hold. Not changed: asked the tester how the
+  window was closed.
+- n2f, the carry on a tap: tester closes the loot window with Esc / Alt (custom inventory key), so F was not held across
+  the close; the press after it was still never a "just pressed" and the game carried within a tick (as if the hold
+  had been running since an earlier press: the window opened at that press's release). Fix: when a body's loot window
+  closes (`TouchIsBody`, body looting on), its `DeadBodyHoldComponent` (`HoldComp`, found with the `DeadBody` in T0) is
+  switched off (`HoldOffComp`, `NHoldOff`); our next fresh press on a body / stash switches it back on (the game then
+  times the hold from that press) and the pressed body's own carry is switched on at every press (a save made during
+  the block cannot keep it off); looking away from that body (T9) also switches it back on (`NHoldOn`).
+- n2f tested (tester): pats worse, "tilted the wrong way, the wrists look broken, hands way too far down"; bag at speed
+  and the tap carry both came back after ~10 bodies in a row, "the pick-up seems to happen right after the backpack
+  not appearing". Probe (session 15:0x): bag fine for 20 bodies; then twice F was seen down (`KeyHeld`, 1-2 ticks) with
+  NO "just pressed" (`InteractPressAt` unchanged), so our press never ran: (t 156.37) the game opened its plain window
+  (no bag); (t 171.85) the game started the carry within a tick (unequip, then kind 7 "pick") on a 0.06 s tap. The
+  carry block after the window (n2f) was already switched back on by the look-away rule (bodies side by side), so it
+  never mattered: removed (the carry is not touched again; actor variables `HoldComp` / `HoldOffComp` / `NHoldOff` /
+  `NHoldOn` left unused, delete before the release).
+- n2g: (1) pat palm: n2f's sign was backwards (a palm normal tilted toward the body's direction lifts the fingers):
+  `PAT_PALM_UP` 0.55 toward it (fingers ~29 deg up from flat; scan at the contact frame: ~20 deg above n2e). (2) T6:
+  F down this tick and up last tick (`KeyHeldPrev`) with no "just pressed" counts as a press (`NPressEdge`). (3) the
+  game's carry pick-up montage (kind 7) starting while F is up and was pressed under `HoldToDrag` ago (`TapCarry`,
+  `NTapCarryPick`): T9 calls the game's own `Obj.DropCorpse` (with its animation) each tick until it returns true
+  (`NTapCarry`); given up after 2.5 s or when F is held again.
+- n2h (tester: "a safety net isn't good enough, the body pickup should never happen in the first place"): prevention.
+  (1) A body press no longer switches the body's search (tap) interaction off. Since 1.0.1 every body press did; the
+  window still opened at the release (logs: `InvOpen` true in the release tick), so with the search off it came
+  through the hold interaction, the only one left: suspected to leave the carry hold half-done so a later tap
+  finishes it at once. The game's own tap / hold on bodies now run untouched (stashes unchanged). (2) T10: the body we
+  look at (`BodyHold`, its `DeadBodyHoldComponent`, found in T0) reporting `HoldComponent.IsHoldStarted` while F has
+  been up 0.15 s and the left hand is free = a stale hold (`HoldStale`): its interaction is switched off for one tick
+  and on again (`HoldResetComp`, `NStaleHold`). (3) n2g's press edge and the tap-carry drop stay as the last layer.
+- n2h tested (tester): pat "still wrong, looks like it was when I first asked; rotate the hand up"; the carry bug
+  happened again with the backpack. Probe: a tap 0.24 s after the last window closed: the game did NOT open the
+  window at the release (the only such press of the session); the bag waited 3 s (`late`), then our injected interact
+  (T8) found the body's carry hold started (`HoldStale` true in that tick, `NStaleHold` 1) and the game carried it at
+  once (kind 7 the next tick). The carry came from OUR injected press.
+- n2i: (1) a body never gets an injected interact (T1 `bt1` and the retry `bwr`): without a window by then the touch /
+  bag waits as requested (TouchState 3, `NBodyNoInject`): the player's next tap opens the window natively, or T2 brings
+  it back after 1 s. Stashes keep the injection. (2) pat: scan n2e vs n2g: the fingers rose 12 deg but the wrist bend
+  stayed 30 deg (the palm tilt turned the hand about the forearm, not up). Now n2e's palm plus a local wrist bend
+  `PAT_WRIST_UP` 35 deg about the hand's own side axis (fingers toward the back of the hand), weighted with the turn
+  (`wv`); right hand's axis mirrored through `C_hand`. Scan: fingers +79/+80 deg (component) vs n2e +46, both hands
+  alike; the turn out stays one way (largest hand step 31-33 deg, as n2e; bending the target instead gave 46 deg steps).
