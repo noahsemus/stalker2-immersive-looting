@@ -95,9 +95,12 @@ harness on 2026-10-09.
   the hand never crosses the weapon; Tim0st's Nexus "inverted hand" report), cleanup (probes of this session removed,
   30 unused assets deleted). Zip in `zonekit/builds/v1.2.0/`, GitHub release v1.2.0.
 
-- Next (Noah, 2026-10-13): door overhaul: pick push vs pull from the door's real swing (lockers open toward you),
-  rebuild the door assets with the touch recipe in `zonekit/research/touch/README.md` (what fixed the v1.2.0 touch,
-  checks, probe loggers); door research in `zonekit/research/2026-10-13-door-research.md`.
+- 2026-10-14 v1.3.0 released (Noah: "honestly looks pretty good", then "cut a release"): doors pick push / pull from
+  how the pressed point of the leaf moves (toward the camera = pull), closets / cabinets / lockers count as doors,
+  armed door push / pull rebuilt per weapon family with the touch recipe (`AS_ImmLoot_DoorPush/PullAr`, `...Pt`:
+  downward arc under the weapon, accelerating push stroke); the old armed `AS_ImmLoot_DoorPush/Pull` deleted. Door
+  research `zonekit/research/2026-10-13-door-research.md`, touch recipe `zonekit/research/touch/README.md`. Zip in
+  `zonekit/builds/v1.3.0/`, GitHub release v1.3.0. Not tested by Noah: lockers / closets / cabinets.
 
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,

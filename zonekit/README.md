@@ -456,3 +456,22 @@ mod go to `harness/docs/` instead (promote them).
   backpack probes, the build t / y hand turn and grip-offset logger); unused assets deleted from the kit, the repo
   mirror and NewPackages: `AS_ImmLoot_Touch0..24` (replaced by the family touches), `AS_ImmLoot_Bag*Add` (unused since
   build k), `AS_ImmLoot_ArmHold`, `AS_ImmLoot_PickReach` (no referencers); the generators no longer build them.
+- Door build A (push / pull from the leaf's motion; closets / cabinets / lockers count as doors). Probe: 6 door
+  presses decided in 0.11-0.19 s: opening moved the pressed point 4-10 cm away (push), closing 3-4 cm toward the
+  camera (pull) on leaves open at -85 and +85 deg. Tester: "the animation still looks bad: the hand clips through the
+  gun and the fingers look weird as they settle into the resting pose; the return should go in a downward arc under
+  the pistol or rifle".
+- Door build B: `build_door_family(family, mode)` (`--arg PART=doorfam`): `AS_ImmLoot_DoorPush/PullAr` (rifle stand
+  idle) and `...Pt` (pistol idle) with the touch recipe; the path leaves / rejoins the grip through `DOOR_ARC` (3 fwd,
+  4 left, 14 down cm from the path's end): a downward arc under the weapon (checked: return frames 24-28 at 11-14 cm
+  below the grip); push = spread palm + stroke 8-14, pull = palm inward, hand closes 8-12, drawn back 12-26, opens
+  26-32; fingers back to the stance's own; IK on push 1.0 s / pull 1.13 s over 0.35 s. Blueprint: a pistol picks
+  `...Pt`, other weapons `...Ar`; empty hands keep the BH assets.
+- Door build B result (Noah): loaded after one crash at load (UE4SS frame on top, 2 s after our actor started, while
+  UltraExtensions set its world cvars; not reproduced on the retry); "honestly looks pretty good. maybe the push
+  could use more of a push, the hand just kinda stays static when pushing".
+- Door build C (assets only): the push comes up nearer the body (`DOOR_PUSH_STROKE_FAM` 24 cm back from the door, was
+  14) and drives forward accelerating (ease-in, frames 8-14): ~20 cm, the last 6 cm in the final frame before the
+  Blueprint's hold.
+- v1.3.0 (Noah: "cut a release"): door builds A-C; release cleanup: the replaced armed `AS_ImmLoot_DoorPush` /
+  `DoorPull` deleted (kit, mirror, NewPackages; `build_doors` no longer builds them).

@@ -1,4 +1,4 @@
-Immersive Looting v1.2.0 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
+Immersive Looting v1.3.0 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
 When you pick something up, Skif reaches out with his left hand, takes it and pockets it,
 instead of the item just vanishing. Looting a body or a stash, he reaches out and touches
 it first. No UE4SS required.
@@ -33,7 +33,8 @@ WHAT IT DOES
   - Holding the interact key on a food, drink or medicine item uses it as in vanilla: Skif
     first takes it with his hand, then plays the game's own use animation. Using an item
     from a body's or stash's loot window works the same way.
-  - Doors: Skif pushes a door open with his open hand or pulls it with his fist.
+  - Doors: Skif pushes a door with his open hand or pulls it toward him, whichever way the door
+    actually moves (open or close, from either side). Lockers, closets and cabinets too.
   - Optional Mod Configuration Menu (MCM) settings: "Body and stash animation" switches the
     touch on bodies, crates and bags off (their loot window then opens at once, as in
     vanilla); "Door animation" switches the door push / pull off. The mod works without MCM
@@ -53,6 +54,11 @@ COMPATIBILITY
 Source and build instructions: https://github.com/noahsemus/stalker2-immersive-looting
 
 CHANGES
+  1.3.0  Doors push or pull the way the door really moves: a door that swings toward you
+         (lockers, closing a door opened away from you) is pulled, one that swings away is
+         pushed. Closets and cabinets get the hand too. With a weapon out the door hand no
+         longer goes through the gun: it leaves and comes back in an arc under the weapon,
+         and the push is a real shove.
   1.2.0  The hand no longer twists or flips when it goes back to the weapon after a body or
          stash: the reach is now made for each kind of weapon (rifles, SMGs, snipers and
          shotguns; pistols), the hand opens with the palm toward the body or stash, and it

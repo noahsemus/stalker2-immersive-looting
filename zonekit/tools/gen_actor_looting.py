@@ -2131,7 +2131,15 @@ barm = branch(XT + 3950, YT + 3000, "weapon in hand? (else the empty-hands door 
 g.link(bdov["then"], barm["execute"])
 DOOR_PUSH_BH = "/ImmersiveLooting/Runtime/AS_ImmLoot_DoorPushBH.AS_ImmLoot_DoorPushBH"
 DOOR_PULL_BH = "/ImmersiveLooting/Runtime/AS_ImmLoot_DoorPullBH.AS_ImmLoot_DoorPullBH"
-for _ex0, _pull, _push, _yy in ((barm["then"], DOOR_PULL, DOOR_PUSH, 3300), (barm["else"], DOOR_PULL_BH, DOOR_PUSH_BH, 3600)):
+# door build B (tester: "the hand clips through the gun, the fingers look weird as they settle; the return should go in a
+# downward arc under the pistol or rifle"): with a weapon, the family door assets (make_grab_seq build_door_family):
+# a pistol (MainHandEquipmentType 1) -> ...Pt, any other weapon -> ...Ar
+DOOR_FAM = {k_: f"/ImmersiveLooting/Runtime/AS_ImmLoot_Door{k_}.AS_ImmLoot_Door{k_}" for k_ in ("PushAr", "PullAr", "PushPt", "PullPt")}
+bdpt = branch(XT + 4050, YT + 2700, "door build B: a pistol in hand? the pistol door assets",
+              int_eq(XT + 3950, YT + 2850, _pti["ReturnValue"], 1))
+g.link(barm["then"], bdpt["execute"])
+for _ex0, _pull, _push, _yy in ((bdpt["then"], DOOR_FAM["PullPt"], DOOR_FAM["PushPt"], 2700), (bdpt["else"], DOOR_FAM["PullAr"], DOOR_FAM["PushAr"], 3300),
+                                (barm["else"], DOOR_PULL_BH, DOOR_PUSH_BH, 3600)):
     _bp = branch(XT + 4100, YT + _yy, "closing (a pull)?", self_get("DoorPulling", "bool", XT + 3900, YT + _yy + 150))
     g.link(_ex0, _bp["execute"])
     for _ex, _asset, _xx in ((_bp["then"], _pull, 4400), (_bp["else"], _push, 4700)):
@@ -2151,7 +2159,7 @@ g.link(btap["else"], self_set("TouchState", "int", XT + 800, YT + 5100, "idle (v
 
 #   T7 (doors): the touch faster than a loot touch; held DoorHold s at the touch frame, then back (same as after a loot
 #   window); a door touch whose reach never started (skipped) or ended is cleared
-sq7d = sequence(XT + 300, YT + 9000, "door steps", 3)
+sq7d = sequence(XT + 300, YT + 9000, "door steps", 4)
 g.link(sqt["then_7"], sq7d["execute"])
 dtc = lambda x, y: self_get("DoorTouch", "bool", x, y)
 bsp = branch(XT + 600, YT + 9000, "door touch playing, not sped up yet?",
@@ -2177,7 +2185,8 @@ g.link(bdh["then"], sdf["execute"])
 g.link(sdf["then"], brv["execute"])   # the same hand return as after a loot window
 bdx = branch(XT + 600, YT + 10100, "door touch, but our montage not playing (skipped / ended / cut)?",
              b_and(XT + 500, YT + 10300, dtc(XT + 300, YT + 10300), b_not(XT + 300, YT + 10370, self_get("PendingReach", "bool", XT + 100, YT + 10370)),
-                   b_not(XT + 300, YT + 10440, grab_active(XT + 100, YT + 10440))))
+                   b_not(XT + 300, YT + 10440, grab_active(XT + 100, YT + 10440)),
+                   b_not(XT + 300, YT + 10510, self_get("DoorWaiting", "bool", XT + 100, YT + 10510))))
 g.link(sq7d["then_2"], bdx["execute"])
 chain_x = [self_set("DoorTouch", "bool", XT + 900, YT + 10100, "", default="false"),
            self_set("TouchState", "int", XT + 1200, YT + 10100, "idle", default="0"),
@@ -2187,6 +2196,44 @@ chain_x = [self_set("DoorTouch", "bool", XT + 900, YT + 10100, "", default="fals
            inc("NDoorCut", XT + 2400, YT + 10100, "count (probe)")]
 g.link(bdx["then"], chain_x[0]["execute"])
 chain(*chain_x)
+#   door build A: the leaf moved (or the wait ran out)? push / pull from how the pressed point moved, then the touch
+_dwt = lambda x, y: self_get("DoorWaiting", "bool", x, y)
+_dcomp = self_get("DoorComp", "object", XT + 100, YT + 11000, sub=PRIM)
+_dxf2 = member_pure(SC_, "K2_GetComponentToWorld", XT + 300, YT + 11000, _dcomp, [("ReturnValue", "struct", dict(sub=XFORM, out=True))])["ReturnValue"]
+_dtl = kml("TransformLocation", XT + 500, YT + 11000, [("T", "struct", dict(sub=XFORM)), ("Location", "struct", dict(sub=VEC)),
+                                                      ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_dxf2, _dtl["T"])
+g.link(self_get("DoorLocal", "struct", XT + 300, YT + 11100, sub=VEC), _dtl["Location"])
+_dw0 = lambda x, y: self_get("DoorW0", "struct", x, y, sub=VEC)
+_dmv = vop("Subtract_VectorVector", XT + 700, YT + 11000, _dtl["ReturnValue"], _dw0(XT + 500, YT + 11100))
+_dray = kml("Normal", XT + 700, YT + 11200, [("A", "struct", dict(sub=VEC)), ("Tolerance", "real", dict(subcat="float", extra='DefaultValue="0.000100",')),
+                                            ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(vop("Subtract_VectorVector", XT + 500, YT + 11200, _dw0(XT + 300, YT + 11200), self_get("DoorCam0", "struct", XT + 300, YT + 11270, sub=VEC)), _dray["A"])
+_drad = vop("Dot_VectorVector", XT + 900, YT + 11100, _dmv, _dray["ReturnValue"], ret_sub="real")
+_dlen = kml("VSize", XT + 900, YT + 11000, [("A", "struct", dict(sub=VEC)), RD])
+g.link(_dmv, _dlen["A"])
+_dmoved = d_op("Greater_DoubleDouble", XT + 1100, YT + 11000, _dlen["ReturnValue"], b_const="0.8", ret=RB)
+_dlate = d_op("Greater_DoubleDouble", XT + 1100, YT + 11300,
+              d_op("Subtract_DoubleDouble", XT + 900, YT + 11300, now(XT + 700, YT + 11300), self_get("DoorPressAt", "real", XT + 700, YT + 11370, subcat="double")),
+              self_get("DoorDecideMax", "real", XT + 900, YT + 11400, subcat="double"), ret=RB)
+bdw = branch(XT + 600, YT + 10700, "door build A: waiting, and the leaf moved (or the wait ran out)? decide and reach",
+             b_and(XT + 500, YT + 10900, _dwt(XT + 300, YT + 10900), b_or(XT + 1300, YT + 11100, _dmoved, _dlate)))
+g.link(sq7d["then_3"], bdw["execute"])
+bdm = branch(XT + 900, YT + 10700, "moved? toward the camera = a pull, away = a push (else the open / closed rule)", _dmoved)
+g.link(bdw["then"], bdm["execute"])
+sdp2 = set_from("DoorPulling", "bool", XT + 1200, YT + 10700, d_op("Less_DoubleDouble", XT + 1100, YT + 10850, _drad, b_const="0.0", ret=RB),
+                "toward the camera: a pull")
+g.link(bdm["then"], sdp2["execute"])
+sdr = set_from("DoorRadial", "real", XT + 1500, YT + 10700, _drad, "cm toward (-) / away (+) when decided (probe)", subcat="double")
+g.link(sdp2["then"], sdr["execute"])
+sdw0 = self_set("DoorWaiting", "bool", XT + 1800, YT + 10700, "decided", default="false")
+g.link(sdr["then"], sdw0["execute"])
+g.link(bdm["else"], sdw0["execute"])
+chain(sdw0, set_from("DoorDecideT", "real", XT + 2100, YT + 10700,
+                     d_op("Subtract_DoubleDouble", XT + 2000, YT + 10900, now(XT + 1800, YT + 10900), self_get("DoorPressAt", "real", XT + 1800, YT + 10970, subcat="double")),
+                     "s from the press to the decision (probe)", subcat="double"))
+#     the touch chain from its second step: pending reach, touch mode, TouchState 2, then the asset for the direction
+g.link([n_ for n_ in g.nodes if n_.comment == "s from the press to the decision (probe)"][-1]["then"], tr[1]["execute"])
 
 #   T6: the player's interact keys polled: pressed / released this tick (no mapping context, no input on this actor)
 PCC = cls("/Script/Engine.PlayerController")
@@ -2261,7 +2308,16 @@ _dcc = lib_pure(cls("/Script/Engine.KismetStringLibrary"), "KismetStringLibrary"
                 [("SearchIn", "string"), ("Substring", "string", dict(extra='DefaultValue="Door",')),
                  ("bUseCase", "bool", dict(extra='DefaultValue="false",')), ("bSearchFromEnd", "bool", dict(extra='DefaultValue="false",')), RB])
 g.link(_dcn["ReturnValue"], _dcc["SearchIn"])
-cdr = branch(XD + 200, YD, "a door under the crosshair, within reach?", b_and(XD + 150, YD + 300, is_valid(XD - 100, YD + 300, _dow), _dcc["ReturnValue"], _dnear))
+#   door build A: + closets / cabinets / lockers (BP_fur_*_closet_*, *_cabinet_*, BP_int_fur_locker_*: BP_OpeningContainer)
+_dmore = []
+for k_, w_ in enumerate(("closet", "cabinet", "locker")):
+    n_ = lib_pure(cls("/Script/Engine.KismetStringLibrary"), "KismetStringLibrary", "Contains", XD + 300, YD + 500 + 100 * k_,
+                  [("SearchIn", "string"), ("Substring", "string", dict(extra=f'DefaultValue="{w_}",')),
+                   ("bUseCase", "bool", dict(extra='DefaultValue="false",')), ("bSearchFromEnd", "bool", dict(extra='DefaultValue="false",')), RB])
+    g.link(_dcn["ReturnValue"], n_["SearchIn"])
+    _dmore.append(n_["ReturnValue"])
+cdr = branch(XD + 200, YD, "a door (or closet / cabinet / locker door) under the crosshair, within reach?",
+             b_and(XD + 150, YD + 300, is_valid(XD - 100, YD + 300, _dow), b_or(XD + 500, YD + 450, _dcc["ReturnValue"], *_dmore), _dnear))
 bdo = branch(XD - 100, YD, "no corpse / stash press: doors on, idle?",
              b_and(XD - 200, YD + 150, self_get("TouchDoors", "bool", XD - 400, YD + 150), self_get("Enabled", "bool", XD - 400, YD + 220),
                    int_eq(XD - 400, YD + 290, tstate(XD - 600, YD + 290), 0)))
@@ -2308,8 +2364,23 @@ sdc1 = set_from("ItemCenter", "struct", XD + 1700, YD, _dpt, "reach target: lowe
 g.link(sdpl["then"], sdc1["execute"])
 nd = inc("NDoor", XD + 1700, YD, "count door touches")
 g.link(sdc1["then"], nd["execute"])
-#     the touch chain from its second step: pending reach, touch mode, TouchState 2, then the asset for the direction
-g.link(nd["then"], tr[1]["execute"])
+#     door build A (tester: "opening always plays a push and closing a pull, but doors can be in any state: a locker
+#     opens toward you"; research: BP_DoorView leaves swing +-90 deg on a physics constraint, lockers / closets are
+#     BP_OpeningContainer doors): the game moves the door at the press; we remember the point of the leaf under the
+#     crosshair (in the leaf's own frame) and wait until it moves: toward the camera = a pull, away = a push. Not moved
+#     within DoorDecideMax s: the old rule (open now = closing = pull). The touch starts when decided (step T7).
+_dlc = self_get("LookComp", "object", XD + 1900, YD + 300, sub=PRIM)
+_dxf = member_pure(SC_, "K2_GetComponentToWorld", XD + 2100, YD + 300, _dlc, [("ReturnValue", "struct", dict(sub=XFORM, out=True))])["ReturnValue"]
+_dil = kml("InverseTransformLocation", XD + 2300, YD + 300, [("T", "struct", dict(sub=XFORM)), ("Location", "struct", dict(sub=VEC)),
+                                                            ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_dxf, _dil["T"])
+g.link(self_get("LookPoint", "struct", XD + 2100, YD + 400, sub=VEC), _dil["Location"])
+chain(nd, set_from("DoorComp", "object", XD + 2000, YD, _dlc, "the leaf pressed", sub=PRIM),
+      set_from("DoorLocal", "struct", XD + 2300, YD, _dil["ReturnValue"], "its point under the crosshair, leaf frame", sub=VEC),
+      set_from("DoorW0", "struct", XD + 2600, YD, self_get("LookPoint", "struct", XD + 2500, YD + 200, sub=VEC), "that point at the press, world", sub=VEC),
+      set_from("DoorCam0", "struct", XD + 2900, YD, _dcl, "the camera at the press", sub=VEC),
+      set_from("DoorPressAt", "real", XD + 3200, YD, now(XD + 3100, YD + 200), "", subcat="double"),
+      self_set("DoorWaiting", "bool", XD + 3500, YD, "wait for the leaf to move (T7)", default="true"))
 bku = branch(XT + 2300, YT + 5800, "released this tick? (or F reads up while we wait for tap-or-hold)",
              b_or(XT + 2200, YT + 6000, self_get("KeyUp", "bool", XT + 2000, YT + 6000),
                   b_and(XT + 2000, YT + 6100, int_eq(XT + 1800, YT + 6100, tstate(XT + 1600, YT + 6100), 1),

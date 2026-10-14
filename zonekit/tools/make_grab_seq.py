@@ -687,8 +687,7 @@ def build_bh_door(src, rifle_seq, tgt_rot, nkeys, mode, name):
 def build_doors(src, grab, path_h, path_q, nkeys, tgt_rot=None):
     """1.1 doors (tester: opening = a push, closing = a pull; the hand in the lower left quadrant, not toward the
     door): AS_ImmLoot_DoorPush / AS_ImmLoot_DoorPull, the touch asset form with their own schedules."""
-    build_touch_one(src, grab, path_h, path_q, nkeys, "AS_ImmLoot_DoorPush", DOOR_ELEV, DOOR_AZIM, "push")
-    build_touch_one(src, grab, path_h, path_q, nkeys, "AS_ImmLoot_DoorPull", DOOR_ELEV, DOOR_AZIM, "pull")
+    # (1.3.0: the armed AS_ImmLoot_DoorPush / DoorPull are replaced by build_door_family's ...Ar / ...Pt)
     if tgt_rot is not None:
         build_bh_door(src, grab, tgt_rot, nkeys, "push", "AS_ImmLoot_DoorPushBH")
         build_bh_door(src, grab, tgt_rot, nkeys, "pull", "AS_ImmLoot_DoorPullBH")
@@ -914,6 +913,176 @@ def build_touch_pistol(i, family="pt"):
     rel = sub(G, cam)
     out.append(f"{name}: elev {elev:+.0f} az {azim:+.0f}, hand to ({rel[0]:.1f},{rel[1]:.1f},{rel[2]:.1f}) from the eye, "
                f"{len(arm)} left-arm tracks, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
+
+
+
+DOOR_FAMILY_NAMES = {("ar", "push"): "AS_ImmLoot_DoorPushAr", ("ar", "pull"): "AS_ImmLoot_DoorPullAr",
+                     ("pt", "push"): "AS_ImmLoot_DoorPushPt", ("pt", "pull"): "AS_ImmLoot_DoorPullPt"}
+DOOR_ARC = (3.0, -4.0, -14.0)      # door build B: the curve's control point from the path's end (component cm): the hand
+                                   # leaves / rejoins the grip in a downward arc under the weapon (tester)
+DOOR_IK_ON = {"push": (1.0, 0.35), "pull": (1.13, 0.35)}
+DOOR_PUSH_STROKE_FAM = 24.0        # door build C: cm of forward drive in the push (was 14)   # frame 30 / 34: the hand back near the grip
+
+
+def build_door_family(family, mode):
+    """2026-10-13 door build B (tester: "the animation still looks bad. the hand clips through the gun and the fingers
+    look weird as they settle into the resting pose. the return should go in a downward arc under the pistol or
+    rifle"): the door push / pull with a weapon, built like the v1.2.0 touches (zonekit/research/touch/README.md):
+    every left-arm track at the family's stance (rifle stand idle / pistol idle), only the upper arm / forearm solved,
+    the elbow pole turning out-left-down, the hand following the forearm and turning one way round (half the turn in the
+    forearm roll), the path starting / ending left of and below the stance grip and leaving / rejoining it in a
+    downward arc under the weapon (DOOR_ARC). Push: an open spread palm toward the door, out by 8, a forward stroke
+    8-14 (the Blueprint holds at 14 = 0.467 s), back 18-36. Pull: out to the handle by 8, the hand closes 8-12 (held
+    at 12 = 0.4 s), drawn back and down 12-26, the hand opens and comes back 26-40. IK off at 0.036 s over 0.06 s, on
+    near the grip (push 1.0 s, pull 1.13 s) over 0.35 s."""
+    _prefix, base_path = TOUCH_FAMILIES[family]
+    name = DOOR_FAMILY_NAMES[(family, mode)]
+    path = f"{DIR}/{name}"
+    tmpl = unreal.load_asset(f"{DIR}/{NAME}")
+    if not EAL.does_asset_exist(path):
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, tmpl)
+    seq = unreal.load_asset(path)
+    base = unreal.load_asset(base_path)
+    grab_src = unreal.load_asset(SRC)
+    sp_seq = unreal.load_asset(SPREAD_SEQ)
+    opens = {b: local(sp_seq, b, SPREAD_K)[1] for b in FINGERS}
+    _o, fists = door_fingers(grab_src)
+    n = AL.get_num_frames(tmpl)
+    cam, _ = cs(base, "jnt_camera", 0)
+    er, ar = math.radians(DOOR_ELEV), math.radians(DOOR_AZIM)
+    dirv_e = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
+    sh_p, sh_q = cs(base, SHOULDER, 0)
+    a_l, f_l, h_l = local(base, ARM, 0), local(base, FORE, 0), local(base, HAND, 0)
+    a_q = qmul(sh_q, a_l[1]); A = add(sh_p, qrot(sh_q, a_l[0]))
+    f_q = qmul(a_q, f_l[1]); E = add(A, qrot(a_q, f_l[0]))
+    R = add(E, qrot(f_q, h_l[0]))
+    RQ = qmul(f_q, h_l[1])
+    l1, l2 = norm(sub(E, A)), norm(sub(R, E))
+    reach = (l1 + l2) * TOUCH_REACH
+    inv = lambda v: tuple((v[j] - TOUCH_MAP[j][1]) / TOUCH_MAP[j][0] for j in range(3))
+    u = tuple(dirv_e[j] / TOUCH_MAP[j][0] for j in range(3))
+    c_ = sub(add(cam, inv((0.0, 0.0, 0.0))), A)
+    qa, qb, qc = dot(u, u), 2 * dot(c_, u), dot(c_, c_) - reach * reach
+    disc = qb * qb - 4 * qa * qc
+    t = (-qb + math.sqrt(disc)) / (2 * qa) if disc > 0 else max(10.0, -qb / (2 * qa))
+    G = add(cam, inv(mul(dirv_e, t)))
+    back = unit(sub(G, cam))
+    Re = add(R, TOUCH_END_OFF)
+    C = add(Re, DOOR_ARC)
+    if mode == "push":
+        # door build C (tester: "the push could use more of a push, the hand just kinda stays static"): the hand comes up
+        # nearer the body (DOOR_PUSH_STROKE_FAM back from the door) and drives forward accelerating into it (ease-in)
+        N = sub(G, mul(back, DOOR_PUSH_STROKE_FAM))
+        legs = ((0, 8, "curve", Re, N), (8, 14, "push", N, G), (14, 18, "line", G, G), (18, 36, "curve", G, Re))
+        turn = lambda k: smooth(min(1.0, max(0.0, (k - 6) / 8.0))) if k <= 18 else smooth(min(1.0, max(0.0, (27 - k) / 9.0)))
+        fist = lambda k: 0.0
+        PQ = palm_q(grab_src, unit(add(dirv_e, TOUCH_PALM_DOWN)), TOUCH_FINGERS_UP)
+    else:
+        PB = sub(sub(G, mul(back, DOOR_PULL_STROKE)), (0.0, 0.0, DOOR_PULL_DROP))
+        legs = ((0, 8, "curve", Re, G), (8, 12, "line", G, G), (12, 26, "line", G, PB), (26, 40, "curve", PB, Re))
+        turn = lambda k: smooth(min(1.0, max(0.0, (k - 3) / 5.0))) if k <= 26 else smooth(min(1.0, max(0.0, (34 - k) / 8.0)))
+        fist = lambda k: smooth(min(1.0, max(0.0, (k - 8) / 4.0))) if k <= 26 else smooth(min(1.0, max(0.0, (32 - k) / 6.0)))
+        # the hand around a handle: palm facing right (inward), fingers along the reach
+        PQ = palm_q(grab_src, unit(add((0.0, 1.0, 0.0), mul(dirv_e, 0.3))), dirv_e)
+    if dot4(PQ, RQ) < 0:
+        PQ = tuple(-x for x in PQ)
+    hint = sub(E, A)
+    tracks = [str(x) for x in AL.get_animation_track_names(tmpl)]
+    arm = [b for b in tracks if "jnt_l_shoulder" in [str(x) for x in AL.find_bone_path_to_root(tmpl, b)]]
+    keys = {}
+    for b in arm:
+        l = local(base, b, 0)
+        keys[b] = ([unreal.Vector(*l[0])] * (n + 1), [unreal.Quat(*l[1])] * (n + 1), [unreal.Vector(*l[2])] * (n + 1))
+    ROLL = "jnt_l_fore_arm_roll"
+    roll_l = local(base, ROLL, 0)[1]
+    ka, kf, kh, kr, ww, wf, prev_tq = [], [], [], [], [], [], None
+    for k in range(n + 1):
+        T = Re
+        for f0, f1, kind, P0, P1 in legs:
+            if f0 <= k <= f1:
+                w_ = smooth((k - f0) / max(f1 - f0, 1))
+                if kind == "push":
+                    x_ = (k - f0) / max(f1 - f0, 1)
+                    T = add(P0, mul(sub(P1, P0), x_ * x_))
+                elif kind == "line":
+                    T = add(P0, mul(sub(P1, P0), w_))
+                else:
+                    T = add(add(mul(P0, (1 - w_) ** 2), mul(C, 2 * w_ * (1 - w_))), mul(P1, w_ * w_))
+                break
+        to_t = sub(T, A)
+        d = max(abs(l1 - l2) + 0.01, min(reach, norm(to_t)))
+        dv = unit(to_t)
+        a = (l1 * l1 - l2 * l2 + d * d) / (2 * d)
+        h = math.sqrt(max(l1 * l1 - a * a, 0.0))
+        s_ = min(1.0, norm(sub(T, Re)) / max(norm(sub(G, Re)), 1e-6))
+        ref = unit(add(mul(unit(hint), 1.0 - s_), mul(ELBOW_REF, s_)))
+        pole = sub(ref, mul(dv, dot(ref, dv)))
+        pole = unit(pole) if norm(pole) > 1e-6 else unit(cross(dv, (0.0, 0.0, 1.0)))
+        E2 = add(A, add(mul(dv, a), mul(pole, h)))
+        T2 = add(A, mul(dv, d))
+        r1 = q_between(sub(E, A), sub(E2, A))
+        a_q2 = qmul(r1, a_q)
+        r2 = q_between(qrot(r1, sub(R, E)), sub(T2, E2))
+        f_q2 = qmul(r2, qmul(r1, f_q))
+        ka.append(unreal.Quat(*qmul(qinv(sh_q), a_q2)))
+        kf.append(unreal.Quat(*qmul(qinv(a_q2), f_q2)))
+        wv = turn(k)
+        tq = qmul(qinv(f_q2), PQ)
+        if prev_tq is None:
+            if dot4(tq, h_l[1]) < 0:
+                tq = tuple(-x for x in tq)
+        elif dot4(tq, prev_tq) < 0:
+            tq = tuple(-x for x in tq)
+        prev_tq = tq
+        hl = slerp_raw(h_l[1], tq, wv)
+        kh.append(unreal.Quat(*hl))
+        dlt = qmul(hl, qinv(h_l[1]))
+        ax_ = unit(h_l[0])
+        pr = dot(ax_, dlt[:3])
+        tw = (ax_[0] * pr, ax_[1] * pr, ax_[2] * pr, dlt[3])
+        tn = math.sqrt(sum(x * x for x in tw))
+        tw = tuple(x / tn for x in tw) if tn > 1e-9 else (0.0, 0.0, 0.0, 1.0)
+        kr.append(unreal.Quat(*qmul(slerp((0.0, 0.0, 0.0, 1.0), tw, 0.5), roll_l)))
+        ww.append(wv)
+        wf.append(fist(k))
+    keys[ARM] = (keys[ARM][0], ka, keys[ARM][2])
+    keys[FORE] = (keys[FORE][0], kf, keys[FORE][2])
+    keys[HAND] = (keys[HAND][0], kh, keys[HAND][2])
+    if ROLL in keys:
+        keys[ROLL] = (keys[ROLL][0], kr, keys[ROLL][2])
+    for b in FINGERS:
+        if b in keys:
+            rest = local(base, b, 0)[1]
+            keys[b] = (keys[b][0], [unreal.Quat(*finger_q(rest, opens, fists, b, wo_, wf_)) for wo_, wf_ in zip(ww, wf)], keys[b][2])
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot door (family)", True)
+    for b, (pos, rot, scl) in keys.items():
+        ctrl.set_bone_track_keys(b, list(pos), list(rot), list(scl), True)
+    ctrl.close_bracket(True)
+    for tn_ in [str(x) for x in AL.get_animation_notify_track_names(seq)]:
+        AL.remove_animation_notify_events_by_track(seq, tn_)
+    track = "ImmLoot"
+    if track not in [str(x) for x in AL.get_animation_notify_track_names(seq)]:
+        AL.add_animation_notify_track(seq, track, unreal.LinearColor(0.2, 0.8, 0.2, 1.0))
+    hand = None
+    for e in AL.get_animation_notify_events(unreal.load_asset(MONT)):
+        if e.notify is not None and e.notify.get_class().get_name() == "AnimNotify_HandIK":
+            hand = e.notify.get_editor_property("hand_to_apply")
+    hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
+    for t_, end, bl in ((0.035907, None, TOUCH_IK_OFF_BLEND), (DOOR_IK_ON[mode][0], 1.0, DOOR_IK_ON[mode][1])):
+        ev = AL.add_animation_notify_event(seq, track, t_, hik)
+        ev.set_editor_property("hand_to_apply", hand)
+        ev.set_editor_property("blend_time", bl)
+        if end is not None:
+            ev.set_editor_property("end_value", end)
+    cname = "left_hand_curve"
+    if cname in [str(x) for x in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]:
+        AL.remove_curve(seq, cname, False)
+    AL.add_curve(seq, cname, unreal.RawCurveTrackTypes.RCT_FLOAT, False)
+    AL.add_float_curve_keys(seq, cname, [0.0, 0.17, 1.1, 1.3, seq.get_play_length()], [0.0, 1.0, 1.0, 0.0, 0.0])
+    rel = sub(G, cam)
+    out.append(f"{name}: to ({rel[0]:.1f},{rel[1]:.1f},{rel[2]:.1f}) from the eye, {len(arm)} left-arm tracks, "
+               f"saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
 
 
 def touch_notifies(seq, mode):
@@ -1355,6 +1524,11 @@ def build_use_tables(src, tgt_rot, nkeys):
 
 
 try:
+    if ARGS.get("PART", "") == "doorfam":   # door build B: the doors with a weapon, per family
+        for fam in ("ar", "pt"):
+            for md in ("push", "pull"):
+                build_door_family(fam, md)
+        raise SystemExit
     if ARGS.get("PART", "") == "touchpt":   # build w: the pistol touches; build x: and the long guns'
         for fam in ("pt", "ar"):
             for i in range(len(TOUCH_ELEVS) * len(TOUCH_AZIMS)):
@@ -1473,6 +1647,9 @@ try:
             for i in range(len(TOUCH_ELEVS) * len(TOUCH_AZIMS)):
                 build_touch_pistol(i, fam)
     if ARGS.get("DOOR", "1") == "1":
+        for fam in ("ar", "pt"):   # door build B
+            for md in ("push", "pull"):
+                build_door_family(fam, md)
         build_doors(src, seq, path_h, path_q, nkeys, tgt_rot)
     if ARGS.get("BH", "1") == "1":
         build_bh_reach_table(src, seq, tgt_rot, nkeys)   # build 12 (build_bh_table = checkpoint-b11)
