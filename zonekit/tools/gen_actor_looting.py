@@ -657,6 +657,17 @@ _replay_ours = lambda x, y: d_op("GreaterEqual_DoubleDouble", x, y, self_get("Eq
                                  self_get("GameMontageAt", "real", x - 200, y + 70, subcat="double"), ret=RB)
 _ours = b_and(SX, SY + 1200, self_get("LootReach", "bool", SX - 200, SY + 1130), b_not(SX - 100, SY + 1620, self_get("DoorTouch", "bool", SX - 300, SY + 1620)),
               _hides, _replay_ours(SX - 100, SY + 1550))
+_inm = lib_pure(KSL, "KismetSystemLibrary", "GetObjectName", SX - 400, SY + 1800, [("Object", "object", dict(sub=OBJ)), ("ReturnValue", "string", dict(out=True))])
+g.link(self_get("ItemMesh", "object", SX - 600, SY + 1800, sub=SM), _inm["Object"])
+_nhits = []
+for k_, w_ in enumerate(("_pda", "_notes_", "_notepad_", "_folders_")):
+    n_ = lib_pure(cls("/Script/Engine.KismetStringLibrary"), "KismetStringLibrary", "Contains", SX - 200, SY + 1800 + 70 * k_,
+                  [("SearchIn", "string"), ("Substring", "string", dict(extra=f'DefaultValue="{w_}",')),
+                   ("bUseCase", "bool", dict(extra='DefaultValue="false",')), ("bSearchFromEnd", "bool", dict(extra='DefaultValue="false",')), RB])
+    g.link(_inm["ReturnValue"], n_["SearchIn"])
+    _nhits.append(n_["ReturnValue"])
+_note = b_and(SX + 100, SY + 1800, b_or(SX, SY + 1850, *_nhits), is_valid(SX - 200, SY + 2100, self_get("ItemMesh", "object", SX - 400, SY + 2100, sub=SM)),
+              b_not(SX, SY + 2170, self_get("LootReach", "bool", SX - 200, SY + 2170)), b_not(SX, SY + 2240, self_get("DoorTouch", "bool", SX - 200, SY + 2240)))
 conds = [
     ("sprint", obj_q("IsSprinting", SX, SY, as_pc)),
     ("aim", obj_q("IsAiming", SX, SY + 80, as_pc)),
@@ -703,8 +714,9 @@ for k, (_, c) in enumerate(conds + [("lefthandbusy", obj_q("IsLeftHandBusy", SX,
         g.link(sel["ReturnValue"], add["B"])
         bits = add["ReturnValue"]
 sbits = set_from("SkipBits", "int", X1 + 900, Y1, bits, "why (probe): 1 sprint 2 aim 4 action 8 left-hand montage "
-                 "16 dialog 32 cutscene 64 detector 128 binoculars 256 disabled 512 IsLeftHandBusy (info)")
-g.link(spr["then"], sbits["execute"])
+                 "16 dialog 32 cutscene 64 detector 128 binoculars 256 disabled 512 use 1024 IsLeftHandBusy (info)")
+_snt = set_from("NoteItem", "bool", X1 + 600, Y1 - 150, _note, "n3b: a note / PDA? (the PDA opens after our reach, T12)")
+chain(spr, _snt, set_from("NoteAt", "real", X1 + 750, Y1 - 150, now(X1 + 650, Y1 - 50), "", subcat="double"), sbits)
 brs = branch(X1 + 1250, Y1, "skip? (vanilla pickup, no reach)", skip)
 g.link(sbits["then"], brs["execute"])
 ns = inc("NSkips", X1 + 1550, Y1 - 300, "count skips")
@@ -1549,9 +1561,15 @@ bx2 = kml("BreakTransform", FX + 700, FY + 500, [("InTransform", "struct", dict(
                                                 ("Scale", "struct", dict(sub=VEC, out=True))])
 g.link(self_get("ItemXf", "struct", FX + 500, FY + 500, sub=XFORM), bx2["InTransform"])
 sff = set_from("FlyFrom", "struct", FX + 900, FY, bx2["Location"], "from where the item was", sub=VEC)
-chain(sfs, sfd, sfa, _sfh, sff)
+# n3h (tester: "beer is still broken, it stands straight up"; probe n3g: the "long axis" read during the pull changed
+# from tick to tick (Z +0.45 -> -0.02 in one pull): the pull read ItemXf / ItemMesh live, and the tracking step
+# overwrites them with whatever item is under the crosshair after the pickup (the next bottle of a group): the item's
+# transform and mesh are frozen at the pickup (FlyXf / FlyMesh) and the pull uses those
+_sfx = set_from("FlyXf", "struct", FX + 1000, FY - 300, self_get("ItemXf", "struct", FX + 800, FY - 200, sub=XFORM), "n3h: frozen at the pickup", sub=XFORM)
+_sfm = set_from("FlyMesh", "object", FX + 1300, FY - 300, self_get("ItemMesh", "object", FX + 1100, FY - 200, sub=SM), "", sub=SM)
+chain(sfs, sfd, sfa, _sfh, sff, _sfx, _sfm)
 bsm = branch(FX + 1200, FY, "static mesh item?", is_valid(FX + 1050, FY + 200, self_get("ItemMesh", "object", FX + 850, FY + 200, sub=SM)))
-g.link(sff["then"], bsm["execute"])
+g.link(_sfm["then"], bsm["execute"])
 
 
 def spawn_copy(x, y, actor_cls, comp_var, comment, var="Fly", count="NFly"):
@@ -1979,7 +1997,7 @@ def tap_active(x, y, on, comment):
     return b["execute"], [c["then"], b["else"]]
 
 
-sqt = sequence(XT, YT, "touch steps", 11)
+sqt = sequence(XT, YT, "touch steps", 13)
 g.link(sq5["then_4"], sqt["execute"])
 
 #   T0: idle and window closed: is what we look at a corpse / stash? (re-evaluated every tick)
@@ -2015,8 +2033,10 @@ dbc = member_pure(ACTOR, "GetComponentByClass", XT + 800, YT + 200, cob["AsObj"]
     ("ReturnValue", "object", dict(sub=ACOMP, out=True))])["ReturnValue"]
 _bmo = kml("NotEqual_IntInt", XT + 850, YT + 280, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="3",')), RB])
 g.link(self_get("BodyMode", "int", XT + 650, YT + 280), _bmo["A"])
+# n3e (tester: "we shouldn't touch mutants? that should be vanilla, no?": the game has its own mutant looting animation,
+# the knife): human bodies only (Obj.IsHuman); mutant bodies stay vanilla
 corpse = b_and(XT + 1050, YT + 100, b_not(XT + 950, YT + 50, alive), is_valid(XT + 1000, YT + 200, dbc),
-               _bmo["ReturnValue"])   # MCM "Body looting" Off (3) = bodies stay vanilla
+               _bmo["ReturnValue"], obj_q("IsHuman", XT + 850, YT + 350, cob["AsObj"]))   # MCM "Body looting" Off (3) = bodies stay vanilla
 sl_c = set_from("Lootable", "bool", XT + 1100, YT - 300, corpse, "a corpse?")
 g.link(cob["then"], sl_c["execute"])
 #     its tap interaction (DeadBody = "search"; the carry is a separate DeadBodyHoldComponent we never touch)
@@ -2142,6 +2162,90 @@ _c10 = member_call(ICOMP, "SetInteractionActive", XT + 1200, YT + 16300, _hcv(XT
                    [("bActive", "bool", dict(extra='DefaultValue="false",'))])
 chain(_b10, _c10, set_from("HoldResetComp", "object", XT + 1500, YT + 16300, _hcv(XT + 1300, YT + 16450), "on again next tick", sub=HOLDC),
       inc("NStaleHold", XT + 1800, YT + 16300, "count (probe)"))
+#   T12 (n3b): a note / PDA picked up and our reach over (0.3 s on)? Instant Intel installed, not in combat, the PDA not
+#   open: open it on its notes page (Instant Intel's own call came during our reach and was refused); given up after 6 s
+_ntage = d_op("Subtract_DoubleDouble", XT - 100, YT + 18200, now(XT - 300, YT + 18200), self_get("NoteAt", "real", XT - 300, YT + 18270, subcat="double"))
+_b12 = branch(XT + 600, YT + 18000, "n3b: a note picked up and our reach over?",
+              b_and(XT + 500, YT + 18150, self_get("NoteItem", "bool", XT + 300, YT + 18100), b_not(XT + 300, YT + 18170, grab_active(XT + 100, YT + 18170)),
+                    d_op("Greater_DoubleDouble", XT + 300, YT + 18240, _ntage, b_const="0.3", ret=RB)))
+g.link(sqt["then_12"], _b12["execute"])
+_snf = self_set("NoteItem", "bool", XT + 900, YT + 18000, "done", default="false")
+g.link(_b12["then"], _snf["execute"])
+_b12t = branch(XT + 600, YT + 18500, "n3b: a note waiting 6 s already? given up",
+               b_and(XT + 500, YT + 18650, self_get("NoteItem", "bool", XT + 300, YT + 18650), d_op("Greater_DoubleDouble", XT + 300, YT + 18720, _ntage, b_const="6.0", ret=RB)))
+g.link(_b12["else"], _b12t["execute"])
+g.link(_b12t["then"], self_set("NoteItem", "bool", XT + 900, YT + 18500, "given up", default="false")["execute"])
+#     Instant Intel installed? (its mod actor in the asset registry)
+ARH = cls("/Script/AssetRegistry.AssetRegistryHelpers")
+ARI = cls("/Script/AssetRegistry.AssetRegistry")
+SOP = "\"/Script/CoreUObject.ScriptStruct'/Script/CoreUObject.SoftObjectPath'\""
+ADATA = "\"/Script/CoreUObject.ScriptStruct'/Script/CoreUObject.AssetData'\""
+_gar = lib_pure(ARH, "AssetRegistryHelpers", "GetAssetRegistry", XT + 300, YT + 18900, [("ReturnValue", "interface", dict(sub=ARI, out=True))])
+_gar["self"].extra = 'DefaultObject="/Script/AssetRegistry.Default__AssetRegistryHelpers",'
+_msp = lib_pure(KSL, "KismetSystemLibrary", "MakeSoftObjectPath", XT + 300, YT + 19000,
+                [("PathString", "string", dict(extra='DefaultValue="/InstantIntel/ModActor.ModActor",')), ("ReturnValue", "struct", dict(sub=SOP, out=True))])
+_gab = member_call(ARI, "K2_GetAssetByObjectPath", XT + 600, YT + 18900, _gar["ReturnValue"], "n3b: Instant Intel's mod actor (BlueprintCallable: an exec node)", [
+    ("ObjectPath", "struct", dict(sub=SOP)), ("bIncludeOnlyOnDiskAssets", "bool", dict(extra='DefaultValue="false",')),
+    ("bSkipARFilteredAssets", "bool", dict(extra='DefaultValue="true",')), ("ReturnValue", "struct", dict(sub=ADATA, out=True))])
+_gab.pins["self"].cat = "interface"
+_gab.pins["ObjectPath"].ref = True
+_gab.pins["ObjectPath"].const = True
+g.link(_msp["ReturnValue"], _gab["ObjectPath"])
+_iev = lib_pure(ARH, "AssetRegistryHelpers", "IsValid", XT + 900, YT + 18900, [("InAssetData", "struct", dict(sub=ADATA)), RB])
+_iev["self"].extra = 'DefaultObject="/Script/AssetRegistry.Default__AssetRegistryHelpers",'
+_iev.pins["InAssetData"].ref = True
+_iev.pins["InAssetData"].const = True
+g.link(_gab["ReturnValue"], _iev["InAssetData"])
+#     not in combat (AnimInstancePlayer.StateData.bInCombat, as Instant Intel reads it), the PDA not open
+APLAY = cls("/Script/Stalker2.AnimInstancePlayer")
+_cap = exec_pins(Node(g, BG + "K2Node_DynamicCast", nm("K2Node_DynamicCast"), XT + 300, YT + 19200, "the player's anim instance (an exec cast)",
+                      ["TargetType=" + APLAY]))
+_cap.pin("CastFailed", "exec", out=True)
+_cap.pin("Object", "object", sub=OBJ)
+_cap.pin("AsAnim Instance Player", "object", sub=APLAY, out=True)
+_cap.pin("bSuccess", "bool", out=True)
+g.link(anim, _cap["Object"])
+STD = "\"/Script/CoreUObject.ScriptStruct'/Script/Stalker2.AnimPlayerStateData'\""
+_sdg = other_get(APLAY, "StateData", "struct", XT + 600, YT + 19200, _cap["AsAnim Instance Player"], sub=STD)
+_bks = Node(g, BG + "K2Node_BreakStruct", nm("K2Node_BreakStruct"), XT + 800, YT + 19200, "", ["StructType=" + STD])
+_bks.pin("AnimPlayerStateData", "struct", sub=STD)
+_bks.pin("bInCombat", "bool", out=True)
+g.link(_sdg, _bks["AnimPlayerStateData"])
+_ok12 = b_and(XT + 1100, YT + 19000, _iev["ReturnValue"], b_not(XT + 1000, YT + 19200, _bks["bInCombat"]),
+              b_not(XT + 1000, YT + 19300, obj_q("IsUsingPDA", XT + 800, YT + 19300, as_pc, owner=PC)))
+_sie = set_from("IEFound", "bool", XT + 1200, YT + 18000, _iev["ReturnValue"], "Instant Intel installed? (probe)")
+chain(_snf, _gab, _cap, _sie)   # n3b: the registry lookup and the cast are exec nodes (pruned as pure links); a failed cast: nothing
+_b12o = branch(XT + 1500, YT + 18000, "n3b: Instant Intel, not in combat, the PDA closed? open it on the notes", _ok12)
+g.link(_sie["then"], _b12o["execute"])
+_pda = member_call(PC, "StartUsePDA", XT + 1800, YT + 18000, as_pc, "the PDA, notes page (as Instant Intel)",
+                   [("InitialPageType", "byte", dict(sub=EN("/Script/Stalker2.EPDAPageType"), extra='DefaultValue="Notes",'))])
+chain(_b12o, _pda, inc("NNotePDA", XT + 2100, YT + 18000, "count (probe)"))
+#   T11 (n3a probe): the touch held at the body / stash: where the hand is seen (elevation / azimuth from the eye, view
+#   axes) against where it was aimed (ItemElev / ItemAzim), the view pitch and the arm rig's pitch
+_b11 = branch(XT + 600, YT + 17000, "n3a probe: touch held?", self_get("LootPaused", "bool", XT + 400, YT + 17150))
+g.link(sqt["then_11"], _b11["execute"])
+_cl11, _cf11, _cr11, _cu11, _ = cam_basis(XT - 600, YT + 17200)
+_h11 = vop("Subtract_VectorVector", XT - 100, YT + 17200, member_pure(SKC, "GetSocketLocation", XT - 300, YT + 17300, mesh,
+          [("InSocketName", "name", dict(extra='DefaultValue="jnt_l_hand",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"], _cl11)
+_hf = vop("Dot_VectorVector", XT + 100, YT + 17200, _h11, _cf11, ret_sub="real")
+_hr = vop("Dot_VectorVector", XT + 100, YT + 17300, _h11, _cr11, ret_sub="real")
+_hu = vop("Dot_VectorVector", XT + 100, YT + 17400, _h11, _cu11, ret_sub="real")
+_he = kml("DegAtan2", XT + 300, YT + 17200, [D("Y"), D("X"), RD]); g.link(_hu, _he["Y"]); g.link(_hf, _he["X"])
+_ha = kml("DegAtan2", XT + 300, YT + 17300, [D("Y"), D("X"), RD]); g.link(_hr, _ha["Y"]); g.link(_hf, _ha["X"])
+_crot = kml("BreakRotator", XT + 300, YT + 17500, [("InRot", "struct", dict(sub=ROT)), ("Roll", "real", dict(subcat="float", out=True)),
+                                                 ("Pitch", "real", dict(subcat="float", out=True)), ("Yaw", "real", dict(subcat="float", out=True))])
+g.link(member_pure(PCM, "GetCameraRotation", XT + 100, YT + 17500, lib_pure(GS, "GameplayStatics", "GetPlayerCameraManager", XT - 100, YT + 17500,
+       [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)), ("PlayerIndex", "int", dict(extra='DefaultValue="0",')),
+        ("ReturnValue", "object", dict(sub=PCM, out=True))])["ReturnValue"], [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"], _crot["InRot"])
+_rrot = kml("BreakRotator", XT + 300, YT + 17600, [("InRot", "struct", dict(sub=ROT)), ("Roll", "real", dict(subcat="float", out=True)),
+                                                 ("Pitch", "real", dict(subcat="float", out=True)), ("Yaw", "real", dict(subcat="float", out=True))])
+g.link(member_pure(SC_, "GetSocketRotation", XT + 100, YT + 17600, mesh, [("InSocketName", "name", dict(extra='DefaultValue="jnt_camera",')),
+                                                                       ("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"], _rrot["InRot"])
+chain(_b11, set_from("TouchHandElev", "real", XT + 900, YT + 17000, _he["ReturnValue"], "probe", subcat="double"),
+      set_from("TouchHandAzim", "real", XT + 1200, YT + 17000, _ha["ReturnValue"], "", subcat="double"),
+      set_from("ViewPitch", "real", XT + 1500, YT + 17000, _crot["Pitch"], "", subcat="double"),
+      set_from("RigPitch", "real", XT + 1800, YT + 17000, _rrot["Pitch"], "", subcat="double"),
+      set_from("RigRoll", "real", XT + 2100, YT + 17000, _rrot["Roll"], "", subcat="double"))
 #   T9 (n2g): a carry started from a tap? the game's own drop (Obj.DropCorpse, with its animation) once it holds the
 #   body (false until then); after 2.5 s (or F held again) given up
 _b9 = branch(XT + 600, YT + 15300, "n2g: a carry from a tap waiting to be dropped?", self_get("TapCarry", "bool", XT + 400, YT + 15450))
@@ -2254,20 +2358,15 @@ tr = [set_from("ItemCenter", "struct", XT + 500, YT + 3700, _tgb["Origin"], "rea
       self_set("LootWait", "bool", XT + 2300, YT + 3700, "n2f: no stale wait for an item's use", default="false"),
       self_set("TouchState", "int", XT + 2600, YT + 3700, "reaching", default="2")]
 chain(*tr)
-_ep, _xp = tap_active(XT + 500, YT + 3300, False, "its tap interaction off (the game would open the window at the release)")
+#   n3a (Nexus, Sevowin: "any way to get rid of the delay when you open a stash?"): stashes as bodies: no press switches
+#   the target's open interaction off (the game opens the window at the release, our hand / bag plays alongside)
 #   n2h (tester: a tap picked a body up; "the body pickup should never happen in the first place"): a BODY's search
 #   interaction is no longer switched off at the press. With it off the game's hold interaction was the only one left
 #   for that press (the window still opened at the release, through it), and a later tap could finish a carry at once.
 #   The game's own tap (window at the release) and hold (carry) now run untouched; stashes as before
-_bpb = branch(XT + 300, YT + 3150, "n2h: a body? its interactions untouched (vanilla tap / hold)", self_get("TouchIsBody", "bool", XT + 100, YT + 3250))
-g.link(bpress["then"], _bpb["execute"])
-g.link(_bpb["else"], _ep)
-_sp = self_set("TapOff", "bool", XT + 1200, YT + 3300, "", default="true")
-for q_ in _xp:
-    g.link(q_, _sp["execute"])
 _stp = set_from("TouchPressAt", "real", XT + 1500, YT + 3300, now(XT + 1350, YT + 3500), "pressed", subcat="double")
-chain(_sp, _stp, self_set("TouchState", "int", XT + 1800, YT + 3300, "pressed: tap or hold?", default="1"))
-g.link(_bpb["then"], _stp["execute"])
+chain(_stp, self_set("TouchState", "int", XT + 1800, YT + 3300, "pressed: tap or hold?", default="1"))
+g.link(bpress["then"], _stp["execute"])
 #     a body: its pelvis bone (the mesh component's bounds stay at the standing height: build e aimed 21 deg UP at a
 #     corpse), else (stash, mutant without that bone) the bounds centre set above
 for q_ in list(tr[0]["then"].links):
@@ -2280,17 +2379,15 @@ cskm.pin("AsSkeletal Mesh Component", "object", sub=SKC, out=True)
 cskm.pin("bSuccess", "bool", out=True)
 g.link(lcomp(XT + 450, YT + 4300), cskm["Object"])
 g.link(tr[0]["then"], cskm["execute"])
-bhip = branch(XT + 950, YT + 4100, "has a pelvis bone?",
-              member_pure(SC_, "DoesSocketExist", XT + 800, YT + 4300, cskm["AsSkeletal Mesh Component"],
-                          [("InSocketName", "name", dict(extra='DefaultValue="jnt_hips",')), RB])["ReturnValue"])
-g.link(cskm["then"], bhip["execute"])
-ship = set_from("ItemCenter", "struct", XT + 1250, YT + 4100,
-                member_pure(SC_, "GetSocketLocation", XT + 1050, YT + 4300, cskm["AsSkeletal Mesh Component"],
-                            [("InSocketName", "name", dict(extra='DefaultValue="jnt_hips",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"],
-                "reach target = the pelvis", sub=VEC)
-g.link(bhip["then"], ship["execute"])
+# n3d (Nexus, wyruzzah1987: the hand "like hailing"; tester: "the hand isn't pointing to the body", "the hand can go too
+# high when looking down at a body not fully on the ground"; probe n3a: the arm rig follows the view exactly (rig pitch
+# = view pitch), the hand went where it was aimed: the PELVIS, 9-13 deg ABOVE the crosshair when looking down at a body
+# draped over something): the touch reaches for the point of the body under the crosshair (LookPoint, our trace's hit
+# at the press); tester: "make the fix apply to the both hands pat too"
+ship = set_from("ItemCenter", "struct", XT + 1250, YT + 4100, self_get("LookPoint", "struct", XT + 1050, YT + 4300, sub=VEC),
+                "reach target = the point of the body under the crosshair", sub=VEC)
+g.link(cskm["then"], ship["execute"])   # any body
 g.link(ship["then"], tr[1]["execute"])
-g.link(bhip["else"], tr[1]["execute"])
 g.link(cskm["CastFailed"], tr[1]["execute"])
 #     the body's / stash's centre seen from the camera, in VIEW axes (with a weapon the arm rig follows the view):
 #     its direction picks the touch asset
@@ -2314,7 +2411,10 @@ g.link(_tah, _tel["X"])
 _taz = kml("DegAtan2", XT + 3300, YT + 4300, [D("Y"), D("X"), RD])
 g.link(_trt, _taz["Y"])
 g.link(_tah, _taz["X"])
-_tie = _bin(XT + 3500, YT + 4100, _tel["ReturnValue"], "45.0", "15.0", 4)
+# n3f (tester: "the hand when looting bodies could still go lower on the screen across the board"): a body touch
+# aims one row (15 deg) lower than the crosshair point; tester: "do it for both hands too" (the pat's bins as well),
+# and for stashes ("yes", n3k): every touch's bin (doors use their own assets)
+_tie = _bin(XT + 3500, YT + 4100, d_op("Subtract_DoubleDouble", XT + 3350, YT + 4400, _tel["ReturnValue"], b_const="15.0"), "45.0", "15.0", 4)
 _tia = _bin(XT + 3500, YT + 4300, _taz["ReturnValue"], "30.0", "15.0", 4)
 _tix = _imad(XT + 4000, YT + 4200, _tie, 5, _tia)
 tel = set_from("ItemElev", "real", XT + 2900, YT + 3700, _tel["ReturnValue"], "centre seen from the camera, view axes (probe)", subcat="double")
@@ -2798,7 +2898,14 @@ _bsel = kml("SelectVector", X3 - 800, Y3 + 950, [("A", "struct", dict(sub=VEC)),
 g.link(_palm["ReturnValue"], _bsel["A"])
 g.link(_bone_w, _bsel["B"])
 g.link(pick_bh(X3 - 1000, Y3 + 1200), _bsel["bPickA"])
-bone = _bsel["ReturnValue"]
+# n3i (tester: "make all items move slightly up in the palm so it overlaps the fingers a bit"): the held point 2 cm on
+# toward the fingers (along the wrist -> middle knuckle line), empty hands and with a weapon
+_fdir = kml("Normal", X3 - 800, Y3 + 1150, [("A", "struct", dict(sub=VEC)), ("Tolerance", "real", dict(subcat="float", extra='DefaultValue="0.000100",')),
+                                           ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(vop("Subtract_VectorVector", X3 - 950, Y3 + 1150, _kn, _wr), _fdir["A"])
+_mvf = kml("Multiply_VectorFloat", X3 - 650, Y3 + 1150, [("A", "struct", dict(sub=VEC)), D("B", "2.0"), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_fdir["ReturnValue"], _mvf["A"])
+bone = vop("Add_VectorVector", X3 - 650, Y3 + 1000, _bsel["ReturnValue"], _mvf["ReturnValue"])
 cl_, cf_, cr_, cu_, cfov = cam_basis(X3 - 1500, Y3 + 1100)
 tan_v = kml("DegTan", X3 - 700, Y3 + 1300, [D("A"), RD])
 g.link(d_op("Multiply_DoubleDouble", X3 - 900, Y3 + 1300, cfov, b_const="0.5"), tan_v["A"])
@@ -2822,7 +2929,7 @@ ve = kml("VLerp", X3 + 650, Y3 + 300, [("A", "struct", dict(sub=VEC)), ("B", "st
 g.link(ffrom(X3 + 450, Y3 + 300), ve["A"])
 BOX = "\"/Script/CoreUObject.ScriptStruct'/Script/CoreUObject.Box'\""
 #   the item's centre in its own axes (static meshes; else its pivot)
-_bb = member_pure(SM, "GetBoundingBox", X3 - 300, Y3 + 2300, self_get("ItemMesh", "object", X3 - 500, Y3 + 2300, sub=SM),
+_bb = member_pure(SM, "GetBoundingBox", X3 - 300, Y3 + 2300, self_get("FlyMesh", "object", X3 - 500, Y3 + 2300, sub=SM),
                   [("ReturnValue", "struct", dict(sub=BOX, out=True))])["ReturnValue"]
 _bc = kml("GetBoxCenter", X3 - 100, Y3 + 2300, [("InBox", "struct", dict(sub=BOX)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
 _bc.pins["InBox"].ref = True
@@ -2831,7 +2938,7 @@ g.link(_bb, _bc["InBox"])
 _cz = kml("SelectVector", X3 + 100, Y3 + 2300, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)),
                                                ("bPickA", "bool", dict(extra='DefaultValue="false",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
 g.link(_bc["ReturnValue"], _cz["A"])
-g.link(is_valid(X3 - 100, Y3 + 2450, self_get("ItemMesh", "object", X3 - 300, Y3 + 2450, sub=SM)), _cz["bPickA"])
+g.link(is_valid(X3 - 100, Y3 + 2450, self_get("FlyMesh", "object", X3 - 300, Y3 + 2450, sub=SM)), _cz["bPickA"])
 #   the hand bone's world transform; the held turn = FlyRel composed with it
 _sock = member_pure(SKC, "GetSocketTransform", X3 - 300, Y3 + 2600, mesh,
                     [("InSocketName", "name", dict(extra=f'DefaultValue="{HAND}",')),
@@ -2845,7 +2952,7 @@ _hcb = kml("BreakTransform", X3 + 100, Y3 + 2700, [("InTransform", "struct", dic
 g.link(_hc["ReturnValue"], _hcb["InTransform"])
 _ixb = kml("BreakTransform", X3 + 100, Y3 + 2900, [("InTransform", "struct", dict(sub=XFORM)), ("Location", "struct", dict(sub=VEC, out=True)),
                                                   ("Rotation", "struct", dict(sub=ROT, out=True)), ("Scale", "struct", dict(sub=VEC, out=True))])
-g.link(self_get("ItemXf", "struct", X3 - 100, Y3 + 2950, sub=XFORM), _ixb["InTransform"])
+g.link(self_get("FlyXf", "struct", X3 - 100, Y3 + 2950, sub=XFORM), _ixb["InTransform"])
 # build 26 (tester: "an upright item going into the hand would clip through the fingers; it needs to rotate as it
 # animates into the hand so it looks truly held"): during the pull it turns from how it lay to the hand's item axes
 # (jnt_l_weapon: the axes the game holds items by; at the vanilla grab frame its Z points up), then stays in them
@@ -2864,8 +2971,84 @@ _rsel = kml("RLerp", X3 + 300, Y3 + 2800, [("A", "struct", dict(sub=ROT)), ("B",
                                           ("Alpha", "real", dict(subcat="float", extra='DefaultValue="0.0",')),
                                           ("bShortestPath", "bool", dict(extra='DefaultValue="true",')), ("ReturnValue", "struct", dict(sub=ROT, out=True))])
 g.link(_ixb["Rotation"], _rsel["A"])
-g.link(_sbr["Rotation"], _rsel["B"])
-# g.link(alpha, _rsel["Alpha"])   # build 41: alpha 0 = the item keeps how it lay (no turn into the grip)
+# g.link(_sbr["Rotation"], _rsel["B"])   # build 26b's hand axes (build 41: off)
+# n3c (tester on n3a: "upright bottles don't work, tested with water, didn't seem to change at all; it needs to look
+# like the hand is actually holding the bottle"; n3a only turned the copy with empty hands (an armed pickup never set
+# its rotation) and only items whose local Z was the long axis): an ELONGATED item (its longest box extent 1.3x the
+# next) turns, during the pull into the hand, so that long axis lies along the hand's grip axis (index knuckle to pinky
+# knuckle: what the fingers wrap around), the shortest turn from how it lay (the cap goes whichever way is nearer);
+# other items keep how they lay. The pull sets the rotation with a weapon too (below, step 5) and the copy is
+# parented as it then is.
+_bsz = kml("GetBoxSize", X3 - 100, Y3 + 3650, [("InBox", "struct", dict(sub=BOX)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+_bsz.pins["InBox"].ref = True
+_bsz.pins["InBox"].const = True
+g.link(_bb, _bsz["InBox"])
+_bmin = kml("BreakVector", X3 + 100, Y3 + 3650, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
+                                                 ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
+g.link(_bsz["ReturnValue"], _bmin["InVec"])
+_ex, _ey, _ez = _bmin["X"], _bmin["Y"], _bmin["Z"]
+_ge = lambda x, y, a, b: d_op("GreaterEqual_DoubleDouble", x, y, a, b, ret=RB)
+_xl = b_and(X3 + 500, Y3 + 3500, _ge(X3 + 300, Y3 + 3450, _ex, _ey), _ge(X3 + 300, Y3 + 3520, _ex, _ez))      # X the longest
+_yl = _ge(X3 + 300, Y3 + 3600, _ey, _ez)                                                                    # else Y over Z
+_ax_rot = _ixb["Rotation"]
+_axv = []
+for k_, fn_ in enumerate(("GetForwardVector", "GetRightVector", "GetUpVector")):
+    n_ = kml(fn_, X3 + 100, Y3 + 3900 + 100 * k_, [("InRot", "struct", dict(sub=ROT)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+    g.link(_ax_rot, n_["InRot"])
+    _axv.append(n_["ReturnValue"])
+_syz = kml("SelectVector", X3 + 400, Y3 + 4000, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)), B("bPickA"), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_axv[1], _syz["A"]); g.link(_axv[2], _syz["B"]); g.link(_yl, _syz["bPickA"])
+_sl = kml("SelectVector", X3 + 600, Y3 + 3950, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)), B("bPickA"), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_axv[0], _sl["A"]); g.link(_syz["ReturnValue"], _sl["B"]); g.link(_xl, _sl["bPickA"])
+_long = _sl["ReturnValue"]   # the item's long axis, world, as it lay
+_mx = kml("FMax", X3 + 300, Y3 + 3700, [D("A"), D("B"), RD]); g.link(_ex, _mx["A"]); g.link(_ey, _mx["B"])
+_mx2 = kml("FMax", X3 + 450, Y3 + 3700, [D("A"), D("B"), RD]); g.link(_mx["ReturnValue"], _mx2["A"]); g.link(_ez, _mx2["B"])
+_mn = kml("FMin", X3 + 300, Y3 + 3800, [D("A"), D("B"), RD]); g.link(_ex, _mn["A"]); g.link(_ey, _mn["B"])
+_mn2 = kml("FMin", X3 + 450, Y3 + 3800, [D("A"), D("B"), RD]); g.link(_mn["ReturnValue"], _mn2["A"]); g.link(_ez, _mn2["B"])
+#   the middle extent = sum - max - min
+_mid = d_op("Subtract_DoubleDouble", X3 + 700, Y3 + 3750, d_op("Subtract_DoubleDouble", X3 + 600, Y3 + 3750,
+            d_op("Add_DoubleDouble", X3 + 500, Y3 + 3880, d_op("Add_DoubleDouble", X3 + 400, Y3 + 3880, _ex, _ey), _ez), _mx2["ReturnValue"]), _mn2["ReturnValue"])
+_elong = b_and(X3 + 1000, Y3 + 3700, d_op("Greater_DoubleDouble", X3 + 850, Y3 + 3700, _mx2["ReturnValue"],
+                                          d_op("Multiply_DoubleDouble", X3 + 750, Y3 + 3800, _mid, b_const="1.3"), ret=RB),
+               is_valid(X3 + 850, Y3 + 3850, self_get("FlyMesh", "object", X3 + 650, Y3 + 3850, sub=SM)))
+#   n3g (tester: "beer bottles and energy drinks still aren't rotating; they should rotate to the side every single
+#   time so it looks like they are being held"; probe n3f: with a weapon the grip axis (index -> pinky knuckles) at the
+#   grab points 25-75 deg DOWN (grip Z -0.4..-0.96), so lining the bottle up with it kept it steep): the target is the
+#   view's sideways axis, flat (the camera's right without its vertical part), the sign nearer the long axis
+_crb = kml("BreakVector", X3 + 100, Y3 + 4300, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
+                                                ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
+g.link(cr_, _crb["InVec"])
+_crm = kml("MakeVector", X3 + 300, Y3 + 4300, [D("X"), D("Y"), D("Z"), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_crb["X"], _crm["X"]); g.link(_crb["Y"], _crm["Y"])
+_grip0 = kml("Normal", X3 + 450, Y3 + 4350, [("A", "struct", dict(sub=VEC)), ("Tolerance", "real", dict(subcat="float", extra='DefaultValue="0.000100",')),
+                                             ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_crm["ReturnValue"], _grip0["A"])
+_gneg = kml("NegateVector", X3 + 650, Y3 + 4450, [("A", "struct", dict(sub=VEC)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_grip0["ReturnValue"], _gneg["A"])
+_gsel = kml("SelectVector", X3 + 850, Y3 + 4350, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)), B("bPickA"), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_grip0["ReturnValue"], _gsel["A"]); g.link(_gneg["ReturnValue"], _gsel["B"])
+g.link(d_op("GreaterEqual_DoubleDouble", X3 + 700, Y3 + 4250, vop("Dot_VectorVector", X3 + 550, Y3 + 4250, _long, _grip0["ReturnValue"], ret_sub="real"),
+            b_const="0.0", ret=RB), _gsel["bPickA"])
+_grip = _gsel["ReturnValue"]
+#   the turn: about long x grip, by the angle between them, after how it lay
+_tax = kml("Normal", X3 + 1100, Y3 + 4150, [("A", "struct", dict(sub=VEC)), ("Tolerance", "real", dict(subcat="float", extra='DefaultValue="0.000100",')),
+                                           ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(vop("Cross_VectorVector", X3 + 950, Y3 + 4150, _long, _grip), _tax["A"])
+_tang = kml("DegAcos", X3 + 1100, Y3 + 4250, [D("A"), RD])
+_dclamp = kml("FClamp", X3 + 950, Y3 + 4250, [D("Value"), D("Min", "-1.0"), D("Max", "1.0"), RD])
+g.link(vop("Dot_VectorVector", X3 + 800, Y3 + 4250, _long, _grip, ret_sub="real"), _dclamp["Value"])
+g.link(_dclamp["ReturnValue"], _tang["A"])
+_trot = kml("RotatorFromAxisAndAngle", X3 + 1300, Y3 + 4200, [("Axis", "struct", dict(sub=VEC)), ("Angle", "real", dict(subcat="float")), ("ReturnValue", "struct", dict(sub=ROT, out=True))])
+g.link(_tax["ReturnValue"], _trot["Axis"]); g.link(_tang["ReturnValue"], _trot["Angle"])
+_aligned = kml("ComposeRotators", X3 + 1500, Y3 + 4100, [("A", "struct", dict(sub=ROT)), ("B", "struct", dict(sub=ROT)), ("ReturnValue", "struct", dict(sub=ROT, out=True))])
+g.link(_ax_rot, _aligned["A"]); g.link(_trot["ReturnValue"], _aligned["B"])
+_tgt = kml("SelectRotator", X3 + 1700, Y3 + 3700, [("A", "struct", dict(sub=ROT)), ("B", "struct", dict(sub=ROT)),
+                                                  ("bPickA", "bool", dict(extra='DefaultValue="false",')), ("ReturnValue", "struct", dict(sub=ROT, out=True))])
+g.link(_aligned["ReturnValue"], _tgt["A"])
+g.link(_ixb["Rotation"], _tgt["B"])
+g.link(_elong, _tgt["bPickA"])
+g.link(_tgt["ReturnValue"], _rsel["B"])
+g.link(alpha, _rsel["Alpha"])   # n3a / n3c: during the pull (HideItem: at once) an elongated item turns into the grip
 held_rot = _rsel["ReturnValue"]
 #   where the pivot goes so the centre sits on the hand as drawn
 _mt = kml("MakeTransform", X3 + 500, Y3 + 2800, [("Location", "struct", dict(sub=VEC)), ("Rotation", "struct", dict(sub=ROT)), ("Scale", "struct", dict(sub=VEC)),
@@ -2882,7 +3065,10 @@ held_pos = vop("Add_VectorVector", X3 + 1000, Y3 + 2750, vop("Subtract_VectorVec
 _sv5 = kml("SelectVector", X3 + 450, Y3 + 450, [("A", "struct", dict(sub=VEC)), ("B", "struct", dict(sub=VEC)),
                                                ("bPickA", "bool", dict(extra='DefaultValue="false",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
 g.link(held_pos, _sv5["A"])
-g.link(bone, _sv5["B"])
+# n3d (tester: bottles "sometimes not fully in the palm, a little too far left or right depending on how it is angled"):
+# with a weapon the copy's PIVOT went to the hand bone (a bottle's pivot is at its base: off along its long axis, now
+# the grip axis); its centre goes there now, and it is parented keeping that (KeepWorld, not SnapToTarget)
+g.link(vop("Subtract_VectorVector", X3 + 300, Y3 + 600, bone, _off["ReturnValue"]), _sv5["B"])
 g.link(pick_bh(X3 + 250, Y3 + 550), _sv5["bPickA"])
 g.link(_sv5["ReturnValue"], ve["B"])   # build 26: empty hands: its centre to the hand as drawn
 g.link(alpha, ve["Alpha"])
@@ -2924,7 +3110,23 @@ g.link(member_pure(PCM, "GetCameraRotation", X3 + 1100, Y3 + 1800,
                              ("ReturnValue", "object", dict(sub=PCM, out=True))])["ReturnValue"],
                    [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"], _cbr["InRot"])
 scp = set_from("CamPitch", "real", X3 + 3350, Y3 - 100, _cbr["Pitch"], "view pitch (probe)", subcat="double")
-chain(sl, *trs, *trw, scp)
+#   n3c: with a weapon too, the copy's turn during the pull (empty hands set it in the "held copy" steps below)
+_srot5 = member_call(ACTOR, "K2_SetActorRotation", X3 + 1100, Y3 - 300, fly(X3 + 900, Y3 - 250), "n3c: turned into the grip during the pull",
+                     [("NewRotation", "struct", dict(sub=ROT)), B("bTeleportPhysics", "true"), RB])
+g.link(held_rot, _srot5["NewRotation"])
+#   n3f probe (tester: "a beer bottle didn't seem to rotate, came into the hand standing up, clipping through the top
+#   of the hand"): during the pull: elongated?, the long axis's and the grip axis's world Z, the turn's angle
+_bz1 = kml("BreakVector", X3 + 1300, Y3 - 600, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
+                                                ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
+g.link(_long, _bz1["InVec"])
+_bz2 = kml("BreakVector", X3 + 1300, Y3 - 500, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
+                                                ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
+g.link(_grip, _bz2["InVec"])
+_pz = [set_from("PullElong", "bool", X3 + 1500, Y3 - 800, _elong, "probe"),
+       set_from("PullLongZ", "real", X3 + 1800, Y3 - 800, _bz1["Z"], "", subcat="double"),
+       set_from("PullGripZ", "real", X3 + 2100, Y3 - 800, _bz2["Z"], "", subcat="double"),
+       set_from("PullTurn", "real", X3 + 2400, Y3 - 800, _tang["ReturnValue"], "", subcat="double")]
+chain(sl, _srot5, *_pz, *trs, *trw, scp)
 #   at the hand: parent it to the hand's item bone (keeps its size and its rotation at that moment)
 bat = branch(X3 + 1300, Y3 + 250, "reached the hand, not parented yet? (with a weapon; empty hands: held as drawn, below)",
              b_and(X3 + 1150, Y3 + 450, d_op("GreaterEqual_DoubleDouble", X3 + 950, Y3 + 450, alpha, b_const="1.0", ret=RB),
@@ -2934,7 +3136,7 @@ g.link(sq3["then_1"], bat["execute"])
 RULE = EN("/Script/Engine.EAttachmentRule")
 att = member_call(ACTOR, "K2_AttachToComponent", X3 + 1600, Y3 + 250, fly(X3 + 1450, Y3 + 450), "parent to the left hand", [
     ("Parent", "object", dict(sub=SC_)), ("SocketName", "name", dict(extra=f'DefaultValue="{HAND}",')),
-    ("LocationRule", "byte", dict(sub=RULE, extra='DefaultValue="SnapToTarget",')),
+    ("LocationRule", "byte", dict(sub=RULE, extra='DefaultValue="KeepWorld",')),   # n3d: its centre on the hand bone (set by the pull)
     ("RotationRule", "byte", dict(sub=RULE, extra='DefaultValue="KeepWorld",')),
     ("ScaleRule", "byte", dict(sub=RULE, extra='DefaultValue="KeepWorld",')),
     B("bWeldSimulatedBodies"), RB])
@@ -3390,12 +3592,28 @@ _pcut = branch(X4 + 300, Y4 + 12800, "n2: the pat cut (not playing, no touch out
                      b_not(X4, Y4 + 13070, self_get("LootReach", "bool", X4 - 200, Y4 + 13070)),
                      b_not(X4, Y4 + 13140, self_get("LootPaused", "bool", X4 - 200, Y4 + 13140)),
                      b_not(X4, Y4 + 13210, montage_active(X4 - 200, Y4 + 13210, anim, AM_PAT))))
-_sqpe = sequence(X4 + 100, Y4 + 12000, "pat end / pat cut", 2)
+_sqpe = sequence(X4 + 100, Y4 + 12000, "pat end / pat cut", 3)
 for l_ in list(_sqpf["then_5"].links):
     _sqpf["then_5"].links.remove(l_); l_.links.remove(_sqpf["then_5"])
 g.link(_sqpf["then_5"], _sqpe["execute"])
 g.link(_sqpe["then_0"], _pend["execute"])
 g.link(_sqpe["then_1"], _pcut["execute"])
+_ppos3 = member_pure(ANIMI, "Montage_GetPosition", X4 - 100, Y4 + 13500, anim, [("Montage", "object", dict(sub=MONT, extra=f'DefaultObject="{AM_PAT}",')),
+                                                                              ("ReturnValue", "real", dict(subcat="float", out=True))])
+_ppos3.pins["Montage"].const = True
+_pcx = branch(X4 + 300, Y4 + 13400, "n3a: the window closed while the pats still play? straight to the way out",
+              b_and(X4 + 200, Y4 + 13600, self_get("PatMode", "bool", X4, Y4 + 13550),
+                    b_not(X4, Y4 + 13620, self_get("InvOpen", "bool", X4 - 200, Y4 + 13620)),
+                    montage_active(X4, Y4 + 13690, anim, AM_PAT),
+                    d_op("GreaterEqual_DoubleDouble", X4, Y4 + 13760, self_get("OpenAt", "real", X4 - 200, Y4 + 13760, subcat="double"),
+                         self_get("TouchPressAt", "real", X4 - 200, Y4 + 13830, subcat="double"), ret=RB),
+                    d_op("Less_DoubleDouble", X4, Y4 + 13900, _ppos3["ReturnValue"],
+                         d_op("Add_DoubleDouble", X4 - 200, Y4 + 13900, self_get("SegStart", "real", X4 - 400, Y4 + 13900, subcat="double"), b_const="1.15"), ret=RB)))
+g.link(_sqpe["then_2"], _pcx["execute"])
+_mpx = montage_play(X4 + 600, Y4 + 13400, anim, AM_PAT, None, "the pat from its way out (frame 37)")
+_mpx.pins["InPlayRate"].extra = 'DefaultValue="0.780000",'
+g.link(d_op("Add_DoubleDouble", X4 + 400, Y4 + 13600, self_get("SegStart", "real", X4 + 200, Y4 + 13650, subcat="double"), b_const="1.233"), _mpx["InTimeToStartMontageAt"])
+chain(_pcx, _mpx, self_set("LootPaused", "bool", X4 + 900, Y4 + 13400, "", default="false"), inc("NPatCancel", X4 + 1200, Y4 + 13400, "count (probe)"))
 chain(_pcut, self_set("PatMode", "bool", X4 + 600, Y4 + 12800, "", default="false"), inc("NPatCut", X4 + 900, Y4 + 12800, "count (probe)"))
 _wme2 = member_pure(OBJC, "GetWeaponInHandsMeshComponent", X4 + 400, Y4 + 11400, as_pc, [("ReturnValue", "object", dict(sub=SKC, out=True))])["ReturnValue"]
 chain(_bws, member_call(SC_, "SetHiddenInGame", X4 + 600, Y4 + 11200, _wme2, "shown, coming up with the hands", [B("NewHidden", "false"), B("bPropagateToChildren", "true")]),

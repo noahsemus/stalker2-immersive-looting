@@ -1325,7 +1325,10 @@ def build_pat_table():
                 disc = qb * qb - 4 * qa * qc
                 t = (-qb + math.sqrt(disc)) / (2 * qa) if disc > 0 else max(10.0, -qb / (2 * qa))
                 GL = add(cam, inv(mul(dirv_e, t)))
-                goals = {"l": GL, "r": add(GL, (0.0, PAT_SPREAD, 0.0))}
+                # n3j (tester: "for both hands looting a body move them a bit more to the left, they should be centered"):
+                # the left hand was aimed at the target and the right one PAT_SPREAD to its right; now the pair is
+                # centred on the target (each half the spread to its side)
+                goals = {"l": add(GL, (0.0, -PAT_SPREAD / 2, 0.0)), "r": add(GL, (0.0, PAT_SPREAD / 2, 0.0))}
                 # n2f (tester: "rotate the hands up, toward the sky; they're a little too far rotated down, so it doesn't
                 # look fully like a pat"): n2f tilted the palm normal AWAY from the body's direction (-0.25): tester "tilted
                 # the wrong way, the wrists look broken, the hands way too far down". A palm normal tilted toward the

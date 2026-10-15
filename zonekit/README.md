@@ -613,3 +613,77 @@ mod go to `harness/docs/` instead (promote them).
   `AS_ImmLoot_Grab` (the family grabs' template; the editor would not delete it while it held it from this session's
   builds, deleted from disk with the editor closed). Build intermediates now: `make_grab_seq.py` `load_tmpl` falls back
   to `GrabAr` / `GrabBHAdd`, `PART=dropint` deletes the intermediates after a full rebuild. NewContent 7.0 -> 5.4 MB.
+
+## 2026-10-15 — next release (Nexus feedback on 1.3.0)
+- Reports: wyruzzah1987 (screenshot: one-hand body touch "like hailing", the hand up-left, not toward the body; the
+  backpack "laggy / choppy a few seconds"; the pat "like healing / blocking"), Rodom87 (upright bottles clip through
+  the hand; lying ones look right), Sevowin (the delay opening a stash), bulaike0725 (Instant Intel no longer opens
+  the PDA for a picked-up note, except while sprinting). Tester: the touch problem is the AIM ("the hand isn't pointing
+  to the body"), not the palm; stashes the same; pat: keep, but cancel it when the window closes mid-pat (it played on
+  in full, then the weapon); bag: smooth on his PC (probe: 53-62 ticks / 2 s with the bag, no drop).
+- Instant Intel (subagent read of its paks): overrides `W_SystemNotificationItem`; each tick while a toast shows, if
+  its icon is the Note icon and `AnimInstancePlayer.StateData.bInCombat` is false, it calls `PC.StartUsePDA(2)` ONCE
+  (DoOnce, no retry) and hides the toast. During our reach the native call is refused (hands busy), so the one shot is
+  lost; sprinting = no reach = it works. Note / PDA items = ItemPrototypes `Type = EItemType::Info` with meshes
+  `SM_dev_pda`, `SM_que_pda_*`, `SM_cns_notes_*`, `SM_que_notepad_*` (+ `SM_que_folders_*`).
+- n3a: (1) no press switches the target's open interaction off any more (stashes open at the release, as bodies; the
+  hand / bag plays alongside); (2) skip cond "note" (bit 512; "use" now 1024, IsLeftHandBusy 2048): `ItemMesh` name
+  contains `_pda` / `_notes_` / `_notepad_` / `_folders_` = vanilla pickup; (3) an upright tall item (local Z the
+  longest box extent, 1.3x, within ~53 deg of vertical) turns during the pull to lie across the view (`MakeRotFromZX`:
+  Z = the camera's flat right, X = toward the camera); others keep how they lay (RLerp alpha linked again);
+  (4) the window gone while the pats still play (`OpenAt` >= `TouchPressAt`, position < seg + 1.15): the pat montage
+  restarts at its way out (seg + 1.233, rate 0.78) = hands out of view, then the equip (`NPatCancel`); (5) probe T11:
+  while a touch is held, the hand's elevation / azimuth from the eye (view axes) vs `ItemElev` / `ItemAzim`, the view
+  pitch and `jnt_camera`'s pitch / roll (`RigPitch`), to find why the armed touch missed the body.
+- n3b (tester: "for PDAs and notes I still want our reach to play and then the note should open after our animation
+  is done"): the "note" skip removed; a note / PDA pickup sets `NoteItem` (+ `NoteAt`); T12: once our montage is over
+  (>= 0.3 s after the pickup), if `/InstantIntel/ModActor` is in the asset registry (`K2_GetAssetByObjectPath`,
+  `IEFound` probe), `AnimInstancePlayer.StateData.bInCombat` is false and `PC.IsUsingPDA` false: `PC.StartUsePDA(Notes)`
+  (`NNotePDA`); given up after 6 s. Without Instant Intel nothing opens (vanilla).
+- n3b tested (tester): PDA works (reach, then the PDA on notes); pat cancel works. Upright bottles "don't work, tested
+  with water, didn't seem to change at all; it needs to look like the hand is actually holding the bottle (like the use
+  animation grab)". Cause: n3a set the copy's turn only with empty hands (an armed pickup never set its rotation) and
+  only for items whose local Z was the long axis. (Builds 28-31 tried pickups in the game's use pose: abandoned, "forget
+  it"; the game's own hand item mesh exists only during a real use.)
+- n3c: any ELONGATED item (longest box extent > 1.3x the middle one) turns during the pull so its long axis lies along
+  the hand's grip axis (index_01 -> pinky_01 knuckles, sign nearer the long axis; `RotatorFromAxisAndAngle` about long x
+  grip, `ComposeRotators` after how it lay): the shortest turn into the fingers; others keep how they lay; the pull sets
+  the copy's rotation with a weapon too (`K2_SetActorRotation` each tick before the copy is parented).
+- n3c tested (tester): bottles turn and "look pretty good", sometimes not fully in the palm (a little left / right by
+  angle); stashes fixed; body touch "can still go too high when looking down at a body not fully on the ground".
+  Probe (17 touches): rig pitch = view pitch every time (the armed arm rig follows the view exactly); the hand went
+  where aimed (hand elev / az within ~5-10 deg of the bin); the aim = the pelvis was +9..+13 deg ABOVE the crosshair
+  in those cases (bins 21 / 22), so the hand rose toward it.
+- n3d: one-hand body touch aims at `LookPoint` (the crosshair's hit on the body at the press); the pat (BodyMode 1)
+  keeps the pelvis. Armed pickup: the copy's centre (not its pivot) goes to the hand bone during the pull, parented
+  KeepWorld (was SnapToTarget = pivot on the bone).
+- n3d (tester: "make the fix apply to the both hands pat too"): every body touch, pat included, aims at `LookPoint`
+  (also mutants without a pelvis bone; the pelvis branch is gone).
+- n3e (tester: "we shouldn't touch mutants? that should be vanilla, no?"; the game has its own knife animation for
+  mutant looting): a body counts for us only if `Obj.IsHuman`; mutant bodies stay vanilla (touch, pat, backpack).
+- n3e tested (tester): body hand "could still go lower on the screen across the board"; bottles look good, but "a beer
+  bottle didn't seem to rotate, came into the hand standing up, clipping through the top of the hand". `SM_cns_beer_c`
+  box 7.4 x 7.6 x 27.8 (elongated like water's 8.2 x 8.0 x 27.8), so the turn ran; likely the grip axis itself was
+  near vertical at that grab (the shortest turn then keeps a standing bottle standing).
+- n3f: a body touch with Looting bodies = Hand aims 15 deg (one row) below the crosshair point; probe during the pull:
+  `PullElong`, `PullLongZ` / `PullGripZ` (world Z of the item's long axis / the grip axis), `PullTurn` (deg).
+- n3f: the 15 deg lower aim for every body touch, the pat too (tester: "do it for both hands too").
+- n3f tested (tester): body touch "looks good" (Hand and pat 15 deg lower). Beer bottles and energy drinks "still aren't
+  rotating; they should rotate to the side every single time". Probe (3 armed pickups): the grip axis at the grab
+  pointed 25-75 deg down (`PullGripZ` -0.42..-0.96), so lining the bottle up with it kept it steep.
+- n3g: the target axis is the view's sideways axis, flat (camera right without its Z), sign nearer the item's long
+  axis: every elongated item ends lying sideways across the view.
+- n3g tested (tester): "beer is still broken, it stands straight up". Probe: `PullElong` true, but the long axis's Z
+  (-0.12..+0.45) changed WITHIN one pull: the pull read `ItemXf` / `ItemMesh` live, and the tracking step (2) rewrites
+  them every tick with the item now under the crosshair (after the pickup: the next bottle of the group, or nothing
+  related), so the copy turned toward garbage. This bug predates n3a (every pull since build 26 read them live).
+- n3h: `FlyXf` / `FlyMesh` frozen when the copy is spawned; the pull's bounds, centre, how-it-lay and elongation read
+  those.
+- n3h tested (tester): "niceeee". n3i (tester: "make all items move slightly up in the palm so it overlaps the fingers
+  a bit"): the held point (palm with empty hands, `jnt_l_weapon` with a weapon) 2 cm on toward the fingers along the
+  wrist -> middle knuckle line.
+- n3i tested (tester): "grabbing items looks perfect". n3j (tester: "for both hands looting a body move them a bit more
+  to the left, they should be centered"): the pat's two goals centred on the target (left -13 cm, right +13 cm in
+  component Y; the left hand was on the target and the right 26 cm to its right). Pat table rebuilt (patscan: largest
+  step 44 deg, bh bin 20 (up-left) right forearm on the way back; others <= 32).
+- n3k (tester: stashes too, "yes"): every touch bin 15 deg below the target (bodies and stashes).

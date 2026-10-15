@@ -1,4 +1,4 @@
-Immersive Looting v1.3.0 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
+Immersive Looting v1.4.0 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
 When you pick something up, Skif reaches out with his left hand, takes it and pockets it,
 instead of the item just vanishing. Looting a body or a stash, he reaches out and touches
 it first. No UE4SS required.
@@ -22,14 +22,17 @@ UNINSTALL
 WHAT IT DOES
   - Items lying in the world: press the interact key as usual. Skif's left hand reaches
     toward the item, takes it at its real size and carries it to his pocket. The item goes
-    into your inventory immediately, exactly as in vanilla; only the look changes.
+    into your inventory immediately, exactly as in vanilla; only the look changes. Bottles,
+    cans and other long items end up lying across the palm, as if really held.
   - With empty hands the hand reaches to where the item is (far items slide the last bit
     into the hand, the arm only reaches so far). With a weapon in hand the left hand leaves
     the weapon, grabs, and goes back to it.
-  - Bodies and stashes: tap the interact key, Skif's hand reaches out toward the body or
-    the stash, then the loot window opens. Close it and the hand comes back (onto the
-    weapon, or to rest with empty hands). Holding the key picks up and carries a body
-    exactly as in vanilla (no touch animation).
+  - Bodies and stashes: tap the interact key and the loot window opens at once while Skif's
+    hand reaches out toward where you are looking on the body or stash. Close it and the
+    hand comes back (onto the weapon, or to rest with empty hands). Holding the key picks
+    up and carries a body exactly as in vanilla. Mutant bodies are left fully vanilla.
+  - PDAs and notes: the hand takes them as any item. With the Instant Intel mod installed,
+    the PDA then opens on the notes page once the hand is done (outside combat).
   - Holding the interact key on a food, drink or medicine item uses it as in vanilla: Skif
     first takes it with his hand, then plays the game's own use animation. Using an item
     from a body's or stash's loot window works the same way.
@@ -59,6 +62,12 @@ COMPATIBILITY
 Source and build instructions: https://github.com/noahsemus/stalker2-immersive-looting
 
 CHANGES
+  1.4.0  The hand on bodies and stashes reaches for where you are looking, lower on the
+         screen (no more hand raised up in the air), also for the both-hands pat, which is
+         now centred and stops at once when you close the loot window. Stashes open at once
+         (no more delay). Mutant bodies are left vanilla. Bottles and cans are turned to lie
+         across the palm and sit properly in the hand. Compatible with Instant Intel: the PDA
+         opens for a picked-up note after the hand is done.
   1.3.0  Doors push or pull the way the door really moves: a door that swings toward you
          (lockers, closing a door opened away from you) is pulled, one that swings away is
          pushed. Closets and cabinets get the hand too. With a weapon out the door hand no

@@ -122,6 +122,16 @@ harness on 2026-10-09.
   variables removed, `AS_ImmLoot_Grab` / `GrabBH` / `Twist` deleted (NewContent 7.0 -> 5.4 MB). Zip in
   `zonekit/builds/v1.3.0/`, GitHub release v1.3.0 (replaced twice; never on Nexus before this one).
 
+- 2026-10-15 v1.4.0 released (Noah: "cut a minor release"; Nexus feedback on 1.3.0): body / stash touch and pat aim
+  at the crosshair's point on the target (`LookPoint`), 15 deg lower (was the pelvis, up to 13 deg above the
+  crosshair: "hailing"); pat centred, cancelled when the window closes mid-pat; stashes open at the release (no press
+  switches the target's interaction off any more); mutant bodies vanilla (`Obj.IsHuman`); elongated items turn to lie
+  sideways across the view (the pull's item data frozen at the pickup: `FlyXf` / `FlyMesh`; it read the live tracking
+  vars before), centre on the hand bone, 2 cm toward the fingers; armed pickups per family (`GrabAr` / `GrabPt`);
+  Instant Intel: after our reach on a note / PDA, `PC.StartUsePDA(Notes)` when `/InstantIntel/ModActor` is in the
+  asset registry and not in combat. Dev probes still in (touch aim T11, pull values; unused var `BagLayer`). Zip in
+  `zonekit/builds/v1.4.0/`, GitHub release v1.4.0.
+
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
   `CoreVariables.cfg:888-889`), visual in `MeshComponent`; pickup is instant and has no BP-visible "item added" event.
