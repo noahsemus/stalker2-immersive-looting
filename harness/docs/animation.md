@@ -44,6 +44,15 @@ Mostly from ImmersiveDialogue 2.0-2.1 (walk in dialogue, arms, gestures) and Imm
 - Rebinding pins inside an override (`Select Float` on our flag, rules OR'd with our flag) works but makes the
   asset a conflict magnet; frozen-interface lesson in `compatibility.md`.
 
+- **One montage per slot group, whatever `bStopAllMontages` says** (ImmersiveLooting 2026-10-18): a montage ASSET in
+  `FullBody` started with `Montage_Play(bStopAllMontages = false)` right after a paused dynamic FullBody pose table
+  stopped the table (probe: the table inactive through every test). Two offset tables cannot stack in one group;
+  live per-bone offsets need a post-process layer (`Transform (Modify) Bone` nodes bound to variables).
+- Slot groups of the player skeleton (from every player montage, `get_group_name` + `get_montage_slot_names`):
+  DefaultGroup = DefaultSlot, LeftHand, RightHand, CameraSlot, WeaponSlot, DeathSlot; ActionGroup = MainActionSlot,
+  SecondaryActionSlot, GadgetActionSlot / GadgetActionAimSlot; UpperGroup = UpperBody; FullBodyGroup = FullBody;
+  PreActionGroup = PreActionFullbodySlot; CutsceneGroup = CutsceneSlot.
+
 ## Crash families (do not retry)
 - `SetAnimInstanceClass` on the player mesh: `EXCEPTION_ACCESS_VIOLATION reading 0xa00` at once (native code keeps
   the instance it created at spawn).
@@ -129,7 +138,7 @@ Mostly from ImmersiveDialogue 2.0-2.1 (walk in dialogue, arms, gestures) and Imm
   § Camera for the pitch source); an additive pose passes the game's look through.
 - Item / PDA / backpack montages (`MainActionSlot`; mods may use `DefaultSlot` / `UpperBody`) key the hips 7.4 cm /
   19 deg away from `fp_bh_idle_stand`, the same as `fp_ar_idle_stand`: build an additive meant to run under items on
-  `fp_ar_idle_stand`, or the legs swing while an item plays. Root children (`jnt_item` carries the PDA,
+  `fp_ar_idle_stand`, or the legs swing while an item plays. Root children (`jnt_item`,
   `jnt_camera`, IK roots) must move with a lowered pelvis.
 - Look up with `IsSlotActive(<slot>)` which kind of montage runs; `GetCurrentActiveMontage` returns the most recent
   one only, and from an actor's tick it is not reliable for "which item is playing" (Campfires: an item used from

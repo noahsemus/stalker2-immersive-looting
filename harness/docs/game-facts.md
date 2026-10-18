@@ -108,6 +108,24 @@ mod learns something about the game itself. Line numbers refer to `<kit>\bp_api_
 - Trading opens inside the dialogue (`IsInStaticDialog` stays true) and takes UI-only input.
 - No BP-exposed API opens the PDA / inventory views directly (nothing on UIManagerEx / ViewBase / CppMediator).
 
+## PDA (ImmersivePDA research 2026-10-16; kit data + headless reads, not yet probed in game)
+- Open: `IA_OpenPDA` (P, pad Special Left; Tap + 1 s Hold triggers) and `IA_WorldMap` / `IA_Journal` / `IA_Note` in
+  `IMC_Exploration` -> native `PDAOpenIPU` -> USE_PDA (`ActionType` 24). `PC.StartUsePDA(PDAPageType)` is BP-callable
+  (MAP 0, JOURNAL 1, NOTES 2, UPGRADES 3, STATISTIC 4, BESTIARY 5, TUTORIAL 6). `OnPDAUseStarted/EndedBP` exist on
+  `PC` but only a pawn override can implement them; mods poll `IsUsingPDA`. Every page pushes its own **Exclusive**
+  context (`IMC_PDA_Map` ... `InputMappingContextPrototypes.cfg:59-228`), none with look or walk rows; close =
+  `IA_UI_PDA_Close` (Esc / M / P / pad B).
+- Animation: `AnimCollection_fp_pda` -> player `MG_fp_pda` (MainActionSlot, 2.3 s: In 0-1.0, Idle loop 1.0-1.133, Out
+  -1.967, OutFast -2.3) + device `MG_pda_fp` on `SK_pda` (`AnimBP_PDA`), posture `AnimBP_Player_TwoHandedItem` (as the
+  backpack). `AnimNotify_UseHandItem` at 0.833 s opens the UI. No FOV / camera modifier: the device is simply held
+  13 cm before the eye (fills the view), `jnt_camera` pitches to -20 deg. The device anims are in character space
+  (`jnt_item` stays at the root). Unused-looking `MG_fp_pda_EMP_a` / `MG_pda_fp_EMP_a` (3 s, no UseHandItem) hold it
+  ~34 cm ahead with the world around it.
+- UI: `W_PDABookView` (native `PDAView`), a fullscreen UMG view with cursor (like `W_Inventory`); the map is
+  `BP_WorldMapScene`'s ortho SceneCapture -> `RT_WorldMap` (2048x1024) via `M_WorldMapUIMaterial`. The device's own
+  screen material `MI_PDA_Screen` is plain emissive (no texture input).
+- Slop yCam suspends itself entirely while `IsUsingPDA` (`compatibility.md`).
+
 ## Pickup and looting (Looting research, 2026-10-09; kit only, not yet probed)
 - Every loose item in the world is one of two generic actors, `BP_StaticItemContainer_C` /
   `BP_SkeletalItemContainer_C` (`/Game/GameLite/Blueprints/Interactable/ItemContainers/`, `CoreVariables.cfg`

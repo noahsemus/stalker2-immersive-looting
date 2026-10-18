@@ -95,6 +95,18 @@ Blueprint "Float" variables are doubles. `BlueprintEditorLibrary.add_member_vari
 - A SoftClassProperty only accepts a real class object from Python (`tools/editor/set_bp_default.py`).
 - CDO flags such as `AutoReceiveInput = Player0` on an actor Blueprint can be set from Python.
 
+## Widgets (UMG) from Python (ImmersiveLooting 2026-10-18)
+- Python cannot edit a Widget Blueprint's tree (`WidgetTree` protected; `WidgetBlueprintFactory.RootWidgetClass`
+  protected, a Python-made WBP has no root), and Blueprint cannot `Construct Object` a UWidget
+  (`DontUseGenericSpawnObject`). Build the tree from transient widgets in editor Python (`unreal.new_object`,
+  `add_child_to_vertical_box`, `add_child_to_canvas`, set properties), export each with an `AssetExportTask` +
+  `unreal.ObjectExporterT3D()`, strip `ExportPath=`, concatenate: that is the Widget Designer's clipboard format. The
+  tester pastes it into the empty Hierarchy (the first block, e.g. a Canvas Panel, becomes the root). Add
+  `bIsVariable=True` to widgets another Blueprint reads (TextBlocks default to false, Sliders to true); read them
+  with a variable get whose MemberParent is the widget class. Example: ImmersiveLooting `zonekit/tools/dev_panel.py`.
+- Stalker 2's `PC` class is the player CHARACTER: `IsInputKeyDown`, `CreateWidget`'s Owning Player, input modes and
+  `bShowMouseCursor` need `GetPlayerController(0)` (PlayerController), not a `PC` reference.
+
 ## Editor traps
 - **Save before Compile** on big edits; a compiler crash loses unsaved work. Wait ~10 s after a save before cooking.
 - After any asset rename: Compile every referencer (bytecode is stale until then) and re-check pins; use

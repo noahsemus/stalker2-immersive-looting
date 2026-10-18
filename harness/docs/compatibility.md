@@ -18,9 +18,9 @@ conflict with every other mod shipping that asset, and whichever loses loses *al
   it", not "nobody uses it".
 - Extract a container (`UnrealPak <x>.utoc -Extract <scratch>`) and read `zen_names.py` (names) / `--imports`.
 - Shared assets seen in the wild: `AnimBP_Player` (ZoneWatch/ZST, WRP-type animation mods, S-Watch),
-  `BP_Stalker2Character` (Slop yCam, ImmersiveDialogue ≤ 2.1), `IMC_Exploration` (Immersive HUD, ZST),
+  `BP_Stalker2Character` (Slop yCam before beta 8, ImmersiveDialogue ≤ 2.1), `IMC_Exploration` (Immersive HUD, ZST),
   `DA_InputElementsModels` (Controls menu entries: IHUD, ZST), `AnimBP_PlayerWeaponLayer` / `AnimBP_Player_Knife` /
-  weapon AnimCollections (Slop yCam), `W_GameHUD` (IHUD), `CoreVariables.cfg` (FOV mods like No Dialogue Zoom).
+  weapon AnimCollections (Slop yCam before beta 8), `W_GameHUD` (IHUD), `CoreVariables.cfg` (FOV mods like No Dialogue Zoom).
 
 ## Known mods
 - **ZST / ZoneWatch** (dannicroax, Nexus 2721): `BP_ZoneWatchSubsystem` → `BP_ZoneWatch` polls keys from
@@ -32,8 +32,17 @@ conflict with every other mod shipping that asset, and whichever loses loses *al
 - **Immersive HUD** (Nexus 1895): NewContent under `/ImmersiveModePlus/` (own IAs, `IMC_ImmersiveHUD`, world
   subsystem `BP_ModWorldImp` → `BP_ModActorImp` with `EnableInput` and EnhancedInputAction events); overrides
   `IMC_Exploration`, `DA_InputElementsModels`, `W_GameHUD`, stat panel assets; **hard-imports MCM**.
-- **Slop yCam**: override pak replaces `BP_Stalker2Character` and weapon anim assets, plus a UE4SS part polling
-  `PC:IsInStaticDialog`. Hard conflict with any pawn override.
+- **Slop yCam** (Nexus 2746): old builds shipped an override pak (`BP_Stalker2Character`, weapon anim assets) plus a
+  UE4SS part. **beta 8.x (seen 8.10.5, 2026-10-16) ships no assets at all**: `Binaries/Win64/Slop_yCam.asi` (ASI
+  loader `dsound.dll`) + `Slop yCam/Slop_yCam_Standalone.dll` running its own Lua (`Slop yCam/Scripts/runtime.lua`,
+  settings `Scripts/profile.ini`, log `Slop_yCam_Standalone.log`). At runtime it adds a `SpringArmComponent` on mesh
+  socket `jnt_camera` and moves the pawn's `CameraComponent` onto it; it refuses to bind (all effects off) if the
+  camera's parent is not the pawn mesh, so never re-parent or rotate the camera. Free Look (default hold
+  `ThumbMouseButton`) calls `SetIgnoreLookInput(true)` and turns its spring arm (yaw ±75, pitch ±40), torso follows;
+  it refuses to start if `IsLookInputIgnored()` is already true and cancels on `bShowMouseCursor`, aim, pause, Esc /
+  Tab. While `PC.IsUsingPDA()` it suspends everything (camera handed back, Free Look released, no blend). Polls
+  `IsInStaticDialog` / `IsInCinematic` only for tracking add-ons. Details: ImmersivePDA
+  `zonekit/research/2026-10-16-slop-ycam-research.md`.
 - **UltraPlus / UltraPlusExtensions** (UE4SS Lua): hooks sequence players, toggles DLSSG in cutscenes; suspect in
   soft hangs during sequences (sleep).
 - **UObjectCacheMod** (UE4SS Lua): caches objects, rebuilds on transitions; probes must load before it.
