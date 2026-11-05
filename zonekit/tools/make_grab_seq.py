@@ -535,15 +535,23 @@ OPEN_SEQ = "/Game/_STALKER2/Animations/Player/AnimSequences/Dialog_animations/AS
 OPEN_K, FIST_K = 36, 17          # an open, spread left hand (dialogue gesture); the vanilla grab's closed hand
 
 
-def door_fingers(src):
+def door_fingers(src, hook=False):
     """(tester, build 10: "it looks like poking the door; the fingers should be out, spread, pushing; for closing the hand
-    goes out, makes a fist as if grabbing, and pulls"): open and fist finger rotations (left hand locals)."""
+    goes out, makes a fist as if grabbing, and pulls"): open and fist finger rotations (left hand locals).
+    hook (v1.3.2 ao, tester on an's close: "the index and middle finger look broken"): the grab's closed hand pinches
+    with the index lifted back at the knuckle (proximal phalanx -0.27 toward the back of the hand, middle -0.03, ring
+    +0.09): the door closes curl the index and middle like the ring finger (a hook over the edge)."""
     op = unreal.load_asset(OPEN_SEQ)
     opens = {b: local(op, b, OPEN_K)[1] for b in FINGERS}
     for j in ("01", "02", "03"):        # builds 11 / 16: "ring finger and pinky still not up": straight like the middle finger
         opens[f"jnt_l_hand_ring_{j}"] = opens[f"jnt_l_hand_middle_{j}"]
         opens[f"jnt_l_hand_pinky_{j}"] = opens[f"jnt_l_hand_middle_{j}"]
-    return (opens, {b: local(src, b, FIST_K)[1] for b in FINGERS})
+    fists = {b: local(src, b, FIST_K)[1] for b in FINGERS}
+    if hook:
+        for j in ("01", "02", "03"):
+            fists[f"jnt_l_hand_index_{j}"] = fists[f"jnt_l_hand_ring_{j}"]
+            fists[f"jnt_l_hand_middle_{j}"] = fists[f"jnt_l_hand_ring_{j}"]
+    return (opens, fists)
 
 
 def finger_w(mode, f):
@@ -639,6 +647,13 @@ def _roll_about(axis, deg):
 
 DOOR_ROLL = 20.0                                                 # build 23: deg, the hand turned to the right
 DOOR_BH_ELEV, DOOR_BH_AZIM, DOOR_BH_DIST = -30.0, -30.0, 34.0   # the shoulder is ~19 cm behind the eye: 52 cm of arm reaches ~30 cm ahead   # body frame, from the eye
+# v1.3.2 am (tester on the cleanup build: the empty-hands close "is off, I can only see a bit of my arm on the right
+# side of the screen"): al's circle took the bare hand from 25 cm ahead out to 12 cm ahead and 61 deg to the side (off
+# screen), and the right-edge close (af) stretched the left arm across the body (need 51.8 of 52.4 cm). The closes now
+# aim nearer the view centre (elevation, azimuth from the eye; mirrored for the right edge), at 0.9 of the arm from its
+# root, with a smaller circle that stays on screen (0.5 of it, half the sideways part)
+DOOR_BH_PULL = (-15.0, -15.0, 0.9)
+DOOR_BH_EDGE = (0.5, 0.5)
 
 
 def build_bh_door(src, rifle_seq, tgt_rot, nkeys, mode, name):
@@ -655,19 +670,31 @@ def build_bh_door(src, rifle_seq, tgt_rot, nkeys, mode, name):
     rq_f = qmul(rq_a, bf[1]); RE = add(RA, qrot(rq_a, bf[0]))
     RQ = qmul(rq_f, bh[1]); R = add(RE, qrot(rq_f, bh[0]))
     er, ar = math.radians(DOOR_BH_ELEV), math.radians(DOOR_BH_AZIM)
+    if mode == "pull":   # am: the close's own door point, nearer the view centre (DOOR_BH_PULL)
+        er, ar = math.radians(DOOR_BH_PULL[0]), math.copysign(math.radians(DOOR_BH_PULL[1]), DOOR_BH_AZIM)
     vf = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
     qp = qmul((0.0, 0.0, math.sin(ar / 2), math.cos(ar / 2)), (0.0, -math.sin(er / 2), 0.0, math.cos(er / 2)))
     GQ = slerp(qmul(qp, tgt_rot[13]), palm_q(src, vf), 0.5) if mode == "push" else qmul(qp, tgt_rot[13])
     # v1.3.2 aj / ak: the closing hand thumb down (clasping the edge), turned clockwise (explicit, below)
     th = math.radians(-DOOR_ROLL) / 2                    # build 23: turned clockwise (as seen from behind) about the reach
     GQ = qmul((vf[0] * math.sin(th), vf[1] * math.sin(th), vf[2] * math.sin(th), math.cos(th)), GQ)
-    opens, fists = door_fingers(src)
+    opens, fists = door_fingers(src, hook=(mode == "pull"))
     G = add(cam, mul(vf, DOOR_BH_DIST))
     N = sub(G, mul(vf, DOOR_PUSH_STROKE))
     PB = sub(sub(G, mul(vf, DOOR_PULL_STROKE)), (0.0, 0.0, DOOR_PULL_DROP))
     if mode == "pull":   # al: the draw 9-24 along the leaf edge's circle (the right-edge asset ends in "R")
-        # (0.75 of the circle: the bare hand's door point is only 25 cm ahead of the eye; the old draw ended 12 cm ahead)
-        edge_, edge_yaw = door_edge(G, 1 if name.endswith("R") else -1, (9, 14, 19, 24), 0.75)
+        # am: the door point on the view ray where the hand is DOOR_BH_PULL[2] of the arm from its root, the circle at
+        # DOOR_BH_EDGE (size, sideways share) so the hand stays on screen
+        # (the arm root as the solve below has it: the vanilla grab's frame-0 shoulder / arm locals on this spine)
+        sh0 = local(src, SHOULDER, 0)
+        sq0 = qmul(sp_q, sh0[1])
+        A0 = add(add(sp_p, qrot(sp_q, sh0[0])), qrot(sq0, local(src, ARM, 0)[0]))
+        rk = (norm(local(src, FORE, 0)[0]) + norm(local(src, HAND, 0)[0])) * DOOR_BH_PULL[2]
+        c_ = sub(cam, A0)
+        qb, qc = 2 * dot(c_, vf), dot(c_, c_) - rk * rk
+        G = add(cam, mul(vf, (-qb + math.sqrt(max(qb * qb - 4 * qc, 0.0))) / 2))
+        N = sub(G, mul(vf, DOOR_PUSH_STROKE))
+        edge_, edge_yaw = door_edge(G, 1 if name.endswith("R") else -1, (9, 14, 19, 24), *DOOR_BH_EDGE)
         PB = edge_[-1][1]
     sched = door_sched(mode, R, N, G, PB)
     path = f"{DIR}/{name}"
@@ -694,9 +721,6 @@ def build_bh_door(src, rifle_seq, tgt_rot, nkeys, mode, name):
         else:
             T = wave_path([(0, R)] + edge_ + [(40, R)], f)
         hq = slerp(Q0, Q1, bw)
-        if mode == "pull":   # ak: the roll by how far the hand is into its door orientation
-            rw_ = (1.0 if Q1 is GQ else 0.0) * bw + (1.0 if Q0 is GQ else 0.0) * (1.0 - bw)
-            hq = qmul(edge_yaw(f, rw_), qmul(_roll_about(vf, DOOR_PULL_ROLL_BH * rw_), hq))
         c = cache[0]          # the rest pose throughout (the vanilla grab's shoulder moves back 6 cm at frames 20-30)
         sh_l = c[SHOULDER]
         sh_q = qmul(sp_q, sh_l[1]); sh_p = add(sp_p, qrot(sp_q, sh_l[0]))
@@ -719,6 +743,26 @@ def build_bh_door(src, rifle_seq, tgt_rot, nkeys, mode, name):
         a_q2 = qmul(r1, a_q)
         r2 = q_between(qrot(r1, sub(H, E)), sub(T2, E2))
         f_q2 = qmul(r2, qmul(r1, f_q))
+        if mode == "pull":
+            # an (tester, screenshot of am: "the hand looks totally broken on close": the wrist bent down, fingers to the
+            # floor; the grab's turned rest hand did not suit the new point): the closing hand built here, the fingers
+            # along the forearm (a straight wrist), the palm toward the leaf (right of the view: the leaf runs from the
+            # free edge toward the hinge), thumb up; blended in by how far the hand is into its door orientation.
+            # an (tester: "the twist is only needed when the hinge is on the left: we close with the left hand"): only
+            # the right-edge close (hinge left, "R") turns clockwise to thumb down, the palm then toward the leaf on its left
+            rw_ = (1.0 if Q1 is GQ else 0.0) * bw + (1.0 if Q0 is GQ else 0.0) * (1.0 - bw)
+            fd_ = unit(sub(T2, E2))
+            # (palm = up x forearm: thumb up, palm square to the forearm; "palm right" alone runs along the forearm when
+            # it crosses the body to a right edge: 48-71 deg of wrist bend in an's first run)
+            pq_ = palm_q(src, unit(cross((0.0, 0.0, 1.0), fd_)), fd_)
+            if dot4(pq_, RQ) < 0:
+                pq_ = tuple(-x for x in pq_)
+            hq = slerp(RQ, pq_, rw_)
+            hq = qmul(edge_yaw(f, rw_), qmul(_roll_about(fd_, (DOOR_PULL_ROLL if name.endswith("R") else 0.0) * rw_), hq))
+            if f in (9, 14, 19, 24):
+                fl_, pl_ = hand_axes(src)
+                out.append(f"  {name} f{f}: wrist bend {math.degrees(math.acos(max(-1.0, min(1.0, dot(qrot(hq, fl_), fd_))))):.0f} deg, "
+                           f"palm {tuple(round(x, 2) for x in qrot(hq, pl_))}, door turn {rw_:.2f}")
         solved = {ARM: qmul(qinv(sh_q), a_q2), FORE: qmul(qinv(a_q2), f_q2), HAND: qmul(qinv(f_q2), hq)}
         wo, wf = finger_w(mode, f)
         for b in FINGERS:
@@ -1225,7 +1269,7 @@ def build_door_family(family, mode):
     grab_src = unreal.load_asset(SRC)
     sp_seq = unreal.load_asset(SPREAD_SEQ)
     opens = {b: local(sp_seq, b, SPREAD_K)[1] for b in FINGERS}
-    _o, fists = door_fingers(grab_src)
+    _o, fists = door_fingers(grab_src, hook=(mode == "pull"))
     n = AL.get_num_frames(tmpl)
     cam, _ = cs(base, "jnt_camera", 0)
     er, ar = math.radians(DOOR_ELEV), math.radians(DOOR_AZIM)
@@ -1367,7 +1411,7 @@ def build_door_family(family, mode):
         prev_tq = tq
         hl = slerp_raw(h_l[1], tq, wv)
         if mode == "pull":   # ak: the explicit clockwise roll about the reach (see PQ); al: then the leaf's turn
-            hl = qmul(qinv(f_q2), qmul(edge_yaw(k, wv), qmul(_roll_about(dirv_e, DOOR_PULL_ROLL * wv), qmul(f_q2, hl))))
+            hl = qmul(qinv(f_q2), qmul(edge_yaw(k, wv), qmul(_roll_about(dirv_e, (DOOR_PULL_ROLL if side_ > 0 else 0.0) * wv), qmul(f_q2, hl))))   # an: the turn only with the hinge on the left
             if k in (9, 13, 18, 22, 31):
                 out.append(f"  {name} f{k}: target from the eye {tuple(round(x, 1) for x in sub(T, cam))}, reached {tuple(round(x, 1) for x in sub(T2, cam))}")
         kh.append(unreal.Quat(*hl))

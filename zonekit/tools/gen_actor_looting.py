@@ -2847,7 +2847,10 @@ _dlate = d_op("Greater_DoubleDouble", XT + 1100, YT + 11300,
 bdw = branch(XT + 600, YT + 10700, "door build A: waiting, and the leaf moved (or the wait ran out)? decide and reach",
              b_and(XT + 500, YT + 10900, _dwt(XT + 300, YT + 10900), b_or(XT + 1300, YT + 11100, _dmoved, _dlate)))
 g.link(sq7d["then_3"], bdw["execute"])
-bdm = branch(XT + 900, YT + 10700, "moved? toward the camera = a pull, away = a push (else the open / closed rule)", _dmoved)
+_yab = kml("Abs", XT + 500, YT + 10500, [D("A"), RD])
+g.link(self_get("DoorYaw", "real", XT + 300, YT + 10500, subcat="double"), _yab["A"])
+bdm = branch(XT + 900, YT + 10700, "a closed door that moved? toward the camera = a pull, away = a push (an open door: decided at the press, ap)",
+             b_and(XT + 800, YT + 10600, _dmoved, d_op("LessEqual_DoubleDouble", XT + 700, YT + 10500, _yab["ReturnValue"], b_const="10.0", ret=RB)))
 g.link(bdw["then"], bdm["execute"])
 sdp2 = set_from("DoorPulling", "bool", XT + 1200, YT + 10700, d_op("Less_DoubleDouble", XT + 1100, YT + 10850, _drad, b_const="0.0", ret=RB),
                 "toward the camera: a pull")
@@ -2977,8 +2980,40 @@ sdy = set_from("DoorYaw", "real", XD + 1100, YD, _rrb["Yaw"], "the leaf's yaw (p
 g.link(sds["then"], sdy["execute"])
 _ady = kml("Abs", XD + 1300, YD + 400, [D("A"), RD])
 g.link(self_get("DoorYaw", "real", XD + 1100, YD + 500, subcat="double"), _ady["A"])
-sdpl = set_from("DoorPulling", "bool", XD + 1400, YD, d_op("Greater_DoubleDouble", XD + 1500, YD + 400, _ady["ReturnValue"], b_const="10.0", ret=RB),
-                "open now? then this press closes it: a pull", )
+#     v1.3.2 ap (tester: "I open the door from one side (a push), go to the other side and close it: it does a pull when
+#     it should do a push, because I've gone to the other side"): an open leaf seen from the side it swung to lies along
+#     the view, and its pressed point first moves sideways across the view and slightly NEARER (the camera-ray test read
+#     a pull) although the door swings away. An open door (|yaw| > 10) is now decided at the press from the whole
+#     swing: its free edge (2 x bounds centre - hinge) now and where it will be closed (the edge turned back by -yaw
+#     about the vertical): nearer to the camera when closed = a pull, farther = a push. A closed door still waits for
+#     the leaf to move (the camera-ray test, step T7)
+_ylc = lambda x, y: self_get("LookComp", "object", x, y, sub=PRIM)
+_yh = member_pure(SC_, "K2_GetComponentLocation", XD + 900, YD + 1300, _ylc(XD + 700, YD + 1300), [("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+_ygb = lib_pure(KSL, "KismetSystemLibrary", "GetComponentBounds", XD + 900, YD + 1400,
+                [("Component", "object", dict(sub=SC_)), ("Origin", "struct", dict(sub=VEC, out=True)),
+                 ("BoxExtent", "struct", dict(sub=VEC, out=True)), ("SphereRadius", "real", dict(subcat="float", out=True))])
+_ygb.pins["Component"].const = True
+g.link(_ylc(XD + 700, YD + 1400), _ygb["Component"])
+_ym2 = kml("Multiply_VectorFloat", XD + 1100, YD + 1400, [("A", "struct", dict(sub=VEC)), D("B", "2.0"), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_ygb["Origin"], _ym2["A"])
+_yen = vop("Subtract_VectorVector", XD + 1300, YD + 1300, _ym2["ReturnValue"], _yh)          # the free edge now (world)
+_yw = vop("Subtract_VectorVector", XD + 1500, YD + 1300, _yen, _yh)                         # hinge -> edge
+_yneg = d_op("Multiply_DoubleDouble", XD + 1300, YD + 1500, self_get("DoorYaw", "real", XD + 1100, YD + 1500, subcat="double"), b_const="-1.0")
+_yrot = kml("RotateAngleAxis", XD + 1700, YD + 1300, [("InVect", "struct", dict(sub=VEC)), ("AngleDeg", "real", dict(subcat="double")),
+                                                    ("Axis", "struct", dict(sub=VEC, extra='DefaultValue="0.000000,0.000000,1.000000",')),
+                                                    ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_yw, _yrot["InVect"])
+g.link(_yneg, _yrot["AngleDeg"])
+_yec = vop("Add_VectorVector", XD + 1900, YD + 1300, _yh, _yrot["ReturnValue"])             # the free edge once closed
+def _ydist(x, y, a):
+    n_ = kml("Vector_Distance", x, y, [("V1", "struct", dict(sub=VEC)), ("V2", "struct", dict(sub=VEC)), RD])
+    g.link(a, n_["V1"])
+    g.link(_dcl, n_["V2"])
+    return n_["ReturnValue"]
+_ynearer = d_op("Less_DoubleDouble", XD + 2300, YD + 1300, _ydist(XD + 2100, YD + 1300, _yec), _ydist(XD + 2100, YD + 1450, _yen), ret=RB)
+sdpl = set_from("DoorPulling", "bool", XD + 1400, YD,
+                b_and(XD + 2500, YD + 1200, d_op("Greater_DoubleDouble", XD + 1500, YD + 400, _ady["ReturnValue"], b_const="10.0", ret=RB), _ynearer),
+                "open now? this press closes it: a pull if its free edge ends nearer the camera (ap)", )
 g.link(sdy["then"], sdpl["execute"])
 #     empty hands: the reach table aims at ItemCenter: a point ahead, lower left in view axes (camera + 55 fwd, 22 left, 20 down)
 _dcr = member_pure(PCM, "GetCameraRotation", XD + 1500, YD + 700, _dcm, [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"]
@@ -4817,6 +4852,94 @@ g.link(_bmg["then"], sq5["execute"])
 if os.environ.get("IMMLOOT_DEV", "0") == "1":   # v1.3.2 u: off (CutsceneSlot broke the arms)
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     exec(compile(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "gen_actor_dev.py"), encoding="utf-8").read(), "gen_actor_dev.py", "exec"))
+# v1.3.2 release cleanup (tester: "cleanup all the dev stuff now for this release"): unless IMMLOOT_PROBES=1, the
+# graph loses (1) every exec node no event reaches (dead code), (2) every write to a variable nothing in this graph
+# reads (the UE4SS probe's counters and logged values: the write is spliced out of its exec chain, its value tree
+# goes with it), repeated until nothing changes. Variables some other Blueprint writes and this graph reads stay.
+import re as _re
+
+
+def _self_var(n):
+    for b_ in n.body:
+        m_ = _re.search(r'MemberName="([^"]+)",bSelfContext=True', b_)
+        if m_:
+            return m_.group(1)
+    return None
+
+
+def _drop(n):
+    for p_ in n.pins.values():
+        for q_ in list(p_.links):
+            q_.links.remove(p_)
+        p_.links = []
+    g.nodes.remove(n)
+
+
+def _consumers(pin, seen):
+    for q_ in pin.links:
+        m_ = q_.node
+        if Graph._is_exec(m_):
+            yield m_, q_
+        elif id(m_) not in seen:
+            seen.add(id(m_))
+            for p_ in m_.pins.values():
+                if p_.out:
+                    yield from _consumers(p_, seen)
+
+
+STRIPPED = {"dead": 0, "writes": 0, "vars": [], "dead_nodes": []}
+if os.environ.get("IMMLOOT_PROBES", "0") != "1":
+    while True:
+        # (1) exec nodes no event reaches
+        roots = [n_ for n_ in g.nodes if Graph._is_exec(n_) and not any(p_.cat == "exec" and not p_.out for p_ in n_.pins.values())]
+        seen_, stack_ = set(), list(roots)
+        while stack_:
+            n_ = stack_.pop()
+            if id(n_) in seen_:
+                continue
+            seen_.add(id(n_))
+            stack_ += [q_.node for p_ in n_.pins.values() if p_.out and p_.cat == "exec" for q_ in p_.links]
+        dead_ = [n_ for n_ in g.nodes if Graph._is_exec(n_) and id(n_) not in seen_]
+        for n_ in dead_:
+            _drop(n_)
+        STRIPPED["dead"] += len(dead_)
+        STRIPPED["dead_nodes"] += [f"{n_.klass.rsplit(chr(46), 1)[-1]} {n_.comment or n_.body[0][:90]}" for n_ in dead_]
+        # (2) writes nobody reads
+        sets_, gets_ = {}, {}
+        for n_ in g.nodes:
+            v_ = _self_var(n_)
+            if v_ and n_.klass.endswith("K2Node_VariableSet"):
+                sets_.setdefault(v_, []).append(n_)
+            elif v_ and n_.klass.endswith("K2Node_VariableGet"):
+                gets_.setdefault(v_, []).append(n_)
+        unread = set(sets_)
+        changed_ = True
+        while changed_:
+            changed_ = False
+            for v_ in list(unread):
+                reads_ = [n_[v_] for n_ in gets_.get(v_, [])] + [s_["Output_Get"] for s_ in sets_[v_]]
+                for pin_ in reads_:
+                    if any(not (m_.klass.endswith("K2Node_VariableSet") and _self_var(m_) in unread and q_.name == _self_var(m_))
+                           for m_, q_ in _consumers(pin_, set())):
+                        unread.discard(v_)
+                        changed_ = True
+                        break
+        if not unread:
+            break
+        for v_ in sorted(unread):
+            for s_ in sets_[v_]:
+                srcs_, dst_ = list(s_["execute"].links), list(s_["then"].links)
+                _drop(s_)
+                for a_ in srcs_:
+                    for b_ in dst_:
+                        g.link(a_, b_)
+                STRIPPED["writes"] += 1
+        STRIPPED["vars"] += sorted(unread)
+    # pure nodes left without a reader are dropped by paginate (the single-file form keeps them: dev only)
+    json_ = __import__("json")
+    json_.dump(STRIPPED, open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "paste", "stripped_vars.json"), "w"), indent=1)
+    print("stripped:", STRIPPED["dead"], "unreachable exec nodes,", STRIPPED["writes"], "writes of", len(STRIPPED["vars"]), "unread variables")
+
 # v1.3.2 ad (tester: the editor crashes deleting the 3,700-node graph a second time in a session; "break it into
 # multiple graphs"): the graph is split over event graph pages (bp_graph.paginate): every exec link between pages is
 # a call to a custom event on the target page, so each page is its own small paste and delete. Out: one .txt per page

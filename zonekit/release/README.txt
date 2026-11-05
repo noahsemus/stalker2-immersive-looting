@@ -38,7 +38,7 @@ WHAT IT DOES
     from a body's or stash's loot window works the same way.
   - Doors: Skif pushes a door with his open hand or pulls it toward him, whichever way the door
     actually moves (open or close, from either side). Pulling a door shut, his hand takes the
-    door's free edge (left or right), thumb down, and follows it as it swings in. Lockers,
+    door's free edge (left or right) and follows it as it swings in. Lockers,
     closets and cabinets too.
   - Bodies, both hands (MCM, off by default): Skif pats the body down with both hands,
     three pats in different places, while the loot window is open. A weapon in hand is
@@ -80,9 +80,12 @@ CHANGES
          backpack should be your own if you have a different one (the pre-order backpack; not
          tested).
          Doors: closing a door, the hand reaches for its free edge, on the left or the right,
-         grips it thumb down and follows it as it swings shut; with a gun on a right-hand
-         edge it is a short tug left of the gun. Rifle doors look like the pistol ones now
+         hooks its fingers around it and follows it as it swings shut (upright when the hinge
+         is on the right, turned thumb down when it is on the left); with a gun on a
+         right-hand edge it is a short tug left of the gun. Closing a door from the side it
+         swung toward is now a push, not a pull. Rifle doors look like the pistol ones now
          (the arm no longer locks straight), also for long guns held close to the body.
+         Smaller download: leftover development files removed.
   1.3.1  The hand on bodies and stashes reaches for where you are looking, lower on the
          screen (no more hand raised up in the air), also for the both-hands pat, which is
          now centred and stops at once when you close the loot window. Stashes open at once

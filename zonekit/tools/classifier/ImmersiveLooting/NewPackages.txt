@@ -54,11 +54,8 @@
 /ImmersiveLooting/Runtime/AS_ImmLoot_TouchAr10
 /ImmersiveLooting/Runtime/AS_ImmLoot_TouchAr1
 /ImmersiveLooting/Runtime/AS_ImmLoot_TouchAr0
-/ImmersiveLooting/Runtime/AS_ImmLoot_PickPose
 /ImmersiveLooting/Runtime/AS_ImmLoot_PatTable
 /ImmersiveLooting/Runtime/AS_ImmLoot_GrabPt
-/ImmersiveLooting/Runtime/AS_ImmLoot_GrabBHAddCrouch
-/ImmersiveLooting/Runtime/AS_ImmLoot_GrabBHAdd
 /ImmersiveLooting/Runtime/AS_ImmLoot_GrabAr
 /ImmersiveLooting/Runtime/AS_ImmLoot_DoorPushPt
 /ImmersiveLooting/Runtime/AS_ImmLoot_DoorPushBH

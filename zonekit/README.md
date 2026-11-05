@@ -1143,3 +1143,49 @@ mod go to `harness/docs/` instead (promote them).
   unchanged (`zonekit/builds/v1.3.2/`). Shipped leftovers (harmless, all in every tested build): the unreferenced DEV
   assets (`Dev/W_ImmLootDev` via the actor's `DevPanel` variable, `Dev/ABP_ImmLootDevPose`,
   `AS_ImmLoot_DevArmRot` / `DevHandRot`), probe variables, `DOOR_RIGHT` / `DOOR_PROTRACT` code paths (off).
+- Release cleanup (tester: "cleanup all the dev stuff now for this release"): `gen_actor_looting.py` now strips (unless
+  `IMMLOOT_PROBES=1`) every exec node no event reaches (28: the old hold-to-use catch, the unwired 1.2 grabs and use
+  pose) and every write to a variable the graph never reads (137 writes of 123 probe variables; spliced out of their
+  exec chains, their value trees dropped by paginate), list in `zonekit/paste/stripped_vars.json`: 3,913 -> 3,316
+  nodes. All 7 pages pasted by Noah (verified: node counts, 10/10 page events, no empty asset pins, no compiler
+  message). `remove_unused_variables`: actor 160 (incl. `DevPanel`), MCM 10 (the DEV settings); MCM keeps its 14 usual
+  infos. Deleted (kit, mirror, NewPackages): `Dev/W_ImmLootDev`, `Dev/ABP_ImmLootDevPose`, `AS_ImmLoot_DevArmRot` /
+  `DevHandRot`, the intermediate `AS_ImmLoot_Grab`, `AS_ImmLoot_GrabBHAdd` / `GrabBHAddCrouch` / `PickPose` (only the
+  dead nodes used them). The override pak had carried the unclassified DEV assets (614 KB -> 1 KB: now only the
+  WorldSubsystemData); NewContent 7.6 -> 4.8 MB. `setup_assets.py` ACTOR_VARS pruned to the graph's variables (153).
+  The UE4SS probe has nothing left to read (its values are gone); probe off.
+- Cleanup build tested (tester): "everything works but unarmed door closing is off, I can only see a bit of my arm on
+  the right side of the screen". Cause (al, not the cleanup): the bare-hands circle took the hand from 25 cm ahead to
+  12 cm ahead and 50-61 deg to the side (off screen); the right-edge close (af) stretched the left arm across the body
+  to its full reach (need 51.8 of 52.4 cm), the hand short of its point.
+- v1.3.2 am (assets only, PART=bhpull): the bare-hands closes aim at their own point (`DOOR_BH_PULL`: elevation -15,
+  azimuth -/+15 deg from the eye, at 0.9 of the arm from its root: left (31, -8, -9), right (25, 7, -7) cm) with a
+  smaller circle (`DOOR_BH_EDGE`: 0.5, half sideways): the draw stays within -15..-26 deg elevation and 15..30 deg
+  azimuth (on screen). The push is unchanged. (am's first run solved from the base pose's arm root, not the one the
+  solve uses: the point came out 14 cm ahead; fixed.)
+- am tested (tester, screenshot: empty hands, the forearm big in the lower middle, the wrist bent down, fingers to the
+  floor): "the hand looks totally broken on close". And: "the hand twist on close is only needed when the door hinge
+  is on the left of the screen: we close with the left hand, it needs to rotate if the hinge is on the left; if the
+  hinge is on the right the hand should look upright, grabbing the open door edge".
+- v1.3.2 an (assets only, PART=pulls): the clockwise turn to thumb down only in the right-edge closes ("R" = hinge
+  left), every family; the left-edge closes keep the upright hand (palm toward the leaf, thumb up: the pre-aj hand).
+  Bare hands: the closing hand is built per frame from the solved forearm (fingers along it, palm = up x forearm,
+  thumb up; first try "palm right" ran along the forearm on the right-edge close: 48-71 deg of wrist bend), blended
+  in by the door weight; wrist bend now 0 at the edge, up to 20 deg from the leaf's turn.
+- an tested (tester, screenshot: right-edge close, empty hands, back of the hand to the camera, thumb down): "much
+  better, but the index and middle finger look broken"; and "it is not choosing open or close correctly: sometimes it
+  pushes when it should pull" (no details yet; the decision probe variables were stripped in the cleanup).
+- v1.3.2 ao (assets only, PART=pulls): the closes' fist = the vanilla grab's frame 17, a pinch with the index lifted
+  back at the knuckle (proximal phalanx -0.27 toward the back of the hand, middle -0.03; ring +0.09, curl +0.55):
+  `door_fingers(hook=True)` gives the index and middle the ring finger's curl: at the edge all four fingers flex
+  (+0.52..0.55 curl, +0.08..0.12 at the knuckle). Every close (weapon families and bare hands).
+- ao tested (tester): hand animations good. Push / pull: "I open the door from one side (a push), go to the other side
+  and close it: it does a pull when it should do a push, because I've gone to the other side." Cause: seen from the
+  side it swung to, an open leaf lies along the view; closing, its pressed point first moves sideways across the view
+  and slightly NEARER (the camera-ray test, first order ~0, read a pull) while the door as a whole swings away.
+- v1.3.2 ap (paste: Doors + Touch): an open door (|DoorYaw| > 10) is decided at the press from the whole swing: free
+  edge now (2 x bounds centre - hinge) vs that edge turned back by -yaw about the vertical (closed): nearer the camera
+  when closed = a pull, else a push; the T7 movement test only decides closed doors (opening: the motion is along the
+  view ray there, first order).
+- ap pasted (Doors + Touch; verified: node counts, 8/8 page events, no empty asset pins, no compiler message), cooked and installed.
+- ap tested (tester): "yeahhhhhh fuck yes. update the release". v1.3.2 re-cut from the ap build (zip, tag and GitHub release replaced).

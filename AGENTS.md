@@ -139,7 +139,12 @@ harness on 2026-10-09.
   item copy keeps its materials, own-backpack scan (untested), doors: closes reach the free edge (`_door_right`, R
   assets), thumb-down clockwise grip, follow the leaf's arc; rifle doors on the pistol's point, near-grip long guns
   (`ArNear`). Actor graph paginated (7 pages, `zonekit/paste/BP_ImmLootActor/`). Leftovers shipped: unreferenced DEV
-  assets, probe variables. Tested on game 2.1.
+  assets, probe variables. Tested on game 2.1. Re-cut the same day (Noah: "cleanup all the dev stuff now for this
+  release", then "yeahhhhhh fuck yes. update the release"; GitHub release v1.3.2 and its tag replaced): probe writes and
+  dead nodes stripped by the generator (`IMMLOOT_PROBES=1` keeps them), 160 + 10 unused variables and the DEV / unused
+  assets deleted (NewContent 7.6 -> 4.8 MB, override pak 614 KB -> 1 KB); bare-hands closes on screen with a straight
+  wrist, the thumb-down turn only with the hinge on the left (R assets), hooked fingers on every close; an open door's
+  push / pull decided at the press from its free edge's whole swing (closing from the side it swung toward = a push).
 
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
