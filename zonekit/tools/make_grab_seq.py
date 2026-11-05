@@ -589,6 +589,35 @@ def hand_axes(src):
     return f_l, palm_l
 
 
+def wave_path(keys, f):
+    """v1.3.2 (tester: "make the door animation more of a continuous push / wave; I can see the hand stop at the end
+    before it goes down; it shouldn't stop"): a cubic Hermite path through timed keys [(frame, point)], tangents from
+    the neighbours (Catmull-Rom on frames), zero only at the first and last key: the hand slows at the start and the
+    end and nowhere in between."""
+    if f <= keys[0][0]:
+        return keys[0][1]
+    if f >= keys[-1][0]:
+        return keys[-1][1]
+    for i in range(len(keys) - 1):
+        f0, p0 = keys[i]
+        f1, p1 = keys[i + 1]
+        if f0 <= f <= f1:
+            break
+    def tan(j):
+        if j == 0 or j == len(keys) - 1:
+            return (0.0, 0.0, 0.0)
+        (fa, pa), (fb, pb) = keys[j - 1], keys[j + 1]
+        return mul(sub(pb, pa), 1.0 / (fb - fa))
+    h = float(f1 - f0)
+    s = (f - f0) / h
+    m0, m1 = mul(tan(i), h), mul(tan(i + 1), h)
+    h00, h10, h01, h11 = 2 * s ** 3 - 3 * s ** 2 + 1, s ** 3 - 2 * s ** 2 + s, -2 * s ** 3 + 3 * s ** 2, s ** 3 - s ** 2
+    return add(add(mul(p0, h00), mul(m0, h10)), add(mul(p1, h01), mul(m1, h11)))
+
+
+DOOR_FOLLOW = (3.0, -2.0)   # v1.3.2: the push's follow-through past the door point: cm on along the reach, cm down
+
+
 def door_sched(mode, R, N, G, PB):
     """(from frame, to frame, from point, to point), 30 fps. Push: out to just short of the door by 14, a 0.4 s forward
     stroke 14-26 (the Blueprint pauses at 26 = 0.867 s), held to 30, back by 48. Pull: out to the door by 16, held to 22
@@ -596,6 +625,16 @@ def door_sched(mode, R, N, G, PB):
     if mode == "push":      # build 15 (tester: "plays mostly after the door opened"): out by 6, stroke 6-14 (pause at 14)
         return ((0, 6, R, N), (6, 14, N, G), (14, 18, G, G), (18, 38, G, R))
     return ((0, 8, R, G), (8, 12, G, G), (12, 26, G, PB), (26, 42, PB, R))   # pull: at the door by 8 (pause at 12)   # cm along the sight line
+
+
+DOOR_PULL_ROLL_BH = -90.0   # aj: the bare-hands close's thumb was already low; -90 points it down most (scan: thumb -5.8 / -6.8 cm below the hand, 0: -4.4 / -1.8, -180: +1.1 / -1.4)
+DOOR_PULL_ROLL = -180.0   # v1.3.2 aj: deg about the reach for every door close (thumb down); minus = clockwise from behind, as DOOR_ROLL
+
+
+def _roll_about(axis, deg):
+    h_ = math.radians(deg) / 2
+    a_ = unit(axis)
+    return (a_[0] * math.sin(h_), a_[1] * math.sin(h_), a_[2] * math.sin(h_), math.cos(h_))
 
 
 DOOR_ROLL = 20.0                                                 # build 23: deg, the hand turned to the right
@@ -619,12 +658,17 @@ def build_bh_door(src, rifle_seq, tgt_rot, nkeys, mode, name):
     vf = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
     qp = qmul((0.0, 0.0, math.sin(ar / 2), math.cos(ar / 2)), (0.0, -math.sin(er / 2), 0.0, math.cos(er / 2)))
     GQ = slerp(qmul(qp, tgt_rot[13]), palm_q(src, vf), 0.5) if mode == "push" else qmul(qp, tgt_rot[13])
+    # v1.3.2 aj / ak: the closing hand thumb down (clasping the edge), turned clockwise (explicit, below)
     th = math.radians(-DOOR_ROLL) / 2                    # build 23: turned clockwise (as seen from behind) about the reach
     GQ = qmul((vf[0] * math.sin(th), vf[1] * math.sin(th), vf[2] * math.sin(th), math.cos(th)), GQ)
     opens, fists = door_fingers(src)
     G = add(cam, mul(vf, DOOR_BH_DIST))
     N = sub(G, mul(vf, DOOR_PUSH_STROKE))
     PB = sub(sub(G, mul(vf, DOOR_PULL_STROKE)), (0.0, 0.0, DOOR_PULL_DROP))
+    if mode == "pull":   # al: the draw 9-24 along the leaf edge's circle (the right-edge asset ends in "R")
+        # (0.75 of the circle: the bare hand's door point is only 25 cm ahead of the eye; the old draw ended 12 cm ahead)
+        edge_, edge_yaw = door_edge(G, 1 if name.endswith("R") else -1, (9, 14, 19, 24), 0.75)
+        PB = edge_[-1][1]
     sched = door_sched(mode, R, N, G, PB)
     path = f"{DIR}/{name}"
     if not EAL.does_asset_exist(path):
@@ -642,7 +686,17 @@ def build_bh_door(src, rifle_seq, tgt_rot, nkeys, mode, name):
                 Q0, Q1 = (RQ if P0 is R else GQ), (RQ if P1 is R else GQ)
                 break
         T = add(T0, mul(sub(T1, T0), bw))
+        # v1.3.2: one continuous path (no stop at the door / handle): push R -> N -> G -> a follow-through -> R,
+        # pull R -> G -> PB -> R (the handle's hold dropped; the fingers still close there)
+        if mode == "push":
+            Fw = add(add(G, mul(vf, DOOR_FOLLOW[0])), (0.0, 0.0, DOOR_FOLLOW[1]))
+            T = wave_path([(0, R), (6, N), (14, G), (18, Fw), (38, R)], f)
+        else:
+            T = wave_path([(0, R)] + edge_ + [(40, R)], f)
         hq = slerp(Q0, Q1, bw)
+        if mode == "pull":   # ak: the roll by how far the hand is into its door orientation
+            rw_ = (1.0 if Q1 is GQ else 0.0) * bw + (1.0 if Q0 is GQ else 0.0) * (1.0 - bw)
+            hq = qmul(edge_yaw(f, rw_), qmul(_roll_about(vf, DOOR_PULL_ROLL_BH * rw_), hq))
         c = cache[0]          # the rest pose throughout (the vanilla grab's shoulder moves back 6 cm at frames 20-30)
         sh_l = c[SHOULDER]
         sh_q = qmul(sp_q, sh_l[1]); sh_p = add(sp_p, qrot(sp_q, sh_l[0]))
@@ -675,7 +729,7 @@ def build_bh_door(src, rifle_seq, tgt_rot, nkeys, mode, name):
             keys[b][0].append(unreal.Vector(*l[0]))
             keys[b][1].append(unreal.Quat(*(solved[b] if b in solved else l[1])))
             keys[b][2].append(unreal.Vector(*l[2]))
-        if f in (14, 16, 26, 36):
+        if f in (9, 14, 19, 24, 32):
             out.append(f"BHDOOR {name} f{f} hand rel eye {tuple(round(x, 1) for x in sub(T2, cam))} target {tuple(round(x, 1) for x in sub(T, cam))} need {norm(to_t):.1f} reach {l1 + l2:.1f} shoulder {tuple(round(x, 1) for x in sub(A, cam))}")
     ctrl = seq.get_editor_property("controller")
     ctrl.open_bracket("ImmLoot door, empty hands", True)
@@ -782,6 +836,41 @@ TOUCH_EXIT = (2.0, -8.0, -6.0)          # build z / za: component space, cm, fro
 TOUCH_END_OFF = (1.0, -5.0, -4.0)       # build za: the path's end from the stand idle's grip: left and down
 RIFLE_BASE = "/Game/_STALKER2/Animations/Player/AnimSequences/ar/common/stand/fp_ar_idle_stand"
 TOUCH_FAMILIES = {"pt": (NAME_TOUCH_PT, PISTOL_BASE), "ar": (NAME_TOUCH_AR, RIFLE_BASE)}
+# v1.3.2 ab (tester: the knife and the bolt "should still have an animation; the left hand is totally free, the same
+# animation as unarmed"). The knife layer = the rifle stand idle + the knife's own mesh-space idle additive
+# (AS_fp_knife_idle_add) + the rifle look: its free left hand rests at (40, -24, -18) cm from the eye in view axes at
+# every view pitch, standing, crouched and low-crouched (research/bag/sim/handsim*.py; the aa probe: (40.2, -23.7, -21.0));
+# the bolt's left arm is within 1.3 cm of it. One family "kn" for both, built on that pose baked into KN_STANCE (made
+# by make_kn_stance for the build, deleted after: it must not ship). No left-hand IK back on at the end: there is no
+# grip for the free hand (IK on would pull it to the held item's socket: the Nexus "arms distort, hands spin")
+KN_STANCE = f"{DIR}/AS_ImmLoot_KnStance"
+KN_ADD = "/Game/_STALKER2/Animations/Player/AnimSequences/knifes/Additive/AS_fp_knife_idle_add"
+TOUCH_FAMILIES["kn"] = ("AS_ImmLoot_TouchKn", KN_STANCE)
+NO_IK_ON = ("kn",)
+
+
+def make_kn_stance():
+    """KN_STANCE: a copy of the rifle stand idle whose every track holds the knife layer's pose (the rifle stand idle +
+    the knife's mesh-space idle additive, UE's own evaluation as a full pose)."""
+    if not EAL.does_asset_exist(KN_STANCE):
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(KN_STANCE.rsplit("/", 1)[1], DIR, unreal.load_asset(RIFLE_BASE))
+    seq = unreal.load_asset(KN_STANCE)
+    o = unreal.AnimPoseEvaluationOptions()
+    o.set_editor_property("evaluation_type", unreal.AnimDataEvalType.RAW)
+    o.set_editor_property("retrieve_additive_as_full_pose", True)
+    o.set_editor_property("should_retarget", False)
+    pose = unreal.AnimPoseExtensions.get_anim_pose_at_frame(unreal.load_asset(KN_ADD), 0, o)
+    n = AL.get_num_frames(seq)
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot knife stance", True)
+    for b in [str(x) for x in AL.get_animation_track_names(seq)]:
+        t = unreal.AnimPoseExtensions.get_bone_pose(pose, b, unreal.AnimPoseSpaces.LOCAL)
+        ctrl.set_bone_track_keys(b, [t.translation] * (n + 1), [t.rotation] * (n + 1), [t.scale3d] * (n + 1), True)
+    ctrl.close_bracket(True)
+    cam, _ = cs(seq, "jnt_camera", 0)
+    hp, _ = cs(seq, HAND, 0)
+    out.append(f"AS_ImmLoot_KnStance: left hand from the eye {tuple(round(a_ - b_, 1) for a_, b_ in zip(hp, cam))} "
+               f"(expected ~(40, -24, -20) in the stance's camera frame), saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
 
 
 def build_touch_pistol(i, family="pt"):
@@ -863,7 +952,7 @@ def build_touch_pistol(i, family="pt"):
         # the stand idle's grip R is ~3-4 cm right of / ~2.5 cm above the held weapon's own grip, so the hand came in
         # past the real grip to R while the IK took over and pulled it back): the path ends left of and below R
         # (TOUCH_END_OFF), the IK (on from frame 30) takes the hand from there to the real grip, from the left / below
-        Re_ = add(R, TOUCH_END_OFF)
+        Re_ = add(R, TOUCH_END_OFF if family not in NO_IK_ON else (0.0, 0.0, 0.0))   # ab review: the knife / bolt start and end on the free hand (no IK to take it home)
         P1_ = add(Re_, TOUCH_EXIT)
         T = add(add(mul(Re_, (1 - u_) ** 2), mul(P1_, 2 * u_ * (1 - u_))), mul(G, u_ * u_))
         to_t = sub(T, A)
@@ -923,7 +1012,7 @@ def build_touch_pistol(i, family="pt"):
     for b, (pos, rot, scl) in keys.items():
         ctrl.set_bone_track_keys(b, list(pos), list(rot), list(scl), True)
     ctrl.close_bracket(True)
-    touch_notifies(seq, "touch")
+    touch_notifies(seq, "touch", ik_on=family not in NO_IK_ON)
     cname = "left_hand_curve"
     if cname in [str(x) for x in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]:
         AL.remove_curve(seq, cname, False)
@@ -1036,6 +1125,82 @@ DOOR_ARC = (3.0, -4.0, -14.0)      # door build B: the curve's control point fro
                                    # leaves / rejoins the grip in a downward arc under the weapon (tester)
 DOOR_IK_ON = {"push": (1.0, 0.35), "pull": (1.13, 0.35)}
 DOOR_PUSH_STROKE_FAM = 24.0        # door build C: cm of forward drive in the push (was 14)   # frame 30 / 34: the hand back near the grip
+DOOR_FAMILY_NAMES[("kn", "push")] = "AS_ImmLoot_DoorPushKn"
+DOOR_FAMILY_NAMES[("kn", "pull")] = "AS_ImmLoot_DoorPullKn"
+DOOR_POINT_FROM = {"ar": "pt", "arn": "pt"}     # v1.3.2 ab: the rifle doors aim at the pistol's door point (seen from the eye)
+# v1.3.2 ae (tester: the rifle door "still doesn't look as good as pistol or unarmed"; ad probe, a long gun in the
+# secondary slot: its left hand rests at (38.3, 4.4, -24.2) cm from the eye in view axes, 9 cm behind and 10 cm below
+# the rifle stand idle's grip (47.3, 3.9, -14.0) the Ar doors start and end on: the slot's blend-in first threw the hand
+# 5 cm forward, then it went back, out to the door, and came home to the stance grip, then the IK pulled it 10 cm
+# down / back). "arn": the same door with the path's ends at that measured grip (+ TOUCH_END_OFF, the IK's last
+# stretch from the left / below); the Blueprint picks it when the live left hand sits less than 43 cm ahead of the eye
+TOUCH_FAMILIES["arn"] = ("AS_ImmLoot_TouchArn", RIFLE_BASE)
+DOOR_FAMILY_NAMES[("arn", "push")] = "AS_ImmLoot_DoorPushArNear"
+DOOR_FAMILY_NAMES[("arn", "pull")] = "AS_ImmLoot_DoorPullArNear"
+DOOR_GRIP_FROM_EYE = {"arn": (38.3, 4.4, -24.2)}
+# v1.3.2 ag (tester on af: the pull to the right "acknowledges the direction now, but on the right of the screen it is
+# kinda janky: under the rifle and not far enough forward away from the camera, and the hand could use a bit of work"):
+# the right-hand pull (DOOR_RIGHT, PART=doorpullr) with a weapon goes to a fixed point right of and above the weapon,
+# well forward (cm from the eye, view axes; the solve stops at the arm's reach), crosses OVER the grip (DOOR_OVER, from
+# the path's end: up and a little right, never under the weapon), draws back with half the drop, and the palm faces
+# left (toward the leaf's edge it hooks) instead of right
+DOOR_RIGHT = False
+DOOR_PULL_RIGHT = (46.0, 12.0, -3.0)
+DOOR_OVER = (4.0, 6.0, 17.0)
+DOOR_TUG = (-16.0, -10.0, 10.0, 5.0)   # ai: the armed right-edge pull: elevation, azimuth (deg from the eye), draw, drop (cm)
+DOOR_PROTRACT = 25.0   # deg the shoulder (clavicle) turns forward at the full right-hand reach
+# v1.3.2 al (tester on ak: "the hand looks correct in its rotation, but it's still not following the door's arc ... make
+# it look like the hand is following the edge of the door as it closes, even if it can't reach all the way out"): the
+# close's draw-back follows the circle a leaf's free edge runs about its hinge (a scaled-down leaf, DOOR_EDGE_R cm, from
+# DOOR_EDGE_FROM to DOOR_EDGE_TO deg open) instead of a straight line back and down: the hand first goes back and
+# OUTWARD (away from the hinge), curving to straight back, and turns with the leaf (DOOR_EDGE_YAW of the leaf's turn
+# about the vertical); a small drop (DOOR_EDGE_DROP). View axes, +X ahead, +Y right
+DOOR_EDGE_R, DOOR_EDGE_FROM, DOOR_EDGE_TO = 30.0, 50.0, 10.0
+DOOR_EDGE_DROP = 4.0
+DOOR_EDGE_YAW = 0.6
+DOOR_EDGE_TUG = (0.55, 0.3)   # the armed right-edge tug (left of the gun): the circle's size and its sideways share (never across the gun)
+
+
+def door_edge(G, side, keys, scale=1.0, lat=1.0, vmap=None):
+    """al: the close's draw along the leaf edge's circle from G: [(frame, point)] at `keys` (side -1: the free edge left
+    of the view, the hinge right, the hand drawn back and LEFT; +1 mirrored), and yaw(k, w): the leaf's turn so far at
+    frame k (DOOR_EDGE_YAW x w of it) as a quaternion about +Z."""
+    o, fw = (0.0, float(side), 0.0), (1.0, 0.0, 0.0)
+    t0, t1 = math.radians(DOOR_EDGE_FROM), math.radians(DOOR_EDGE_TO)
+    v = lambda th: add(mul(o, math.cos(th)), mul(fw, math.sin(th)))
+    pts = []
+    for i, k in enumerate(keys):
+        s = i / float(len(keys) - 1)
+        d = mul(sub(v(t0 + (t1 - t0) * s), v(t0)), DOOR_EDGE_R * scale)
+        d = (d[0], d[1] * lat, d[2] - DOOR_EDGE_DROP * scale * s)
+        pts.append((k, add(G, vmap(d) if vmap else d)))
+
+    def yaw(k, w=1.0):
+        s = min(1.0, max(0.0, (k - keys[0]) / float(keys[-1] - keys[0])))
+        return slerp((0.0, 0.0, 0.0, 1.0), q_between(v(t0), v(t0 + (t1 - t0) * s)), DOOR_EDGE_YAW * w)
+    return pts, yaw
+
+
+def _door_point(base_path):
+    """The family's door point G and its eye (component space): DOOR_ELEV / DOOR_AZIM from the eye, at
+    TOUCH_REACH of the stance's arm from its arm root (as build_door_family)."""
+    base = unreal.load_asset(base_path)
+    cam, _ = cs(base, "jnt_camera", 0)
+    er, ar = math.radians(DOOR_ELEV), math.radians(DOOR_AZIM)
+    dirv_e = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
+    sh_p, sh_q = cs(base, SHOULDER, 0)
+    a_l, f_l, h_l = local(base, ARM, 0), local(base, FORE, 0), local(base, HAND, 0)
+    a_q = qmul(sh_q, a_l[1]); A = add(sh_p, qrot(sh_q, a_l[0]))
+    f_q = qmul(a_q, f_l[1]); E = add(A, qrot(a_q, f_l[0]))
+    R = add(E, qrot(f_q, h_l[0]))
+    reach = (norm(sub(E, A)) + norm(sub(R, E))) * TOUCH_REACH
+    inv = lambda v: tuple((v[j] - TOUCH_MAP[j][1]) / TOUCH_MAP[j][0] for j in range(3))
+    u = tuple(dirv_e[j] / TOUCH_MAP[j][0] for j in range(3))
+    c_ = sub(add(cam, inv((0.0, 0.0, 0.0))), A)
+    qa, qb, qc = dot(u, u), 2 * dot(c_, u), dot(c_, c_) - reach * reach
+    disc = qb * qb - 4 * qa * qc
+    t = (-qb + math.sqrt(disc)) / (2 * qa) if disc > 0 else max(10.0, -qb / (2 * qa))
+    return add(cam, inv(mul(dirv_e, t))), cam
 
 
 def build_door_family(family, mode):
@@ -1080,8 +1245,19 @@ def build_door_family(family, mode):
     disc = qb * qb - 4 * qa * qc
     t = (-qb + math.sqrt(disc)) / (2 * qa) if disc > 0 else max(10.0, -qb / (2 * qa))
     G = add(cam, inv(mul(dirv_e, t)))
+    if family in DOOR_POINT_FROM:
+        # v1.3.2 ab (tester: the pistol doors look right, the rifle ones "look the same as before, as if nothing
+        # changed"): the rifle stance's shoulder sits further forward, so its door point (0.95 of its own arm) was 5 cm
+        # further out with the arm locked straight there, and the follow-through past the door was clamped away (the
+        # hand stopped at the door). Now the door point is the pistol's, from the eye: the arm stays bent and moves on
+        G = add(cam, sub(*_door_point(TOUCH_FAMILIES[DOOR_POINT_FROM[family]][1])))
+    if DOOR_RIGHT:   # ag: the right-hand pull's own point (all weapon families)
+        G = add(cam, DOOR_PULL_RIGHT)
+        dirv_e = unit(sub(G, cam))
     back = unit(sub(G, cam))
-    Re = add(R, TOUCH_END_OFF)
+    Re = add(R, TOUCH_END_OFF if family not in NO_IK_ON else (0.0, 0.0, 0.0))   # ab review: the knife / bolt from and back to the free hand
+    if family in DOOR_GRIP_FROM_EYE:   # ae: the ends at the measured grip of the near-grip long guns
+        Re = add(add(cam, DOOR_GRIP_FROM_EYE[family]), TOUCH_END_OFF)
     C = add(Re, DOOR_ARC)
     if mode == "push":
         # door build C (tester: "the push could use more of a push, the hand just kinda stays static"): the hand comes up
@@ -1092,15 +1268,39 @@ def build_door_family(family, mode):
         fist = lambda k: 0.0
         PQ = palm_q(grab_src, unit(add(dirv_e, TOUCH_PALM_DOWN)), TOUCH_FINGERS_UP)
     else:
-        PB = sub(sub(G, mul(back, DOOR_PULL_STROKE)), (0.0, 0.0, DOOR_PULL_DROP))
+        PB = sub(sub(G, mul(back, DOOR_PULL_STROKE * (0.55 if DOOR_RIGHT else 1.0))), (0.0, 0.0, DOOR_PULL_DROP * (0.5 if DOOR_RIGHT else 1.0)))   # ag: a shorter draw on the right (stays away from the camera)
         legs = ((0, 8, "curve", Re, G), (8, 12, "line", G, G), (12, 26, "line", G, PB), (26, 40, "curve", PB, Re))
-        turn = lambda k: smooth(min(1.0, max(0.0, (k - 3) / 5.0))) if k <= 26 else smooth(min(1.0, max(0.0, (34 - k) / 8.0)))
+        # aj: the half turn to thumb down after the slot's blend-in, over 8 frames (it whipped round in 5: 38-53 deg a
+        # frame), back over 22-33 (before the IK comes on at frame ~34)
+        turn = lambda k: smooth(min(1.0, max(0.0, (k - 5) / 8.0))) if k <= 22 else smooth(min(1.0, max(0.0, (33 - k) / 11.0)))
         fist = lambda k: smooth(min(1.0, max(0.0, (k - 8) / 4.0))) if k <= 26 else smooth(min(1.0, max(0.0, (32 - k) / 6.0)))
         # the hand around a handle: palm facing right (inward), fingers along the reach
-        PQ = palm_q(grab_src, unit(add((0.0, 1.0, 0.0), mul(dirv_e, 0.3))), dirv_e)
+        PQ = palm_q(grab_src, unit(add((0.0, -1.0 if DOOR_RIGHT else 1.0, 0.0), mul(dirv_e, 0.3))), dirv_e)   # ag: mirrored palm on the right
+        # v1.3.2 aj (tester: "rotate the hand during door close so the thumb is pointing down, clockwise 180 degrees, so
+        # the hand looks like it is clasping the edge of the door and pulling it in"): turned DOOR_PULL_ROLL about the reach
+        # ak (tester: "you rotated it counter clockwise"): a rolled target let the slerp pick the way round (it went
+        # counter-clockwise); the roll is now applied on top of the turn, by DOOR_PULL_ROLL x the turn's weight, so it
+        # always goes the way its sign says (UE axes: a negative angle about the forward reach = clockwise from behind)
     if dot4(PQ, RQ) < 0:
         PQ = tuple(-x for x in PQ)
     hint = sub(E, A)
+    # v1.3.2 (tester: "continuous, it shouldn't stop"): one Hermite path through the legs' points and the arcs'
+    # midpoints (the arc under the weapon kept), the push with a follow-through past the door, no hold
+    mid = lambda P0, P1: add(add(mul(P0, 0.25), mul(C, 0.5)), mul(P1, 0.25))
+    if mode == "push":
+        Fw = add(add(G, mul(back, DOOR_FOLLOW[0])), (0.0, 0.0, DOOR_FOLLOW[1]))
+        WAVE = [(0, Re), (4, mid(Re, N)), (8, N), (14, G), (17, Fw), (26, mid(G, Re)), (36, Re)]
+    else:
+        # al: the draw 9-22 along the leaf edge's circle (the right-edge assets end in "R"; with a gun there the tug
+        # left of the gun keeps a small circle, little sideways)
+        side_ = 1 if name.endswith("R") else -1
+        sc_, lat_ = DOOR_EDGE_TUG if (side_ > 0 and family in ("ar", "arn", "pt")) else (1.0, 1.0)
+        edge_, edge_yaw = door_edge(G, side_, (9, 13, 18, 22), sc_, lat_, lambda d: tuple(d[j] / TOUCH_MAP[j][0] for j in range(3)))
+        PB = edge_[-1][1]
+        WAVE = [(0, Re), (4, mid(Re, G))] + edge_ + [(31, mid(PB, Re)), (40, Re)]
+        if DOOR_RIGHT:   # ag: over the grip both ways
+            U = add(Re, DOOR_OVER)
+            WAVE = [(0, Re), (4, U), (9, G), (22, PB), (31, U), (40, Re)]
     tracks = [str(x) for x in AL.get_animation_track_names(tmpl)]
     arm = [b for b in tracks if "jnt_l_shoulder" in [str(x) for x in AL.find_bone_path_to_root(tmpl, b)]]
     keys = {}
@@ -1110,6 +1310,13 @@ def build_door_family(family, mode):
     ROLL = "jnt_l_fore_arm_roll"
     roll_l = local(base, ROLL, 0)[1]
     ka, kf, kh, kr, ww, wf, prev_tq = [], [], [], [], [], [], None
+    # ag: the rest arm kept (A0 ...) for the shoulder's protraction on the right-hand pull; its sign = the one that
+    # moves the arm root forward
+    A0, E0, R0, a_q0, f_q0, sh_q0 = A, E, R, a_q, f_q, sh_q
+    par_q = cs(base, [str(x) for x in AL.find_bone_path_to_root(base, SHOULDER)][1], 0)[1]
+    _fw = lambda sg: add(sh_p, qrot((0.0, 0.0, math.sin(sg * 0.2), math.cos(sg * 0.2)), sub(A0, sh_p)))[0]
+    prot_sign = 1.0 if _fw(1.0) > _fw(-1.0) else -1.0
+    ksh = []
     for k in range(n + 1):
         T = Re
         for f0, f1, kind, P0, P1 in legs:
@@ -1123,6 +1330,16 @@ def build_door_family(family, mode):
                 else:
                     T = add(add(mul(P0, (1 - w_) ** 2), mul(C, 2 * w_ * (1 - w_))), mul(P1, w_ * w_))
                 break
+        T = wave_path(WAVE, k)   # v1.3.2: the continuous path (the legs above only time the hand's turn / fingers)
+        A, E, R, a_q, f_q, sh_q = A0, E0, R0, a_q0, f_q0, sh_q0
+        if DOOR_RIGHT:   # ag: the shoulder comes forward with the reach across the body (the arm alone stops ~42 cm out)
+            w_ = smooth(min(1.0, norm(sub(T, Re)) / max(norm(sub(G, Re)), 1e-6)))
+            th_ = math.radians(DOOR_PROTRACT * w_ * prot_sign) / 2
+            rz_ = (0.0, 0.0, math.sin(th_), math.cos(th_))
+            rot_ = lambda v: add(sh_p, qrot(rz_, sub(v, sh_p)))
+            A, E, R = rot_(A0), rot_(E0), rot_(R0)
+            a_q, f_q, sh_q = qmul(rz_, a_q0), qmul(rz_, f_q0), qmul(rz_, sh_q0)
+        ksh.append(unreal.Quat(*qmul(qinv(par_q), sh_q)))
         to_t = sub(T, A)
         d = max(abs(l1 - l2) + 0.01, min(reach, norm(to_t)))
         dv = unit(to_t)
@@ -1149,6 +1366,10 @@ def build_door_family(family, mode):
             tq = tuple(-x for x in tq)
         prev_tq = tq
         hl = slerp_raw(h_l[1], tq, wv)
+        if mode == "pull":   # ak: the explicit clockwise roll about the reach (see PQ); al: then the leaf's turn
+            hl = qmul(qinv(f_q2), qmul(edge_yaw(k, wv), qmul(_roll_about(dirv_e, DOOR_PULL_ROLL * wv), qmul(f_q2, hl))))
+            if k in (9, 13, 18, 22, 31):
+                out.append(f"  {name} f{k}: target from the eye {tuple(round(x, 1) for x in sub(T, cam))}, reached {tuple(round(x, 1) for x in sub(T2, cam))}")
         kh.append(unreal.Quat(*hl))
         dlt = qmul(hl, qinv(h_l[1]))
         ax_ = unit(h_l[0])
@@ -1160,6 +1381,8 @@ def build_door_family(family, mode):
         ww.append(wv)
         wf.append(fist(k))
     keys[ARM] = (keys[ARM][0], ka, keys[ARM][2])
+    if DOOR_RIGHT:
+        keys[SHOULDER] = (keys[SHOULDER][0], ksh, keys[SHOULDER][2])
     keys[FORE] = (keys[FORE][0], kf, keys[FORE][2])
     keys[HAND] = (keys[HAND][0], kh, keys[HAND][2])
     if ROLL in keys:
@@ -1183,7 +1406,7 @@ def build_door_family(family, mode):
         if e.notify is not None and e.notify.get_class().get_name() == "AnimNotify_HandIK":
             hand = e.notify.get_editor_property("hand_to_apply")
     hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
-    for t_, end, bl in ((0.035907, None, TOUCH_IK_OFF_BLEND), (DOOR_IK_ON[mode][0], 1.0, DOOR_IK_ON[mode][1])):
+    for t_, end, bl in ((0.035907, None, TOUCH_IK_OFF_BLEND), (DOOR_IK_ON[mode][0], 1.0, DOOR_IK_ON[mode][1]))[:1 if family in NO_IK_ON else 2]:
         ev = AL.add_animation_notify_event(seq, track, t_, hik)
         ev.set_editor_property("hand_to_apply", hand)
         ev.set_editor_property("blend_time", bl)
@@ -1465,8 +1688,9 @@ def build_pat_table():
                f"saved {EAL.save_loaded_asset(m, only_if_is_dirty=False)}")
 
 
-def touch_notifies(seq, mode):
-    """The left-hand IK off just after the start, back on at the return (vanilla grab's HandIK notify kind)."""
+def touch_notifies(seq, mode, ik_on=True):
+    """The left-hand IK off just after the start, back on at the return (vanilla grab's HandIK notify kind); ik_on
+    False (v1.3.2 ab, the knife / bolt: a free left hand): only the IK off."""
     for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
         AL.remove_animation_notify_events_by_track(seq, tn)
     track = "ImmLoot"
@@ -1479,7 +1703,7 @@ def touch_notifies(seq, mode):
     hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
     for t, end, bl in ((0.035907, None, None if mode != "touch" else TOUCH_IK_OFF_BLEND),
                        ({"push": 1.27, "pull": 1.4, "grab": GRAB_IK_ON[0]}.get(mode, TOUCH_IK_ON[0]), 1.0,
-                        {"touch": TOUCH_IK_ON[1], "grab": GRAB_IK_ON[1]}.get(mode))):
+                        {"touch": TOUCH_IK_ON[1], "grab": GRAB_IK_ON[1]}.get(mode)))[:2 if ik_on else 1]:
         new = AL.add_animation_notify_event(seq, track, t, hik)
         new.set_editor_property("hand_to_apply", hand)
         if end is not None:
@@ -1700,7 +1924,11 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, low
                 wfp = smoother(min(1.0, f / 10.0)) if f <= 16 else (1.0 - smoother(min(1.0, (f - 16) / 20.0)))
                 Wf = slerp((0.0, 0.0, 0.0, 1.0), Wfull, wfp)
                 sh_qf = qmul(Wf, sh_q)
-                sh_pf = add(sp_p, qrot(Wf, sub(sh_p, sp_p)))
+                # v1.3.2 (tester: "grabbing things unarmed seems to be broken, the reach is too low", standing): only the
+                # shoulder's ROTATION is keyed, so its joint stays where it is (its translation key is the rest one); the
+                # solve had placed it as if swung about jnt_spine_03 (up to ~20 cm off), so the hand landed ~15 deg below
+                # the item (scan of the 1.3.0 table: elev -50 -> -64, -20 -> -37). Solved from the shoulder's real place
+                sh_pf = sh_p
                 a_q0 = qmul(sh_qf, ba[1]); A = add(sh_pf, qrot(sh_qf, ba[0]))
                 f_q0 = qmul(a_q0, bf[1]); E = add(A, qrot(a_q0, bf[0]))
                 RQ = qmul(f_q0, bh[1]); R = add(E, qrot(f_q0, bh[0]))
@@ -1802,6 +2030,231 @@ def build_use_table(src, tgt_rot, nkeys, base, name, template, out_dir=None, low
     out.append(f"USE {name} (base {base.get_name()}): tracks {[str(t) for t in AL.get_animation_track_names(seq)]}, len {seq.get_play_length():.1f} s, "
                f"additive {seq.get_editor_property('additive_anim_type')}, rest hand rel eye {tuple(round(x - c, 1) for x, c in zip(R, cam))}, "
                f"grab error max {max(errs):.1f} cm (beyond reach: arm out toward it), saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
+
+
+NAME_BHVIEW = "AS_ImmLoot_GrabBHView"
+BHVIEW_REACH = 0.88       # of the arm length (v1.3.2 c, tester: "still a bit of stretching in the arm looking down": was 0.95)
+BHVIEW_OFF_CROUCH = (-10.0, -6.0)  # v1.3.2 y: the standing table's (j had -3, t 0 azimuth)
+CROUCH_HAND_PITCH = 1.0            # v1.3.2 t tried 0.6 (the hand higher, bottles through it): reverted in x
+BHVIEW_ROLL_CROUCH = 30.0          # v1.3.2 j: crouched, deg clockwise as seen from the eye (k: the MCM dev default)
+CROUCH_ROLLS = (0.0,)   # v1.3.2 y: no roll, as standing (j's 30 deg were for the local-space table's misturned hand)
+BHVIEW_OFF = (-10.0, -6.0)   # v1.3.2 c (tester: "the hand is too much in the middle of the screen"): the hand's line from the
+                             # eye turned 10 deg down and 6 deg left of the item's (it comes in from the lower left)
+
+
+POCKET_DIR = (-65.0, -40.0)   # v1.3.2 al: crouched / knife pickups put the item away here: elevation, azimuth from the eye (deg, view axes; below the screen)
+POCKET_REACH = 0.8            # of the arm length from its root
+BASE_BH_CROUCH = "/Game/_STALKER2/Animations/Player/AnimSequences/bh/crouch/fp_bh_idle_crouch"
+# v1.3.2 z: the tester's crouch is the LOW crouch. x's probe: the resting left hand sat at (32, -27.6, -20.8) cm in view
+# axes at every view pitch (-32 .. -51) = fp_bh_idle_lowcrouch's (30.0, -27.0, -21.4) from the camera, and constant in the
+# view: the low-crouch look turns the whole upper body rigidly with the view (the arms included). fp_bh_idle_crouch (the
+# table's base since e) has the hand 22 cm lower and 37 cm further back. So crouched = the standing recipe in the VIEW
+# frame on the low-crouch rest, as a local-space additive (the rigid look keeps the arm's local rotations)
+BASE_BH_LOWCROUCH = "/Game/_STALKER2/Animations/Player/AnimSequences/bh/lowcrouch/fp_bh_idle_lowcrouch"
+
+
+def build_bh_view_table(src, tgt_rot, nkeys, crouch=False, base_path=None, name=None):
+    """v1.3.2 (tester: standing, empty hands: the 1.3.0 pickup "reach too low", then "janky: the arm stretches, the item
+    too high in the palm, the hand way off to the side"; choice: "proper fix: the arms turn with the view while
+    standing"). Standing, the bare-hands look turns the spine and camera with the view but counter-turns the arms (the
+    1.2.0 table, a FullBody additive in the body frame, needed measured aim corrections, and turning the shoulder for
+    the sleeve broke them). Now, as the backpack and the both-hands pat already do: the arms are turned rigidly with the
+    view by the bag's pitch-fix pose table (FullBody, frame = view pitch), and the reach is THIS LeftHand-slot table
+    built in the view frame (fp_bh_idle_stand, view level): 25 segments (TOUCH_ELEVS x TOUCH_AZIMS, the item's
+    direction from the eye in view axes) of SEG2 frames: out by 12 (eased, a small arc), the vanilla grab's fingers
+    closing, the grip held 12-16, back to rest by 39. The hand's item point (jnt_l_weapon) goes on the eye -> item line
+    where the hand bone is BHVIEW_REACH of the arm length from the arm root (always within reach: no stretched arm, no
+    falling short below the line). Left-hand IK off at each segment start (empty hands: it would pull the hand to
+    jnt_weapon)."""
+    # v1.3.2 e (tester, crouched empty hands: "still not truly in the palm, I can see the full hand in front of it"):
+    # crouched the same view-frame table on the crouch rest pose, as a FullBody local-space additive (crouched, the
+    # LeftHand slot's reach is covered by the crouch pose, build 38; the crouched look already turns the arms with the
+    # view, so no pitch fix): AS_ImmLoot_GrabBHViewCrouch, replacing the body-frame crouch table and its measured
+    # corrections
+    # v1.3.2 ab: base_path / name = the same table on another stance whose arm rig follows the view (the knife / bolt:
+    # AS_ImmLoot_GrabKnView on KN_STANCE), built as the crouched one (FullBody local-space additive on its frame 0, the
+    # same 25 segments and aim; the crouched settings equal the standing ones since y)
+    base = unreal.load_asset(base_path if base_path else (BASE_BH_LOWCROUCH if crouch else BASE_BH))
+    crouch = crouch or base_path is not None
+    tmpl = unreal.load_asset(f"{DIR}/AS_ImmLoot_GrabAr")
+    name_ = name if name else NAME_BHVIEW + ("Crouch" if crouch else "")
+    path = f"{DIR}/{name_}"
+    if not EAL.does_asset_exist(path):
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name_, DIR, tmpl)
+    seq = unreal.load_asset(path)
+    tracks = [str(x) for x in AL.get_animation_track_names(tmpl)]
+    arm = [b for b in tracks if SHOULDER in [str(x) for x in AL.find_bone_path_to_root(base, b)]]
+    cam, _ = cs(base, "jnt_camera", 0)
+    sh_p, sh_q = cs(base, SHOULDER, 0)
+    ba, bf, bh = local(base, ARM, 0), local(base, FORE, 0), local(base, HAND, 0)
+    a_q0 = qmul(sh_q, ba[1]); A = add(sh_p, qrot(sh_q, ba[0]))
+    f_q0 = qmul(a_q0, bf[1]); E = add(A, qrot(a_q0, bf[0]))
+    RQ = qmul(f_q0, bh[1]); R = add(E, qrot(f_q0, bh[0]))
+    l1, l2 = norm(sub(E, A)), norm(sub(R, E))
+    GQ = tgt_rot[13]
+    wpn = local(src, "jnt_l_weapon", 13)[0]
+    rest = {b: local(base, b, 0) for b in arm}
+    # (v1.3.2 x took the fingers' rest from fp_bh_idle_stand; z: the low-crouch rest's own, as the rest of the arm)
+    keys = {b: ([], [], []) for b in arm}
+    errs = []
+    # v1.3.2 f (tester, crouched: "the hand is too high off the screen"): crouched, the arms stay in the BODY frame
+    # (build 48's data: a crouched segment lands at index - view pitch - 37 on screen), so the crouched table is
+    # binned by the item's elevation in the body frame (-80..+25, 8 rows) and the Blueprint picks it from the
+    # mesh-space direction of the item from the camera bone
+    # v1.3.2 j (tester, crouched: "sometimes too low"; "the hand needs to be rotated clockwise so the bottle items look
+    # actually held"): crouched the hand line goes 3 deg (was 10) under the item, and the hand is rolled 30 deg
+    # clockwise (as seen from the eye) about its reach direction
+    off_ = BHVIEW_OFF_CROUCH if crouch else BHVIEW_OFF
+    # v1.3.2 k (tester: "a dev debug menu in MCM to tune the values myself"): crouched, one block of 40 segments per
+    # roll in CROUCH_ROLLS (the MCM dev setting picks the block)
+    # v1.3.2 al (tester: crouched and with the knife / bolt "the left hand is always in view, so it grabs, the hand comes
+    # back, and the item just disappears out of the hand ... it needs to go off screen for a second and then come back,
+    # as if it's putting the thing away"): crouched / kn, after the grab the hand goes down out of view to K (POCKET_DIR
+    # from the eye, the hand bone POCKET_REACH of the arm from its root) by 26, stays there 26-34 (the Blueprint removes
+    # the item at 1.2 s = frame 36, the fingers open after it) and comes back up to rest 34-44 (the Blueprint stops the
+    # segment at 1.35 s with a 0.3 s blend-out to the same rest)
+    end_ = 44 if crouch else 39
+    if crouch:
+        er, ar = math.radians(POCKET_DIR[0]), math.radians(POCKET_DIR[1])
+        dk = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
+        rk = (l1 + l2) * POCKET_REACH
+        c_ = sub(cam, A)
+        qb, qc = 2 * dot(c_, dk), dot(c_, c_) - rk * rk
+        disc = qb * qb - 4 * qc
+        K = add(cam, mul(dk, (-qb + math.sqrt(disc)) / 2 if disc > 0 else max(10.0, -qb / 2)))
+        kv = sub(K, cam)
+        out.append(f"{name_}: pocket point from the eye {tuple(round(x, 1) for x in kv)} = elevation "
+                   f"{math.degrees(math.atan2(kv[2], math.hypot(kv[0], kv[1]))):.0f} deg, rest hand {tuple(round(x, 1) for x in sub(R, cam))}")
+    import itertools
+    for roll_, elev, az in itertools.product(CROUCH_ROLLS if crouch else (0.0,), TOUCH_ELEVS, TOUCH_AZIMS):
+        if True:
+            er, ar = math.radians(elev + off_[0]), math.radians(az + off_[1])
+            dirv_e = (math.cos(er) * math.cos(ar), math.cos(er) * math.sin(ar), math.sin(er))
+            qp = qmul((0.0, 0.0, math.sin(ar / 2), math.cos(ar / 2)), (0.0, -math.sin(er / 2), 0.0, math.cos(er / 2)))
+            GQp = qmul(qp, GQ)
+            if crouch:
+                # v1.3.2 t (tester's screenshot: the hand comes from the far left, palm down, wrist bent, the bottle
+                # pinched in the fingertips): the hand's pitch takes 60% of the reach's elevation
+                erh = math.radians((elev + off_[0]) * CROUCH_HAND_PITCH)
+                GQp = qmul(qmul((0.0, 0.0, math.sin(ar / 2), math.cos(ar / 2)), (0.0, -math.sin(erh / 2), 0.0, math.cos(erh / 2))), GQ)
+                rr = math.radians(-roll_) / 2
+                GQp = qmul((dirv_e[0] * math.sin(rr), dirv_e[1] * math.sin(rr), dirv_e[2] * math.sin(rr), math.cos(rr)), GQp)
+            wo = qrot(GQp, wpn)                  # hand -> item point, at the grip
+            # the item point P on the eye ray with the hand bone (P - wo) at the reach from the arm root
+            reach = (l1 + l2) * BHVIEW_REACH
+            c_ = sub(sub(cam, wo), A)
+            qb, qc = 2 * dot(c_, dirv_e), dot(c_, c_) - reach * reach
+            disc = qb * qb - 4 * qc
+            t = (-qb + math.sqrt(disc)) / 2 if disc > 0 else max(10.0, -qb / 2)
+            P = add(cam, mul(dirv_e, t))
+            G = sub(P, wo)
+            for f in range(SEG2):
+                if f <= 12:
+                    bw = smoother(f / 12)
+                    T = add(add(R, mul(sub(G, R), bw)), mul(ARC_OUT, math.sin(math.pi * bw)))
+                    hq = slerp(RQ, GQp, smoother(min(1.0, f / 9)))
+                elif f <= 16:
+                    T, hq = G, GQp
+                elif crouch and f < end_:   # al: down out of view, held, back up (see end_)
+                    if f <= 26:
+                        T = add(add(G, mul(sub(K, G), smoother((f - 16) / 10))), mul(ARC_BACK, math.sin(math.pi * smoother((f - 16) / 10))))
+                    elif f <= 34:
+                        T = K
+                    else:
+                        T = add(K, mul(sub(R, K), smoother((f - 34) / 10)))
+                    hq = slerp(GQp, RQ, smoother((f - 16) / 28))
+                elif f <= 39:
+                    bw = smoother((f - 16) / 23)
+                    T = add(add(G, mul(sub(R, G), bw)), mul(ARC_BACK, math.sin(math.pi * bw)))
+                    hq = slerp(GQp, RQ, smoother(min(1.0, (f - 16) / 20)))
+                else:
+                    T, hq = R, RQ
+                to_t = sub(T, A)
+                d = max(abs(l1 - l2) + 0.01, min(l1 + l2 - 0.01, norm(to_t)))
+                dv = unit(to_t)
+                a = (l1 * l1 - l2 * l2 + d * d) / (2 * d)
+                h = math.sqrt(max(l1 * l1 - a * a, 0.0))
+                hint = sub(E, A)
+                pole = sub(hint, mul(dv, dot(hint, dv)))
+                pole = unit(pole) if norm(pole) > 1e-6 else unit(cross(dv, (0.0, 0.0, 1.0)))
+                E2 = add(A, add(mul(dv, a), mul(pole, h)))
+                T2 = add(A, mul(dv, d))
+                r1 = q_between(sub(E, A), sub(E2, A))
+                a_q2 = qmul(r1, a_q0)
+                r2 = q_between(qrot(r1, sub(R, E)), sub(T2, E2))
+                f_q2 = qmul(r2, qmul(r1, f_q0))
+                if f == 0 or f >= end_:
+                    solved = {ARM: ba[1], FORE: bf[1], HAND: bh[1]}
+                else:
+                    solved = {ARM: qmul(qinv(sh_q), a_q2), FORE: qmul(qinv(a_q2), f_q2), HAND: qmul(qinv(f_q2), hq)}
+                wf = smoother(f / 4) if f < 4 else (1.0 if f <= 34 else 1.0 - smoother((f - 34) / 8))
+                if crouch:   # al: the fingers hold the item until it is gone (frame 36), then open out of view
+                    wf = smoother(f / 4) if f < 4 else (1.0 if f <= 36 else 1.0 - smoother((f - 36) / 6))
+                if crouch and elev == -30 and az == -15 and f in (16, 22, 26, 34, 36, 38, 40, 44):
+                    hv = sub(T2, cam)
+                    out.append(f"  {name_} seg(-30,-15) f{f}: hand from the eye {tuple(round(x, 1) for x in hv)}, elevation "
+                               f"{math.degrees(math.atan2(hv[2], math.hypot(hv[0], hv[1]))):.0f} deg")
+                for b in arm:
+                    lr = rest[b]
+                    if b in solved:
+                        rq = solved[b]
+                    # (v1.3.2 l / p / r / t's crouched finger variants removed in x: see the finger base above)
+                    elif b in FINGERS:
+                        rq = slerp(lr[1], local(src, b, min(f, nkeys - 1))[1], wf)   # the vanilla grab's fingers
+                    else:
+                        rq = lr[1]
+                    keys[b][0].append(unreal.Vector(*lr[0])); keys[b][1].append(unreal.Quat(*rq)); keys[b][2].append(unreal.Vector(*lr[2]))
+                if f == 14:
+                    errs.append(norm(sub(add(T2, wo), P)))
+    nseg = (len(CROUCH_ROLLS) if crouch else 1) * len(TOUCH_ELEVS) * len(TOUCH_AZIMS)
+    if crouch:
+        # v1.3.2 y (tester, x: crouched "garbage, make it look the same as standing"; screenshot: the hand comes in from
+        # the left, palm turned sideways, the bread pinched): crouched, the game's look turns the spine with the view and
+        # counter-turns the arms (they stay in the body frame, f), so a LOCAL-space delta on the shoulder was turned by
+        # the spine's pitch: the reach and the whole hand were rotated by the view pitch. Now a MESH-space rotation
+        # additive (as the pitch fix): every arm bone's mesh rotation is turned from the rest's to the solved one, so
+        # the hand's orientation in the body frame is exactly the solved one whatever the spine does. All the crouch
+        # rest's tracks are keyed (constant outside the arm) so the cook's mesh space is the crouch body's.
+        # (z: wrong reading: the crouch is the low crouch, whose look turns the arms rigidly; the table is local space
+        # again, on the low-crouch rest; the constant tracks are kept, they add nothing)
+        n_ = len(keys[arm[0]][0])
+        for b in [str(x) for x in AL.get_animation_track_names(base)]:
+            if b not in keys:
+                l_ = local(base, b, 0)
+                keys[b] = ([unreal.Vector(*l_[0])] * n_, [unreal.Quat(*l_[1])] * n_, [unreal.Vector(*l_[2])] * n_)
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot bare-hands view pickup", True)
+    ctrl.remove_all_bone_tracks(True)
+    ctrl.set_frame_rate(unreal.FrameRate(30, 1), True)
+    ctrl.set_number_of_frames(unreal.FrameNumber(nseg * SEG2 - 1), True)
+    for b, (pos, rot, scl) in keys.items():
+        ctrl.add_bone_curve(b, True)
+        ctrl.set_bone_track_keys(b, pos, rot, scl, True)
+    ctrl.close_bracket(True)
+    if crouch:   # v1.3.2 z: local-space additive on its own frame 0 (the low-crouch rest; y's mesh space reverted)
+        seq.set_editor_property("additive_anim_type", unreal.AdditiveAnimationType.AAT_LOCAL_SPACE_BASE)
+        seq.set_editor_property("ref_pose_type", unreal.AdditiveBasePoseType.ABPT_LOCAL_ANIM_FRAME)
+        seq.set_editor_property("ref_frame_index", 0)
+    else:
+        seq.set_editor_property("additive_anim_type", unreal.AdditiveAnimationType.AAT_NONE)
+    for tn_ in [str(x) for x in AL.get_animation_notify_track_names(seq)]:
+        AL.remove_animation_notify_events_by_track(seq, tn_)
+    track = "ImmLoot"
+    if track not in [str(x) for x in AL.get_animation_notify_track_names(seq)]:
+        AL.add_animation_notify_track(seq, track, unreal.LinearColor(0.2, 0.8, 0.2, 1.0))
+    hik = unreal.load_class(None, "/Script/Stalker2.AnimNotify_HandIK")
+    for i in range(nseg):
+        ev = AL.add_animation_notify_event(seq, track, i * SEG2 / 30.0 + 0.035907, hik)
+        ev.set_editor_property("hand_to_apply", unreal.AnimationHands.LEFT_HAND)
+        ev.set_editor_property("blend_time", 0.06)
+        ev.set_editor_property("end_value", 0.0)
+    for cn in [str(x) for x in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]:
+        AL.remove_curve(seq, cn, False)
+    AL.add_curve(seq, "left_hand_curve", unreal.RawCurveTrackTypes.RCT_FLOAT, False)
+    AL.add_float_curve_keys(seq, "left_hand_curve", [0.0, seq.get_play_length()], [1.0, 1.0])
+    out.append(f"{name_}: {nseg} segments x {SEG2} frames, {len(arm)} left-arm tracks, arm root from the eye "
+               f"{tuple(round(x - y, 1) for x, y in zip(A, cam))}, item point error at the grab max {max(errs):.2f} cm, "
+               f"saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
 
 
 def build_pick_pose():
@@ -2025,6 +2478,73 @@ try:
         if k % 3 == 0:
             out.append(f"k{k:02d} w={w:.2f} hand=({H[0]:.1f},{H[1]:.1f},{H[2]:.1f}) -> ({T2[0]:.1f},{T2[1]:.1f},{T2[2]:.1f}) "
                        f"reach {norm(to_t):.1f}/{l1 + l2:.1f}")
+    if ARGS.get("PART", "") == "doorwave":   # v1.3.2: every door asset on the continuous path
+        for fam in ("ar", "pt"):
+            for md in ("push", "pull"):
+                build_door_family(fam, md)
+        for md, nm_ in (("push", "AS_ImmLoot_DoorPushBH"), ("pull", "AS_ImmLoot_DoorPullBH")):
+            build_bh_door(src, unreal.load_asset(f"{DIR}/{nm_}"), tgt_rot, nkeys, md, nm_)
+        raise SystemExit
+    if ARGS.get("PART", "") == "knife":   # v1.3.2 ab: the knife / bolt family ("kn") + the rifle doors on the pistol's door point
+        make_kn_stance()
+        build_bh_view_table(src, tgt_rot, nkeys, base_path=KN_STANCE, name="AS_ImmLoot_GrabKnView")
+        for i in range(len(TOUCH_ELEVS) * len(TOUCH_AZIMS)):
+            build_touch_pistol(i, "kn")
+        for fam in ("kn", "ar", "arn"):
+            for md in ("push", "pull"):
+                build_door_family(fam, md)
+        out.append(f"AS_ImmLoot_KnStance (build only): deleted {EAL.delete_asset(KN_STANCE)}")
+        raise SystemExit
+    if ARGS.get("PART", "") == "bhpull":   # v1.3.2 aj: the bare-hands closes alone (ROLL = their roll about the reach)
+        DOOR_PULL_ROLL_BH = float(ARGS.get("ROLL", DOOR_PULL_ROLL_BH))
+        build_bh_door(src, unreal.load_asset(f"{DIR}/AS_ImmLoot_DoorPullBH"), tgt_rot, nkeys, "pull", "AS_ImmLoot_DoorPullBH")
+        DOOR_BH_AZIM = -DOOR_BH_AZIM
+        build_bh_door(src, unreal.load_asset(f"{DIR}/AS_ImmLoot_DoorPullBH"), tgt_rot, nkeys, "pull", "AS_ImmLoot_DoorPullBHR")
+        raise SystemExit
+    if ARGS.get("PART", "") == "al":   # v1.3.2 al: crouched / knife pickups put the item away out of view; every close on the leaf's arc
+        build_bh_view_table(src, tgt_rot, nkeys, crouch=True)
+        make_kn_stance()
+        build_bh_view_table(src, tgt_rot, nkeys, base_path=KN_STANCE, name="AS_ImmLoot_GrabKnView")
+        ARGS["PART"] = "pulls"
+    if ARGS.get("PART", "") == "pulls":   # v1.3.2 aj: every door close (thumb down): the left ones here, then doorpullr's
+        make_kn_stance()
+        for fam in ("ar", "arn", "pt", "kn"):
+            build_door_family(fam, "pull")
+        build_bh_door(src, unreal.load_asset(f"{DIR}/AS_ImmLoot_DoorPullBH"), tgt_rot, nkeys, "pull", "AS_ImmLoot_DoorPullBH")
+        ARGS["PART"] = "doorpullr"
+    if ARGS.get("PART", "") == "doorpullr":
+        # v1.3.2 af (tester: closing a door hinged on the left, the hand went to the lower left, "it should be toward the
+        # right"): every pull mirrored to the right of the view (the Blueprint picks it when the leaf's free edge is on
+        # the right): the weapon families at +22 deg (DOOR_AZIM mirrored), bare hands at +30 (DOOR_BH_AZIM mirrored)
+        DOOR_AZIM, DOOR_BH_AZIM = -DOOR_AZIM, -DOOR_BH_AZIM
+        # DOOR_RIGHT = True   # ag rolled back (tester: "this looks way worse. big regression": the arm across the screen
+        #                      over the rifle, the back of the hand to the camera): af's mirrored pull again
+        make_kn_stance()   # ag: the knife family needs its pose (af built PullKnR without it: a frozen arm)
+        DOOR_POINT_FROM["kn"] = "pt"   # the knife's own solve to the right found no point (hand 5 cm from the eye): the pistol's
+        # v1.3.2 ai (tester's choice after ag: "short touch left of the gun"): with a gun (ar / arn / pt) the right-edge
+        # pull is a short tug on the leaf LEFT of the gun (never crossing it): DOOR_TUG = elevation / azimuth from the
+        # eye, a shorter draw and drop; the knife / bolt (no gun in the way) keep the mirrored reach
+        _keep = (DOOR_ELEV, DOOR_AZIM, DOOR_PULL_STROKE, DOOR_PULL_DROP)
+        DOOR_ELEV, DOOR_AZIM, DOOR_PULL_STROKE, DOOR_PULL_DROP = DOOR_TUG
+        for fam in ("ar", "arn", "pt"):
+            DOOR_FAMILY_NAMES[(fam, "pull")] += "R"
+            build_door_family(fam, "pull")
+        DOOR_ELEV, DOOR_AZIM, DOOR_PULL_STROKE, DOOR_PULL_DROP = _keep
+        DOOR_FAMILY_NAMES[("kn", "pull")] += "R"
+        build_door_family("kn", "pull")
+        build_bh_door(src, unreal.load_asset(f"{DIR}/AS_ImmLoot_DoorPullBH"), tgt_rot, nkeys, "pull", "AS_ImmLoot_DoorPullBHR")
+        out.append(f"AS_ImmLoot_KnStance (build only): deleted {EAL.delete_asset(KN_STANCE)}")
+        raise SystemExit
+    if ARGS.get("PART", "") == "doorarn":   # v1.3.2 ae: only the near-grip rifle doors
+        for md in ("push", "pull"):
+            build_door_family("arn", md)
+        raise SystemExit
+    if ARGS.get("PART", "") == "bhview":   # v1.3.2: the standing bare-hands pickup in the view frame (LeftHand slot)
+        build_bh_view_table(src, tgt_rot, nkeys)
+        raise SystemExit
+    if ARGS.get("PART", "") == "bhviewcrouch":   # v1.3.2 e: the crouched one (FullBody additive)
+        build_bh_view_table(src, tgt_rot, nkeys, crouch=True)
+        raise SystemExit
     if pick_only:
         build_use_table(src, tgt_rot, nkeys, unreal.load_asset(BASE_BH), "AS_ImmLoot_GrabBHAdd", load_tmpl(NAME_BH, "AS_ImmLoot_GrabBHAdd"),
                         out_dir=DIR, grip_seq="src", azims=list(range(-30, 61, 5)), dists=[60], follow_pitch=True)

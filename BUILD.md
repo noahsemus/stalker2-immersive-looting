@@ -30,6 +30,13 @@ game is overridden; the only override-container package is the plugin's own subs
 | `Runtime/AS_ImmLoot_DoorPushBH` / `DoorPullBH` | AnimSequence | NewContent | Door push / pull with empty hands (`build_bh_door`) |
 | `Runtime/AS_ImmLoot_BagIn` / `BagIdle` / `BagOut`, `Runtime/AM_ImmLoot_BagIn` / `BagIdle` / `BagOut` | AnimSequence copies of the game's inventory bag animation; montages with LeftHand + RightHand slot tracks | NewContent | MCM "Bag for bodies and stashes" (default off): the arms play the game's bag animation over Skif's own posture, both hands' IK off for it (`make_bag_seq.py`, `make_bag_montages.py`; the montage slot tracks are set by hand once, build k in `zonekit/README.md`) |
 | `Runtime/AS_ImmLoot_BagPitchFix` | AnimSequence, mesh-space rotation offset, 91 frames | NewContent | Empty hands, standing, with the bag: the arms turn with the view pitch (FullBody, paused, frame = pitch down / 30; `make_bag_seq.py --arg PART=pitch`) |
+| `Runtime/AS_ImmLoot_BagFix` | AnimSequence, mesh-space rotation offset, 58 frames | NewContent | Empty hands with the bag (v1.3.2 aa): every arm bone turned to the bag animation's own orientation relative to the camera, the arm translations back to the bag's, the shoulders moved where the bag animation has them; frame 0 = reference, frame 1 + block x 19 + pitch down / 5 (block 0 standing, 1 crouch, 2 low crouch: v1.3.2 ab, the game's `StateData.bCrouching` / `bLowCrouching`; aa used the camera height). Computed by the bag simulator `zonekit/research/bag/sim` (`dump_bag.py` -> `gen_bagfix.py` -> `set_bagfix.py`) |
+| `Runtime/AS_ImmLoot_GrabKnView` | AnimSequence, local-space additive (ref frame 0), 25 x 45 frames | NewContent | Knife / bolt pickup (v1.3.2 ab): the empty-hands view-frame pickup recipe on the knife layer's pose, FullBody; `make_grab_seq.py --arg PART=knife` |
+| `Runtime/AS_ImmLoot_TouchKn0..24` | AnimSequence, 50 frames | NewContent | Knife / bolt body / stash touch per view bin (v1.3.2 ab), the touch recipe from / back to the free left hand, HandIK off only; PART=knife |
+| `Runtime/AS_ImmLoot_DoorPushKn` / `DoorPullKn` | AnimSequence, 50 frames | NewContent | Knife / bolt doors (v1.3.2 ab), the door recipe on the knife pose, HandIK off only; PART=knife (also rebuilds `DoorPush/PullAr` on the pistol's door point) |
+| `Runtime/AS_ImmLoot_DoorPushArNear` / `DoorPullArNear` | AnimSequence, 50 frames | NewContent | Long guns whose left hand rests near the body (v1.3.2 ae, picked when the live left hand is under 43 cm ahead of the eye): the Ar door with its ends at that grip; PART=doorarn |
+| `Runtime/AS_ImmLoot_DoorPull{ArR,ArNearR,PtR,KnR,BHR}` | AnimSequence | NewContent | Door close when the leaf's free edge is right of the view centre (v1.3.2 af / ai; the Blueprint's `_door_right`): with a gun a short tug left of the gun (`DOOR_TUG`), knife / bare hands mirrored. Every close (left and right): hand turned clockwise to thumb down (`DOOR_PULL_ROLL`, ak) and drawn along the leaf edge's circle (`door_edge`, al). `make_grab_seq.py --arg PART=pulls` builds every close |
+| `Runtime/AS_ImmLoot_GrabBHView` / `GrabBHViewCrouch` | AnimSequence, 25 x 45 frames (standing: LeftHand slot; crouched: local-space additive, ref frame 0) | NewContent | Empty-hands pickup in the view frame (v1.3.2 a / z); crouched and `GrabKnView`: after the grab the hand puts the item away below the screen (frames 16-44, `POCKET_DIR`, al). `--arg PART=al` rebuilds `GrabBHViewCrouch`, `GrabKnView` and every close |
 
 ## 3. Build from the committed source
 1. `powershell -File harness\tools\deploy_to_kit.ps1` (plugin + classifier lists into the kit).
@@ -46,7 +53,9 @@ To rebuild the assets themselves instead of using the committed `.uasset`s (edit
    delete them afterwards with `--arg PART=dropint`: the cook ships everything in the plugin's Content), then
    `--arg PART=grabfam` (the armed pickups `GrabAr` / `GrabPt`), `--arg PART=pat`, `--arg PART=doorfam`,
    the touches `AS_ImmLoot_TouchAr/Pt0..24` (`--arg TOUCH=0` to skip; `--arg PART=touchpt` builds only them).
-   `ue_exec.py zonekit\tools\make_bag_seq.py` (and `--arg PART=pitch`), then `make_bag_montages.py`.
+   `ue_exec.py zonekit\tools\make_bag_seq.py` (and `--arg PART=pitch`), then `make_bag_montages.py`; the empty-hands
+   bag table: `ue_exec.py zonekit\research\bag\sim\dump_bag.py`, copy `SCRATCH\bagdump.json` next to it, kit Python
+   `gen_bagfix.py`, then `ue_exec.py zonekit\research\bag\sim\set_bagfix.py --arg KEYS=<full path of bagfix_keys.json>`.
 3. `gen_subsystem_spawn.py` / `gen_actor_looting.py <out.txt>` write the event graphs as paste text; in each
    Blueprint: select all in the event graph, delete, paste, compile, save. `check_paste.py` lints the text,
    `compare_graph.py` checks the saved graph against it.

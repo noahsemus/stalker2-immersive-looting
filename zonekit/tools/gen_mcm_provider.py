@@ -58,6 +58,12 @@ SETTINGS = [
                                    "(it does not fly into the hand).",
      "bool", "HideItem", None, False),
 ]
+# v1.3.2 k (tester: "can you give me a dev debug menu in MCM to tune the values myself?"): DEV settings under their own
+# mod id (a separate entry in the MCM menu; drop them before a release and the entry is gone: MCM lists only mod ids
+# added this session). Each picks a block of a pose table the actor plays.
+MOD_ID_DEV = "Immersive Looting DEV"
+# (v1.3.2 n: the DEV settings moved to the in-game DEV panel, F7; the DEV mod id is no longer registered)
+mod_of = lambda s: s[6] if len(s) > 6 else MOD_ID
 P = "BP_MCM_ModExample1.BP_MCM_ModExample1:EventGraph."
 
 g = Graph()
@@ -108,17 +114,19 @@ def exec_pins(n):
     return n
 
 
-def self_get(var, cat, x, y):
+def self_get(var, cat, x, y, sub=None, subcat=None):
     n = Node(g, BG + "K2Node_VariableGet", nm("K2Node_VariableGet"), x, y, "", [f'VariableReference=(MemberName="{var}",bSelfContext=True)'])
-    n.pin(var, cat, out=True)
+    kw = {k_: v_ for k_, v_ in (("sub", sub), ("subcat", subcat)) if v_}
+    n.pin(var, cat, out=True, **kw)
     n.pin("self", "object", sub=SELF, hidden=True, extra=TGT)
     return n
 
 
-def self_set(var, cat, x, y, comment="", default=None):
+def self_set(var, cat, x, y, comment="", default=None, sub=None, subcat=None):
     n = exec_pins(Node(g, BG + "K2Node_VariableSet", nm("K2Node_VariableSet"), x, y, comment, [f'VariableReference=(MemberName="{var}",bSelfContext=True)']))
-    n.pin(var, cat, extra=f'DefaultValue="{default}",' if default is not None else "")
-    n.pin("Output_Get", cat, out=True)
+    kw = {k_: v_ for k_, v_ in (("sub", sub), ("subcat", subcat)) if v_}
+    n.pin(var, cat, extra=f'DefaultValue="{default}",' if default is not None else "", **kw)
+    n.pin("Output_Get", cat, out=True, **kw)
     n.pin("self", "object", sub=SELF, hidden=True, extra=TGT)
     return n
 
@@ -139,7 +147,13 @@ def make_str_array(x, y):
 
 
 common = {"ModID": MOD_ID, "AuthorName": "geoffjeffrey", "Category": "General"}
-TYPES = {"bool": "NewEnumerator0", "combo": "NewEnumerator7"}
+TYPES = {"bool": "NewEnumerator0", "combo": "NewEnumerator7", "float": "NewEnumerator2", "vector": "NewEnumerator5", "rotator": "NewEnumerator6"}
+VEC = "\"/Script/CoreUObject.ScriptStruct'/Script/CoreUObject.Vector'\""
+ROT = "\"/Script/CoreUObject.ScriptStruct'/Script/CoreUObject.Rotator'\""
+# v1.3.2 l: (pin category kwargs, the MCM value pin) per kind
+KIND = {"bool": (dict(cat="bool"), "BoolValue"), "combo": (dict(cat="int"), "ComboBoxSelectedOption"),
+        "float": (dict(cat="real", subcat="double"), "FloatValue"), "vector": (dict(cat="struct", sub=VEC), "VectorValue"),
+        "rotator": (dict(cat="struct", sub=ROT), "RotatorValue")}
 
 
 def make_opts(x, y, labels):
@@ -162,14 +176,12 @@ lifted.append(ev_r)
 prev, prev_pin = ev_r, "then"
 for k, s in enumerate(SETTINGS):
     r = Lifted(EX, P + "K2Node_Message_55", f"K2Node_Message_{920 + k}", 700 + 300 * k, 0,
-               defaults(dict(common, SettingID=s[0], SettingHoverText=s[1], Type=TYPES[s[2]])))
+               defaults(dict(common, ModID=mod_of(s), SettingID=s[0], SettingHoverText=s[1], Type=TYPES[s[2]])))
     lifted.append(r)
     link(prev, prev_pin, r, "execute")
     link(ev_r, "BPI MCM API", r, "self")
-    if s[2] == "combo":
-        xlink(r, "ComboBoxSelectedOption", self_get(s[3], "int", 650 + 300 * k, 500)[s[3]])
-    else:
-        xlink(r, "BoolValue", self_get(s[3], "bool", 650 + 300 * k, 500)[s[3]])
+    kw_, vpin_ = KIND[s[2]]
+    xlink(r, vpin_, self_get(s[3], kw_["cat"], 650 + 300 * k, 500, kw_.get("sub"), kw_.get("subcat"))[s[3]])
     xlink(r, "ComboBoxOptions", opts_for(s, 650 + 300 * k, 650))
     prev, prev_pin = r, "then"
 add = Lifted(EX, P + "K2Node_Message_0", "K2Node_Message_902", 700 + 300 * len(SETTINGS), 0, defaults({"ModID": MOD_ID}))
@@ -184,11 +196,14 @@ ev_d = Lifted(EX, P + "K2Node_Event_9", "K2Node_Event_902", 0, 1300)
 lifted.append(ev_d)
 prev, prev_pin = ev_d, "then"
 for k, s in enumerate(SETTINGS):
-    vals = dict(common, SettingID=s[0], SettingHoverText=s[1], Type=TYPES[s[2]])
+    vals = dict(common, ModID=mod_of(s), SettingID=s[0], SettingHoverText=s[1], Type=TYPES[s[2]])
     if s[2] == "combo":
         vals["ComboBoxSelectedOption"] = str(s[5])
-    else:
+    elif s[2] == "bool":
         vals["BoolValue"] = "true" if s[5] else "false"
+    elif s[2] == "float":
+        vals["FloatValue"] = f"{s[5]:.6f}"
+        vals["FloatControllerStepValue"] = "0.500000"
     d = Lifted(EX, P + "K2Node_Message_31", f"K2Node_Message_{930 + k}", 700 + 400 * k, 1300, defaults(vals))
     lifted.append(d)
     link(prev, prev_pin, d, "execute")
@@ -204,13 +219,14 @@ xlink(ev_a, "then", br["execute"])
 g.link(self_get("Registered", "bool", 150, 2800)["Registered"], br["Condition"])
 prev_exec = br["then"]
 for k, s in enumerate(SETTINGS):
-    gt = Lifted(EX, P + "K2Node_Message_66", f"K2Node_Message_{940 + k}", 700, 2600 + 300 * k, defaults({"ModID": MOD_ID, "SettingID": s[0]}))
+    gt = Lifted(EX, P + "K2Node_Message_66", f"K2Node_Message_{940 + k}", 700, 2600 + 300 * k, defaults({"ModID": mod_of(s), "SettingID": s[0]}))
     lifted.append(gt)
     xlink(gt, "execute", prev_exec)
     link(ev_a, "BPI MCM API", gt, "self")
-    st = self_set(s[3], "int" if s[2] == "combo" else "bool", 1250, 2600 + 300 * k, f"the setting {s[0]!r}")
+    kw_, vpin_ = KIND[s[2]]
+    st = self_set(s[3], kw_["cat"], 1250, 2600 + 300 * k, f"the setting {s[0]!r}", sub=kw_.get("sub"), subcat=kw_.get("subcat"))
     xlink(gt, "then", st["execute"])
-    xlink(gt, "ComboBoxSelectedOption" if s[2] == "combo" else "BoolValue", st[s[3]])
+    xlink(gt, vpin_, st[s[3]])
     prev_exec = st["then"]
 gaoc = exec_pins(Node(g, BG + "K2Node_CallFunction", nm("K2Node_CallFunction"), 1600, 2600, "the running loot actor (an exec node in UE5)",
             [f'FunctionReference=(MemberParent={GS},MemberName="GetActorOfClass")']))
@@ -228,15 +244,17 @@ g.link(gaoc["ReturnValue"], cast["Object"])
 g.link(gaoc["then"], cast["execute"])
 prev_exec = cast["then"]
 for k, s in enumerate(SETTINGS):
-    cat = "int" if s[2] == "combo" else "bool"
+    kw_, _ = KIND[s[2]]
+    cat = kw_["cat"]
+    kw2 = {k_: v_ for k_, v_ in kw_.items() if k_ != "cat"}
     sa = exec_pins(Node(g, BG + "K2Node_VariableSet", nm("K2Node_VariableSet"), 2400 + 300 * k, 2600, "into the loot actor" if k == 0 else "",
                         [f'VariableReference=(MemberParent={ACT},MemberName="{s[3]}")']))
-    sa.pin(s[3], cat)
-    sa.pin("Output_Get", cat, out=True)
+    sa.pin(s[3], cat, **kw2)
+    sa.pin("Output_Get", cat, out=True, **kw2)
     sa.pin("self", "object", sub=ACT, extra=TGT)
     g.link(prev_exec, sa["execute"])
     g.link(cast["AsBP Imm Loot Actor"], sa["self"])
-    g.link(self_get(s[3], cat, 2200 + 300 * k, 2900)[s[3]], sa[s[3]])
+    g.link(self_get(s[3], cat, 2200 + 300 * k, 2900, kw2.get("sub"), kw2.get("subcat"))[s[3]], sa[s[3]])
     prev_exec = sa["then"]
 
 out = []

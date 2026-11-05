@@ -153,7 +153,13 @@ def build(src_name, name, mode, add=False):
 LOOK_BH = "/Game/_STALKER2/Animations/Player/AnimSequences/bh/stand/fp_bh_stand_lookvertical_idle"
 
 
-def build_pitch_fix(name="AS_ImmLoot_BagPitchFix"):
+BAG_STAND_LOWER = 55.0   # v1.3.2 j: degrees the arms are lowered (turned about the shoulders) for the standing bag
+
+
+BAG_LOWERS = [5.0 * k for k in range(19)]   # v1.3.2 k: the standing table's blocks (MCM dev "backpack arm lowering")
+
+
+def build_pitch_fix(name="AS_ImmLoot_BagPitchFix", lower=0.0, posture=None, fast=False):
     """Build m (tester: empty hands, standing, "the bag happens way above the screen"; the right hand off the bag by
     7-28 cm). Probe + data: the game's bag posture turns the whole upper body with the view (the vanilla bag stays at
     (39, -17, -26) cm in view axes); the bare-hands look additive (fp_bh_stand_lookvertical_idle, mesh-space rotation
@@ -164,10 +170,10 @@ def build_pitch_fix(name="AS_ImmLoot_BagPitchFix"):
     frame f = pitch -f deg (0..90), each bone from the shoulders down gets R(p) * inverse(D_b(p)) (R = the spine's turn,
     D_b = that bone's turn in the look additive), so the arms and the bag turn with the view as one piece."""
     look = unreal.load_asset(LOOK_BH)
-    base = unreal.load_asset(BASE_BH)
+    base = unreal.load_asset(posture[0] if posture else BASE_BH)
     path = f"{DIR}/{name}"
     if not EAL.does_asset_exist(path):
-        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, unreal.load_asset(TEMPLATE))
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, unreal.load_asset(f"{DIR}/AS_ImmLoot_BagPitchFix"))
     seq = unreal.load_asset(path)
     tracks = [str(t) for t in AL.get_animation_track_names(base)]
     par = {b: ([str(x) for x in AL.find_bone_path_to_root(base, b)] + [None])[1] for b in tracks}
@@ -186,18 +192,66 @@ def build_pitch_fix(name="AS_ImmLoot_BagPitchFix"):
     base_rot = cs_time(base, 0.0)
     base_loc = {b: AL.get_bone_pose_for_frame(base, b, 0, False) for b in tracks}
     lb = cs_time(unreal.load_asset(look.get_editor_property("ref_pose_seq").get_path_name()), 0.0)   # the look additive's own base
+    # v1.3.2 j (tester, empty hands, standing: the backpack "top left, the right arm clips into the view"; the 1.3.1
+    # release the same; crouched right. Probe, bag in view axes (fwd, right, up): standing at -59 the Idle sat at
+    # (45, -28, +17), at -32 the In's end at (29, -27, +9); crouched (pose table at frame 0, the low-crouch look turns
+    # everything rigidly) at (41, -16, -26) = the game's own bag (39, -17, -26). Between -32 and -59 the table turned
+    # the arms with the view (~87%), so the standing error is a constant ~50 deg: the bag's arm keys (from the game's
+    # backpack posture, a forward-bent spine) sit that much higher on the upright bare-hands stance than crouched).
+    # `lower` > 0: every frame's arms are turned down by that much more (the spine's own look turn at that angle,
+    # about the shoulders), against an extra last frame = the uncorrected frame 0 (the additive's reference)
+    # v1.3.2 k: `lower` = a list: one block of 91 frames per lowering (frame = block * 91 + pitch), then the reference
+    lowers = lower if isinstance(lower, list) else ([lower] if lower else [])
+    # v1.3.2 w (tester: v's spine fix in UpperBody "makes me crouch, the backpack above my head" standing and "my head
+    # exits my body" crouched): the empty-hands bag needs the rifle posture's spine (the bag's arm keys hang from it).
+    # `posture` = (bare-hands idle, rifle idle): hips and spine_01-03 turned (mesh space) to the rifle idle's, and the
+    # arms turned with spine_03's turn on top of the pitch fix; one block + an extra last frame (no change) as reference
+    SPINE = ["jnt_hips", "jnt_spine_01", "jnt_spine_02", "jnt_spine_03"]
+    dS = None
+    if posture:
+        ar_rot = cs_time(unreal.load_asset(posture[1]), 0.0)
+        dS = {b: qmul(ar_rot[b], qinv(base_rot[b])) for b in SPINE}
+        lowers = [0.0]
+        out.append(f"{name}: spine turns to the rifle idle " + ", ".join(f"{b} {math.degrees(2 * math.acos(min(1.0, abs(dS[b][3])))):.1f}" for b in SPINE))
+    def lq_for(L_):
+        if dS is not None:
+            return dS["jnt_spine_03"]   # w: the arms turn with spine_03
+        if not L_:
+            return None
+        ll = cs_time(look, (90.0 + L_) / 180.0 * look.get_play_length())
+        return qmul(ll["jnt_spine_03"], qinv(lb["jnt_spine_03"]))
+    lqs = [lq_for(L_) for L_ in lowers]
     N = 91
     keys = {b: ([], [], []) for b in tracks}
-    for f in range(N):
+    NB = max(1, len(lowers))
+    la_cache = {}
+    # v1.3.2 z: the reference FIRST when `fast` (frame 0 = no change, the data from frame 1). In game, every table with
+    # its reference on an extra LAST frame (j, k, w, x) turned the arms ~100+ deg up and back (k: the bag "up and behind
+    # the camera"; x's probe: the hands at the shoulders / behind the head on an identity frame), while the tables
+    # referenced on frame 0 (the pitch fix, the pickup tables) work
+    ref_first = bool(lowers) and fast
+    for fi in range(N * NB + (1 if lowers else 0)):
+        ref_frame = (fi == 0) if ref_first else (fi == N * NB)   # (lower) the reference: frame 0 without the lowering
+        fj = fi - 1 if ref_first else fi
+        # v1.3.2 x `fast`: the lowering is the fast axis (frame = pitch x NB + block: a fractional position blends two
+        # adjacent lowerings, for the Blueprint's servo)
+        f = 0 if ref_frame else (fj // NB if fast else fj % N)
+        lowq = None if ref_frame or not lowers else lqs[fj % NB if fast else fj // N]   # (k: was `lq`, clobbered by the local below)
         p = -float(f)
-        la = cs_time(look, (90.0 - p) / 180.0 * look.get_play_length())
+        if f not in la_cache:
+            la_cache[f] = cs_time(look, (90.0 - p) / 180.0 * look.get_play_length())
+        la = la_cache[f]
         D = {b: qmul(la[b], qinv(lb[b])) for b in tracks}
         R = D["jnt_spine_03"]
         want = {}
         for b in order:
             want[b] = qmul(qmul(R, qinv(D[b])), base_rot[b]) if b in arms else base_rot[b]
+            if lowq is not None and b in arms:
+                want[b] = qmul(lowq, want[b]) if dS is None else qmul(qmul(qmul(R, lowq), qinv(D[b])), base_rot[b])
+            if dS is not None and not ref_frame and b in SPINE:
+                want[b] = qmul(dS[b], base_rot[b])
         for b in tracks:
-            if b in arms:
+            if b in arms or (dS is not None and b in SPINE):
                 lq = qmul(qinv(want[par[b]]), want[b]) if par[b] else want[b]
                 q = unreal.Quat(*lq)
             else:
@@ -205,14 +259,14 @@ def build_pitch_fix(name="AS_ImmLoot_BagPitchFix"):
             keys[b][0].append(base_loc[b].translation)
             keys[b][1].append(q)
             keys[b][2].append(base_loc[b].scale3d)
-        if f in (0, 30, 60, 90):
+        if fi in (0, 30, 60, 90) and not fast:
             out.append(f"PITCHFIX pitch {p:+.0f}: spine turn {math.degrees(2 * math.acos(min(1.0, abs(R[3])))):.0f} deg, "
                        f"l_hand look turn {math.degrees(2 * math.acos(min(1.0, abs(D['jnt_l_hand'][3])))):.0f}, "
                        f"r_hand look turn {math.degrees(2 * math.acos(min(1.0, abs(D['jnt_r_hand'][3])))):.0f}")
     ctrl = seq.get_editor_property("controller")
     ctrl.open_bracket("ImmLoot pitch fix", True)
     ctrl.remove_all_bone_tracks(True)
-    ctrl.set_number_of_frames(unreal.FrameNumber(N - 1), True)
+    ctrl.set_number_of_frames(unreal.FrameNumber(N * NB - (0 if lowers else 1)), True)
     for b in tracks:
         ctrl.add_bone_curve(b, True)
         ctrl.set_bone_track_keys(b, *keys[b], True)
@@ -223,14 +277,93 @@ def build_pitch_fix(name="AS_ImmLoot_BagPitchFix"):
         AL.remove_curve(seq, c, False)
     seq.set_editor_property("additive_anim_type", unreal.AdditiveAnimationType.AAT_ROTATION_OFFSET_MESH_SPACE)
     seq.set_editor_property("ref_pose_type", unreal.AdditiveBasePoseType.ABPT_LOCAL_ANIM_FRAME)
-    seq.set_editor_property("ref_frame_index", 0)
+    seq.set_editor_property("ref_frame_index", 0 if (not lowers or ref_first) else N * NB)
     out.append(f"{name}: {len(tracks)} tracks ({len(arms)} arm bones corrected), {N} frames, len {seq.get_play_length():.3f}, "
                f"additive {seq.get_editor_property('additive_anim_type')}, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
 
 
+AR_STAND = "/Game/_STALKER2/Animations/Player/AnimSequences/ar/common/stand/fp_ar_idle_stand"
+AR_CROUCH = "/Game/_STALKER2/Animations/Player/AnimSequences/ar/common/crouch/fp_ar_idle_crouch"
+BH_CROUCH = "/Game/_STALKER2/Animations/Player/AnimSequences/bh/crouch/fp_bh_idle_crouch"
+
+
+def build_spine_fix(name="AS_ImmLoot_BagSpine"):
+    """v1.3.2 v (tester: the backpack looks right with a weapon out, wrong with empty hands): the bag's arm keys (from
+    the shoulders down, LeftHand / RightHand masks) hang from jnt_spine_03, and the rifle posture's spine_03 sits
+    25 deg bent forward and 10 cm further forward than the bare-hands one (shoulders 20 cm forward, 6 cm lower;
+    crouched 23 deg / 24 cm). With a weapon the bag lands right. This local-space additive moves the bare-hands
+    jnt_spine_03 onto the rifle idle's (component space; spine_01 / 02, hips and the camera untouched): frame 0 = the
+    reference (bare-hands stand), frame 1 = standing, frame 2 = crouched. Played paused in UpperBody (UpperGroup,
+    before the hand slots, which only cover shoulder-down) while the bag is out with empty hands."""
+    tmpl = unreal.load_asset(f"{DIR}/AS_ImmLoot_GrabAr")
+    path = f"{DIR}/{name}"
+    if not EAL.does_asset_exist(path):
+        unreal.AssetToolsHelpers.get_asset_tools().duplicate_asset(name, DIR, tmpl)
+    seq = unreal.load_asset(path)
+    b = "jnt_spine_03"
+    def cs_tr(seq_, bone):
+        q, pp = (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0)
+        for bb in reversed([str(x) for x in AL.find_bone_path_to_root(seq_, bone)]):
+            t = AL.get_bone_pose_for_frame(seq_, bb, 0, False)
+            pp = tuple(a_ + c_ for a_, c_ in zip(pp, qrot(q, (t.translation.x, t.translation.y, t.translation.z))))
+            q = qmul(q, (t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w))
+        return pp, q
+    def fix(bh_path, ar_path):
+        bh, ar = unreal.load_asset(bh_path), unreal.load_asset(ar_path)
+        p2, q2 = cs_tr(bh, "jnt_spine_02")          # the bare-hands parent
+        pa, qa = cs_tr(ar, b)                       # where the rifle posture has spine_03
+        lq = qmul(qinv(q2), qa)                     # spine_03's local that puts it there
+        lt = qrot(qinv(q2), tuple(x - y for x, y in zip(pa, p2)))
+        cur = AL.get_bone_pose_for_frame(bh, b, 0, False)
+        cq = (cur.rotation.x, cur.rotation.y, cur.rotation.z, cur.rotation.w)
+        dq = qmul(lq, qinv(cq))                     # local additive: rotation delta (left) and translation delta
+        dt = tuple(x - y for x, y in zip(lt, (cur.translation.x, cur.translation.y, cur.translation.z)))
+        return dq, dt
+    base = unreal.load_asset(BASE_BH)
+    ref = AL.get_bone_pose_for_frame(base, b, 0, False)
+    rq = (ref.rotation.x, ref.rotation.y, ref.rotation.z, ref.rotation.w)
+    rt = (ref.translation.x, ref.translation.y, ref.translation.z)
+    pos, rot, scl = [unreal.Vector(*rt)], [unreal.Quat(*rq)], [ref.scale3d]
+    for bh_p, ar_p, label in ((BASE_BH, AR_STAND, "stand"), (BH_CROUCH, AR_CROUCH, "crouch")):
+        dq, dt = fix(bh_p, ar_p)
+        pos.append(unreal.Vector(*(a_ + d_ for a_, d_ in zip(rt, dt))))
+        rot.append(unreal.Quat(*qmul(dq, rq)))
+        scl.append(ref.scale3d)
+        out.append(f"spine fix {label}: turn {math.degrees(2 * math.acos(min(1.0, abs(dq[3])))):.1f} deg, move {tuple(round(x, 1) for x in dt)} cm")
+    ctrl = seq.get_editor_property("controller")
+    ctrl.open_bracket("ImmLoot bag spine fix", True)
+    ctrl.remove_all_bone_tracks(True)
+    ctrl.set_frame_rate(unreal.FrameRate(30, 1), True)
+    ctrl.set_number_of_frames(unreal.FrameNumber(2), True)
+    ctrl.add_bone_curve(b, True)
+    ctrl.set_bone_track_keys(b, pos, rot, scl, True)
+    ctrl.close_bracket(True)
+    for tn in [str(t) for t in AL.get_animation_notify_track_names(seq)]:
+        AL.remove_animation_notify_events_by_track(seq, tn)
+    for cn in [str(x) for x in AL.get_animation_curve_names(seq, unreal.RawCurveTrackTypes.RCT_FLOAT)]:
+        AL.remove_curve(seq, cn, False)
+    seq.set_editor_property("additive_anim_type", unreal.AdditiveAnimationType.AAT_LOCAL_SPACE_BASE)
+    seq.set_editor_property("ref_pose_type", unreal.AdditiveBasePoseType.ABPT_LOCAL_ANIM_FRAME)
+    seq.set_editor_property("ref_frame_index", 0)
+    out.append(f"{name}: 3 frames, saved {EAL.save_loaded_asset(seq, only_if_is_dirty=False)}")
+
+
 try:
+    if ARGS.get("PART", "") == "spine":
+        build_spine_fix()
+        raise SystemExit
+    if ARGS.get("PART", "") == "servo":   # v1.3.2 x: the empty-hands bag (servoed): lowering -60..+60 in 5s, fast axis
+        build_pitch_fix("AS_ImmLoot_BagServo", [5.0 * k for k in range(-12, 13)], fast=True)
+        raise SystemExit
+    if ARGS.get("PART", "") == "posture":   # v1.3.2 w: the empty-hands bag tables (standing / crouched)
+        build_pitch_fix("AS_ImmLoot_BagPitchFixBH", posture=(BASE_BH, AR_STAND))
+        build_pitch_fix("AS_ImmLoot_BagPitchFixBHCrouch", posture=(BH_CROUCH, AR_CROUCH))
+        raise SystemExit
     if ARGS.get("PART", "") == "pitch":
         build_pitch_fix()
+        raise SystemExit
+    if ARGS.get("PART", "") == "pitchstand":   # v1.3.2 j: the standing bag's table (arms lowered)
+        build_pitch_fix("AS_ImmLoot_BagPitchFixStand", BAG_LOWERS)   # v1.3.2 k: all blocks (MCM dev picks one)
         raise SystemExit
     build("AS_fp_backpack_inventory_in", "AS_ImmLoot_BagIn", "in")
     build("AS_fp_backpack_inventory_out", "AS_ImmLoot_BagOut", "out")

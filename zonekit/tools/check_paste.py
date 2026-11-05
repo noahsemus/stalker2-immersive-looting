@@ -19,6 +19,12 @@ for (n, pid), (pname, links, _) in pins.items():
         if (ln, lp) not in pins or (n, pid) not in pins[(ln, lp)][1]:
             bad += 1
             print("one-sided link:", n, pname, "->", ln)
+for (n, pid), (pname, links, line) in pins.items():
+    # v1.3.2: an exec OUTPUT may have one link only (the editor refuses to compile: "Exec output pin cannot have more
+    # than one connection")
+    if 'PinCategory="exec"' in line and 'EGPD_Output' in line and len(links) > 1:
+        bad += 1
+        print("exec output with", len(links), "links:", n, pname)
 for klass, name, body in blocks:
     comment = re.search(r'NodeComment="([^"]*)"', body)
     for pn in ("execute", "Exec"):

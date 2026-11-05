@@ -132,6 +132,15 @@ harness on 2026-10-09.
   asset registry and not in combat. Dev probes still in (touch aim T11, pull values; unused var `BagLayer`). Zip in
   `zonekit/builds/v1.3.1/`, GitHub release v1.3.1.
 
+- 2026-11-05 v1.3.2 released (Noah: "i think it's good! we did it! let's cut a new release finally"; build al
+  unchanged, zip in `zonekit/builds/v1.3.2/`, GitHub release v1.3.2): standing / crouched empty-hands pickups in the
+  view frame (crouched and knife / bolt put the item away below the screen), empty-hands backpack fixed
+  (`AS_ImmLoot_BagFix`, stance from `StateData`), knife / bolt "kn" family (pickup, touch, doors; grenade vanilla),
+  item copy keeps its materials, own-backpack scan (untested), doors: closes reach the free edge (`_door_right`, R
+  assets), thumb-down clockwise grip, follow the leaf's arc; rifle doors on the pistol's point, near-grip long guns
+  (`ArNear`). Actor graph paginated (7 pages, `zonekit/paste/BP_ImmLootActor/`). Leftovers shipped: unreferenced DEV
+  assets, probe variables. Tested on game 2.1.
+
 ## Key facts (kit research 2026-10-09; details and citations in the research file)
 - Loose items = `BP_StaticItemContainer_C` / `BP_SkeletalItemContainer_C` (parent `InteractableItemContainer`,
   `CoreVariables.cfg:888-889`), visual in `MeshComponent`; pickup is instant and has no BP-visible "item added" event.

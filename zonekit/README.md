@@ -687,3 +687,459 @@ mod go to `harness/docs/` instead (promote them).
   component Y; the left hand was on the target and the right 26 cm to its right). Pat table rebuilt (patscan: largest
   step 44 deg, bh bin 20 (up-left) right forearm on the way back; others <= 32).
 - n3k (tester: stashes too, "yes"): every touch bin 15 deg below the target (bodies and stashes).
+
+## 2026-10-17 — after v1.3.1: standing empty-hands pickup
+- Tester (1.3.1, standing, empty hands): "reach too low". Scan of the 1.3.0 table (FK, base pose): looking steeply
+  down the hand ended far off (elev -80: hand point at az -159), elsewhere ~as 1.2.0. Cause: follow_pitch keyed only
+  the shoulder's ROTATION but solved the arm as if the joint swung about jnt_spine_03. Rebuilt with the real joint:
+  FK matched 1.2.0 within 1-2 deg, but in game "janky: the arm stretches (EMPERORTECH's sleeve again), the item too
+  high in the palm (a finger in front of it), the hand way off to the side looking down". The standing look turns the
+  spine with the view but counter-turns the arms: a turned shoulder in a local-space FullBody additive lands
+  unpredictably; the 1.2.0 table only worked through measured aim corrections. Tester: "proper fix".
+- v1.3.2 a: standing = the bag's pitch fix (FullBody, frame = view pitch, `PickFix`) + `AS_ImmLoot_GrabBHView` in the
+  LeftHand slot (`make_grab_seq.py` PART=bhview, `build_bh_view_table`): built in the view frame on fp_bh_idle_stand,
+  25 segments (elevation -45..+15 x azimuth -30..+30 of the item seen from the eye, view axes), the hand's item
+  point on the eye -> item line at 0.95 of the arm length from the arm root (FK error 0.00 cm), the vanilla grab's
+  fingers, IK off at each segment start. Crouched unchanged (`GrabBHAddCrouch`). The old standing node (`mpb`,
+  `AS_ImmLoot_GrabBHAdd`) is unwired (dead; delete at the release cleanup).
+- v1.3.2 a, first paste: the LeftHand pickup node's Asset came in EMPTY (the table was made headless with the editor closed; the reopened editor had not registered it when the paste ran): no reach, the copy flew to the resting hand. Re-paste after the editor loaded the asset.
+- v1.3.2 b (tester: "do all the fixes we can now", after Nexus reports): (1) keunou96 "door animations distorted when
+  holstered": an empty-hands door touch while standing also plays the pitch fix (`PickFix`) before its LeftHand asset;
+  (2) SavageAdy "disable fly animation, it's still there" (wanted no item): MCM "Hide items in the hand" (`HideCopy`,
+  default off) = no copy (`PendingCopy` false); (3) WieSlav1280 "cursor slows down in the backpack / PDA": menu gate
+  at the tick start: PDA open (`PC.IsUsingPDA`) or the player's own inventory (`InvOpen`, `LootKind` 0) with nothing
+  of ours under way (touch state, reach, use, bag, pat, pitch fix, door, note, pending reach, copy) -> only the
+  loot-window steps run. Not reproduced / not addressed: freshtendrils94 (GPU driver crash, RX 9070, no details),
+  SavageAdy "hands like a washing machine after sprinting" (needs a repro), keunou96 light-source interactions (a
+  feature).
+- v1.3.2 b tested (tester): "hide items in hands as an option? we don't need that"; standing empty hands "still a bit
+  of stretching in the arm, particularly looking down, and the hand is too much in the middle of the screen";
+  crouched empty hands "it still doesn't fully go into the hand: the fingers in front of the item instead of it
+  looking clasped".
+- v1.3.2 c: "Hide items in the hand" removed (MCM and actor; `HideCopy` vars left unused); the view table's hand line
+  10 deg down and 6 deg left of the item (`BHVIEW_OFF`), reach 0.88 of the arm (was 0.95); empty hands: the copy's
+  centre off the palm point by half its thinnest box size + 0.5 cm along the palm normal (wrist -> middle knuckle x
+  pinky -> index knuckle, the sign away from the camera).
+- v1.3.2 c tested (tester): standing empty-hands grabs "look good"; crouched "still look bad, and now after the item
+  is in the hand it pops even higher above the hand". Scan (palmsign): the thumb sits 4.8-4.9 cm on the -n side
+  (n = wrist -> middle knuckle x pinky -> index knuckle) in the vanilla grab, the view table and the crouch table;
+  the camera-facing sign test flipped as the hand came back up (the item jumped through the hand).
+- v1.3.2 d: the palm side is fixed at -n.
+- v1.3.2 d, doors (tester: "make the door animation more of a continuous push / wave; I can see the hand stop at the
+  end before it goes down; it shouldn't stop"): every door asset's hand path is one cubic Hermite through timed keys
+  (`wave_path`, Catmull-Rom tangents, zero only at the ends): push = rest -> near the door -> the door -> a
+  follow-through 3 cm on / 2 cm down (`DOOR_FOLLOW`) -> rest, pull = rest -> handle -> drawn back -> rest (the handle
+  hold dropped); with a weapon through the arcs' midpoints (the arc under the weapon kept). The Blueprint no longer
+  holds a door touch at its touch frame (`bhold` skips `DoorTouch`): the asset plays out in one go. PART=doorwave.
+- v1.3.2 d tested (tester): crouched empty hands "still not truly in the palm, I can see the full hand in front of it,
+  the fingers too"; the backpack on a stash "way up on the left of the screen" (screenshot: standing, looking down at
+  a backpack stash on a seat, no window).
+- v1.3.2 e: crouched empty-hands pickups = `AS_ImmLoot_GrabBHViewCrouch` (PART=bhviewcrouch: the view-frame table on
+  fp_bh_idle_crouch as a FullBody local-space additive; the crouched look turns the arms with the view, so no pitch
+  fix), segment from the view-relative bins as standing; the body-frame crouch table (`mpbc`) unwired.
+- v1.3.2 e, first paste: "Exec output pin cannot have more than one connection": the standing chain's link to the reach steps looked up the last "count (probe)" node, now the crouched one (linked twice). Fixed with explicit lookups; check_paste.py now reports exec outputs with more than one link.
+- v1.3.2 e tested (tester): crouched pickups "the hand is too high off the screen"; the backpack the same. The probe
+  logged nothing (it had latched onto the main-menu world's actor: fixed, it now prefers an actor outside
+  MainMenuMap and drops one whose tick count stops).
+- v1.3.2 f: crouched, the arms stay in the body frame (build 48: a crouched segment lands at index - view pitch - 37),
+  so the view-frame crouch table aimed at the view elevation sent the hand up and off the screen when looking down.
+  `AS_ImmLoot_GrabBHViewCrouch` rebuilt on the body-frame elevations (-80..+25, 8 rows x the 5 touch azimuths = 40
+  segments, the same reach / hand-line offset as standing); the Blueprint picks its segment from the item's mesh-frame
+  elevation / azimuth from the camera bone (`_el` / `_az`, as the old crouch table). The bag stays a probe run.
+- v1.3.2 g (tester: "no logger-only runs, include a fix"), the backpack on a stash with empty hands: the pose table
+  (`AS_ImmLoot_BagPitchFix`) is a FullBody dynamic montage; any other FullBodyGroup montage stops it and
+  `PitchFixMont` stays a valid object, so the per-tick frame set (gated on IsValid only) went to a stopped montage and
+  the arms stayed level (looking down = the bag high up on the left). Heal (`_sqpf` then_7): bag out, `BagWeapon`
+  false, the pose table not `Montage_IsActive`? played again paused from the view's frame (`NPitchHeal`);
+  `PitchFixAlive` now = valid AND active. Same cook as v1.3.2 f (crouched body-frame table).
+- v1.3.2 f/g tested (tester): crouched "still doesn't really look like it is in the hand" (screenshot: the can lies
+  right of and below the fingers; standing looks better); backpack "no change, goes top left, the right arm clips into
+  the view". Probe (stash, standing, pitch -49): the pose table WAS active all along at the frame of the view pitch
+  (PitchFixAlive true, PitchFixPos 1.64, NPitchHeal 0): g's guess was wrong. The window opens on the bag's first tick
+  (In hidden behind it, the In reaches the Idle while the window is open), so the tester sees only the close (Idle ->
+  Out -> held at 0.6 s -> gone 0.67 s after the close). Bag assets / pitch table unchanged since checkpoint-bag.
+- v1.3.2 h: crouched, the held copy's build 48 "+5 cm to the camera's right" (a correction for the old crouch table)
+  is 0. Bag probe (no behaviour change): the bag, both hands and jnt_camera in view axes (`BagV*`, `RHandV*`,
+  `LHandV*`, `CamBoneV*`), the pose table's real montage position (`PitchFixReal`), which bag montage is active.
+- v1.3.2 i (REVERTED, tester: "don't change the functionality of the animation"; was: "try and fix the backpack; it works in the release, so it is something we are doing here"): the
+  generator diff to 1.3.1 leaves the bag path itself unchanged (only the shared pitch-fix upkeep: `PickFix` added to
+  the frame-set OR and the stop's NOT, and the heal). Screenshot (v1.3.2 d): the bag huge at the top left, its strap
+  across the view, no window = the In's first part (the bag off the back over the left shoulder). Since 1.3.1 the
+  stash window opens on the bag's first tick; the bag showed from its 3rd tick under the window's fade in / out. Now
+  `_bsh` also needs `InvOpen` false: hidden while the loot window is open, shown at the close (Idle) before the Out.
+- Full paste diff 1.3.1 -> now (node class / function / comment / pin defaults): every 1.3.1 node is still there
+  unchanged except build h's crouched +5 cm select; the 208 added nodes are the pickup / door pitch fix, the crouched
+  table, the menu gate, the heal and probes. No bag node, bag asset, montage or pitch table changed.
+- Control test (tester: "let's try the control test"): the v1.3.1 release paks installed as the test pak (dev build backed up in the session scratchpad), logger off.
+- v1.3.2 h cooked and installed (dev build back in place of the 1.3.1 control; control result: 1.3.1 shows the same backpack fault at the crane-cabin stash). Logger on.
+- v1.3.2 h tested (tester): crouched pickups "ok but sometimes too low", "the hand needs to be rotated clockwise so the
+  bottle items look actually held"; backpack still wrong standing ("the right arm clips into the backpack as if it is
+  too high"), "looks better when crouching". Probe (bag in view axes fwd / right / up, PCM camera = jnt_camera):
+  standing -59 Idle (45, -28, +17); standing -32 In end (29, -27, +9); crouched -25 Idle (41, -16, -26) = the game's
+  own (39, -17, -26). The pose table turned the arms ~87% with the view between -32 and -59: the standing error is a
+  constant ~50 deg (the bag's arm keys on the upright bare-hands stance), not the pitch fix.
+- v1.3.2 j: standing empty-hands bag = `AS_ImmLoot_BagPitchFixStand` (make_bag_seq PART=pitchstand: the pose table
+  with the arms turned down a further `BAG_STAND_LOWER` 55 deg, the spine's own look turn, about the shoulders; extra
+  last frame 91 = the uncorrected frame 0 as the additive's reference), chosen at the bag start when the camera is
+  130 cm+ above the feet; crouched keeps `AS_ImmLoot_BagPitchFix`. g's heal removed. Crouched pickup table: hand line
+  3 deg under the item (was 10), hand rolled 30 deg clockwise about the reach (`BHVIEW_OFF_CROUCH`, `BHVIEW_ROLL_CROUCH`).
+- v1.3.2 j bug (found building k, never cooked into a test the tester ran... j was pasted but not cooked): the lowering
+  quaternion in `build_pitch_fix` was named `lq`, the same name as the per-bone local rotation in the frame loop, so
+  from frame 1 on the "lowering" was the last arm bone's local rotation. Renamed (`lowq`).
+- v1.3.2 k (tester: "can you give me a dev debug menu in MCM to tune the values myself?"): MCM mod id
+  "Immersive Looting DEV" (its own menu entry; dropped before a release) with three dropdowns on BP_ImmLootMCM ->
+  actor: "Backpack arm lowering (standing)" 0..90 in 5s (`DevBagLower`, default 55): `AS_ImmLoot_BagPitchFixStand` =
+  19 blocks x 91 frames + the reference (frame = block x 91 + pitch; `StandFixMont` marks it for the frame step);
+  "Crouched pickup hand roll" 0/15/30/45/60 (`DevCrouchRoll`, default 30): `AS_ImmLoot_GrabBHViewCrouch` = 5 roll
+  blocks x 40 segments; "Crouched pickup reach height" -15..+15 in 5s (`DevCrouchElev`, default 0): a bias on the
+  item's elevation before the 15 deg row binning. Table checks: block k's shoulder 5k deg from block 0, ref = block 0
+  frame 0.
+- v1.3.2 k cooked and installed (actor + MCM pasted; MCM compile notes = the usual interface-to-self infos).
+- v1.3.2 k tested (tester): "backpack was too high no matter what setting"; "give me full control over every axis
+  with sliders"; crouched "the rotation was only in one axis"; "the fingers rotate backwards when picking up an item
+  crouched, they look broken". Probe: the k lowering was applied (PitchFixReal = block x 91 + pitch) and moved the
+  bag UP and BEHIND the camera (block 11: Idle at (-44, -27, +36); block 18: (-12, -27, +46)): the spine's look turn
+  used as "down" turns the arms up about the shoulders. Slot groups (all player montages): DefaultGroup = DefaultSlot,
+  LeftHand, RightHand, CameraSlot, WeaponSlot, DeathSlot; ActionGroup = MainActionSlot, SecondaryActionSlot, Gadget*;
+  UpperGroup = UpperBody; FullBodyGroup = FullBody; PreActionGroup = PreActionFullbodySlot; CutsceneGroup = CutsceneSlot.
+  MCM float / int / vector / rotator settings are spin boxes (WBP_MCM_SettingFloat / Rotator: SpinBox).
+- v1.3.2 l: the k tables reverted (standing bag = the plain pose table; crouched table one block). Live DEV offsets
+  (`make_dev_offsets.py`): local-space additive grids `AS_ImmLoot_DevArmRot` (both shoulders, spine frame, 25^3 at 5
+  deg), `DevArmPos` (21^3 at 1.5 cm), `DevHandRot` (left hand, own axes, 25^3 at 7.5 deg), played through montage
+  assets `AM_ImmLoot_Dev*` in FullBody (Montage_Play without stopping others, after the pose table's dynamic montage),
+  paused, the frame from the MCM values every tick (fastest axis continuous). MCM DEV: rotator / vector / float spin
+  boxes for the standing and crouched bag arms, the crouched hand, the crouched reach height. Crouched fingers: the
+  vanilla grab's change from its own first frame on the game's fingers (was its absolute pose as an additive).
+- v1.3.2 m (tester: "give me bigger ranges, way bigger"): the DEV grids keep their frame counts (the montages keep
+  their length) with exponentially spaced values: rotations 0, 2, 4.7, 8.2, 12.9, 19, 27.5, 39, 53, 73, 99, 134, 180
+  deg each way (A 6.054235, B 1.330347), positions 0, 0.5, 1.2, 2.3, 3.9, 6.3, 9.8, 14.9, 22.5, 33.6, 50 cm (A
+  1.054993, B 1.473937); the Blueprint's index = sign(v) ln(|v| / A + 1) / ln B. The montages were still DefaultSlot
+  after the tester's "done" (slot change not saved).
+- v1.3.2 m cooked and installed (montage slots FullBody verified, actor + MCM pasted clean).
+- v1.3.2 m tested (tester): "the crouch pickup animation doesn't play"; MCM "doesn't have sliders, no labels, axis,
+  min-max, defaults"; asked for a ZST-style custom live menu, dev only. Probe: PitchFixAlive false through all four
+  bags and the crouched pickups showed nothing: **Montage_Play of a montage asset in FullBody (bStopAllMontages false)
+  stopped our paused dynamic FullBody pose table in the same group** (one montage per slot group, whatever the flag):
+  the l DEV offsets broke the tables. Tester chose the panel + a post-process pose layer.
+- v1.3.2 n (DEV only, `IMMLOOT_DEV=1`): l's montage offsets removed (the `AS/AM_ImmLoot_Dev*` assets are unused now),
+  MCM DEV entries removed. New `/ImmersiveLooting/Dev/`: `ABP_ImmLootDevPose` (post-process, parent AnimInstancePlayer;
+  Transform (Modify) Bone on both shoulders and the left hand, rotation / translation added in WORLD space, bound to
+  ArmRot / ArmPos / HandRot / ArmAlpha / HandAlpha; graph from `gen_abp_devpose.py`, Input / Output pose wired by hand),
+  `W_ImmLootDev` (designer paste from `dev_panel.py`: Python cannot edit a widget tree and UWidget has
+  DontUseGenericSpawnObject, so no runtime Construct; an AssetExportTask with ObjectExporterT3D on transient widgets
+  writes the designer's clipboard format). Actor (`gen_actor_dev.py`): the layer attached once ~2 s in (mesh-swap
+  path, never Reinit), F7 panel (17 sliders, `dev_params.py`: bag standing / crouched arm turn + move, crouched hand
+  turn, reach height, time scale; labels show range, default, live value), F8 reset, F9 backpack preview (the real
+  bag path, held at its Idle). Values turned from view axes to world space each tick. ImmersiveDialogue (its own
+  post-process layer) must be off while the dev pak is in.
+- v1.3.2 n cooked and installed (panel, pose layer, actor, MCM pasted clean).
+- v1.3.2 n tested (tester): "crashed loading into a save" (twice, 15:38 / 15:40). Log: AV reading 0x0 in game code;
+  the probe's last line NTicks=121 = the tick our DEV attach ran (NTicks > 120): the mesh swap with
+  `ABP_ImmLootDevPose` parented to AnimInstancePlayer crashed at load. ImmersiveDialogue's layer of the same parent is
+  a full copy of AnimBP_Player fed the main instance's data; a bare AnimInstancePlayer subclass is not safe.
+- v1.3.2 n2: `ABP_ImmLootDevPose` reparented to plain AnimInstance (Campfires installed a plain-AnimInstance layer
+  while standing without a crash; its crashes came with native sits). No paste; cooked.
+- v1.3.2 n2 tested: still crashed "at the loading screen, before I even get into the save": same address
+  (0x7ff604463993, AV 0x0) on the tick NTicks passed 120: the actor ticks during the loading screen; parent class not
+  the cause. n3: the layer attaches at the first F7 press (`DevWantAttach`), in play.
+- 2026-10-30: game updated to 2.1 (exe 10-30; Zone Kit still the 2026-09 build). The n2 dev pak (crashes at load) parked in the scratchpad (devpak_n2); the v1.3.1 release installed as the test pak for a 2.1 compatibility check; logger off. n3 (attach on F7) generated, not pasted.
+- 2026-10-30 (tester): on 2.1 every other mod works, ImmersiveDialogue does not; 1.3.1 shows the known unarmed / crouched grab issues (expected: the 1.3.2 fixes are not in it).
+- 2026-10-30: the Zone Kit updated too (ProjectVersion 2.1.0, 15:18-15:39). A second agent (ImmersiveDialogue) works on
+  this PC in parallel: harness coordination board added (`harness/tools/coord.ps1`, `docs/coordination.md`, c69d11a).
+  Our n3 cook waits behind its cook (Wait-UatFree); its game run goes first.
+- n3 cooked and installed (16:10). The unused l / j assets (AS/AM_ImmLoot_Dev*, AS_ImmLoot_BagPitchFixStand) had fallen into the override pak once off the NewPackages list: deleted from the kit and the repo mirror.
+- 2026-10-30 (tester: "the mods must be compatible, I am testing both at the same time; the harness should know
+  this"): harness rule added (coordination.md: one run tests every agent's build, merged test lists; dev tools may
+  not take an exclusive resource another installed mod uses). Player AnimBP order (AnimBP_Player AnimGraph): ... ->
+  FullBody -> LayeredBoneBlend -> BlendListByBool -> DeathSlot -> CutsceneSlot -> CacheBlend -> ControlRig -> Root.
+- v1.3.2 o: the F7 panel's backend moved off the post-process layer (ImmersiveDialogue owns it) to a paused DYNAMIC
+  montage in CutsceneSlot (CutsceneGroup: nothing else plays there outside cutscenes; only after F7 was pressed once):
+  `AS_ImmLoot_DevArmRot` (both shoulders, 25^3 exponential grid, while the bag is out with empty hands; standing /
+  crouched values by camera height) or `AS_ImmLoot_DevHandRot` (left hand, while an empty-handed crouched pickup plays),
+  one at a time (`DevMont`, `DevMontKind`). Arm translation dropped (one table at a time). Panel: 11 sliders.
+  `ABP_ImmLootDevPose` no longer cooked or attached.
+- Combined run (ImmersiveDialogue agent's merged list, n3 dev pak, no F7; tester): "unarmed looting fixed" (standing
+  view-frame pickup confirmed on 2.1); "crouch unarmed the fingers look like spaghetti"; ImmersiveDialogue fixed
+  (its agent cuts that release).
+- v1.3.2 p: crouched table fingers = the vanilla grab's curl in each finger joint's own frame
+  (rest * g0^-1 * gf; l had it in the parent's frame). Table rebuilt (PART=bhviewcrouch), no paste.
+- o / p cooked and installed (actor pasted clean after an editor crash on the first delete; panel 11 sliders).
+- o / p tested (tester): F7 panel shows, but "my mouse doesn't appear, I have to pause the game" (bShowMouseCursor +
+  SetInputMode_GameAndUIEx have no effect in this game); "F9 seems broken completely, we don't need it, I can trigger
+  it myself".
+- v1.3.2 q: F9 preview and the cursor / input-mode nodes removed; the numpad drives the shown panel: 8 / 2 select the
+  row (">> " on its label), 4 / 6 lower / raise (per tick 0.25 x step x speed, speed 1 + held ticks / 20, max 6x),
+  5 = the row's default, F8 = all defaults (`DevSel`, `DevHoldTicks`, `DevN8/2/5Prev`). The panel's help line still
+  says F9 (widget unchanged).
+- q paste: the editor crashed again deleting the old graph (Ctrl+A, Delete). Log: "Ran out of memory allocating 3.7 MiB
+  ... paging file is too small", PeakUsedVirtual 117.9 GiB (this PC: 128 GB RAM + 16 GB page file = 143.6 GB commit).
+  Deleting the ~3,700-node / 14,000-pin actor graph in one go balloons the editor. Earlier this session the same
+  delete at 3,409 nodes went through. Tester: crouched fingers still "going backwards and breaking" with p.
+- v1.3.2 r: crouched table leaves the fingers alone (rest pose; no curl added). Not built yet (editor down).
+- No more deleting the big graph in the editor: the old actor renamed aside (`BP_ImmLootActor_Old`, no redirector
+  was written: its two referencers, MCM provider and subsystem, were not loaded and still point at the original path),
+  a fresh `BP_ImmLootActor` made by setup_assets.py (all variables and defaults) at the original path, the tester
+  pastes into its empty graph. Backups of the three uassets in the session scratchpad (actor_backup). r crouched table
+  built (fingers untouched).
+- The tester pasted into `BP_ImmLootActor_Old` (its delete went through this time): the empty fresh asset deleted,
+  `_Old` renamed back to `BP_ImmLootActor` (graph 3990 = generated, no compile messages); MCM provider and subsystem
+  still point at the path (checked in their exports), recompiled. q / r cooked and installed. Next time: the
+  fresh-asset path (no delete in the editor).
+- q / r tested (tester): "F7 isn't doing anything when I use it while looting a body" (the loot window takes the keys
+  and covers the bag; the bag shows only in its Out). q's F9 "broken" = F9 is the game's quick load.
+- v1.3.2 s: backpack preview back on Num 0 (panel shown). Paste via the fresh-asset path (old renamed `_Old`, fresh
+  `BP_ImmLootActor` from setup_assets.py).
+- s pasted into _Old again (open tab followed the rename): swapped back, DevN0Prev added by setup_assets, compiled clean, cooked and installed.
+- s tested (tester, game 2.1): backpack with empty hands "looks totally fixed", WITHOUT the panel ever opened (no DEV
+  table played). Our bag path is unchanged since 1.3.1 (control test on 2.0.x showed it broken), so game 2.1 most
+  likely changed what the bag's arm keys land on. Crouched pickup still wonky (screenshot: hand from the far left,
+  palm down, wrist bent, bottle pinched in the fingertips): to be tuned with the panel.
+- Panel time scale: with it lowered "the hand animation does not play, only the item floats" (the item's pull runs
+  on undilated time, the hand on dilated). Tester: "just try and fix the animation yourself".
+- v1.3.2 t (table only, no paste): crouched hand pitch = 60% of the reach elevation (no bent wrist), no left offset
+  (was 6 deg), fingers = the vanilla grab's closed grip (frame 14) at 70% over frames 8-38, never its opening phase
+  (the opening from the rifle grip is what bent the crouched fingers back in k / l / p). Cooked and installed.
+- t tested (tester): backpack "broken again" (standing looking down and crouched; in s it was "fully working" in every
+  stance with the panel never opened); crouched hand "still not quite right" (screenshot: fingers spread open, hand
+  palm down left of the bottle). Between s and t only the crouched table changed, but the panel had been opened (time
+  scale attempt): with the panel opened, the CutsceneSlot DEV tables play during the bag / crouched pickup, and the
+  time-scale run already showed a crouched pickup losing its hand animation then. Reading: a montage in CutsceneSlot
+  breaks the arm animation (CutsceneSlot is not a safe host).
+- v1.3.2 u: the DEV tools off (`IMMLOOT_DEV=0`; the F7 panel, its tables and keys gone from the actor graph). Paste
+  via the fresh-asset swap (old renamed `_Old`; the tester closes the old tab first).
+- Tester: when the backpack looked fixed he had a weapon out. So: armed right, empty hands wrong (as always).
+  Postures (frame 0, component space): rifle idle spine_03 25.5 deg bent forward and 10 cm forward of the bare-hands
+  one, shoulders 20 cm forward / 6 cm lower (crouched 23 deg / 24 cm). The bag's arm keys hang from spine_03.
+- v1.3.2 v: `AS_ImmLoot_BagSpine` (make_bag_seq PART=spine: local additive on jnt_spine_03 only, frame 1 standing /
+  2 crouched = onto the rifle idle's spine_03) played paused in UpperBody while the bag is out with empty hands
+  (`BagSpineMont`, out 0.3 s when the bag is gone). With u (DEV off) in one paste.
+- u / v pasted (into _Old again), swapped back, compiled clean, cooked and installed (AS_ImmLoot_BagSpine in the pak).
+- v tested (tester): empty hands standing "it makes me crouch and the backpack goes above my head (I can see the
+  shadow doing the animation)"; crouched "it makes me stand up and my head exits my body". The spine_03 local
+  additive in UpperBody moved the whole body / camera (UpperBody is not a safe additive host for this). Armed: right.
+- v1.3.2 w: v removed (`AS_ImmLoot_BagSpine` deleted). Empty-hands bag pose tables instead of the plain pitch fix:
+  `AS_ImmLoot_BagPitchFixBH` (standing, frame = pitch) / `...BHCrouch` (crouched, frame 0): make_bag_seq PART=posture:
+  hips / spine_01-03 turned in mesh space to the rifle idle's (stand 19 / 3 / 18 / 25.5 deg, crouch 30 / 28 / 39 / 23)
+  and the arms turned with spine_03 on top of the pitch fix; extra last frame = no change (reference). Chosen at the
+  bag start by camera height. Direct paste (graph ~3,400 nodes).
+- w pasted directly (delete went through), compiled clean, cooked and installed (both BH bag tables in the pak).
+- w tested (tester): empty hands standing "the backpack is too high, I can't see it, it's off screen"; crouched "in
+  your face, basically clipping through"; crouched pickup "regressed since I last saw it: the hand is higher and still
+  not holding things, bottles clip through the hand" (t's table).
+- v1.3.2 x: t's crouched table reverted (hand pitch = the full reach elevation, 6 deg left offset back, the game's
+  crouched fingers: the s / r state). w's posture tables deleted. The empty-hands bag is servoed:
+  `AS_ImmLoot_BagServo` (make_bag_seq PART=servo: the pitch fix x the arms turned about the shoulders by L = -60..+60
+  deg in 5s, L the fast axis: frame = pitch row x 25 + (L + 60) / 5, so a fractional position blends two L). While the
+  bag's Idle plays, each tick L -= 0.15 x sign x (the bag's elevation in view axes + 34 deg; the game's own bag sits
+  at -34); one L per stance (`BagLowerS` default -25, `BagLowerC` 0), kept across bags; `BagServoSign` flips if L hits
+  an end with the bag still off. Why a servo: the table's math (component space, +X forward: toes ahead of the feet)
+  says a positive L / a forward spine lowers a forward-held arm, but in game both k's positive lowering and w's
+  forward spine lifted the bag; the cause of the inversion is not found, so the sign is learned in game.
+- v1.3.2 x, crouched pickup (tester: "you just reverted to a build that still had issues?"): cause of every crouched
+  finger failure found: the game's crouched fingers are the STANDING rest's (build 44: the 1.1.0-1.3.1 crouch table
+  took `finger_base` = fp_bh_idle_stand); `GrabBHViewCrouch` used fp_bh_idle_crouch's fingers as its additive
+  reference (10-33 deg off per joint), so k / l / p / t's curls landed on the wrong base. Now its finger reference is
+  the standing rest and the fingers get the standing table's recipe (vanilla grab fingers frame by frame; checked: frame
+  0 = standing rest, grab frame identical to `GrabBHView`). j's 30 deg clockwise hand roll back (`CROUCH_ROLLS`; l had
+  set 0 for the DEV hand turn, gone since u). t's 0.6 hand pitch / zero azimuth offset reverted. Table only (no paste).
+- x pasted (direct delete went through), cooked and installed (BagServo + the new crouched table in the pak).
+- x tested (tester): "the game crashes when loading into a save" (twice, 19:02 / 19:04). Both: AV (0x18, 0x0) with only
+  UE4SS.dll frames on top (none of the game's code). UE4SS.log: ImmLootProbe was still enabled in mods.txt (the
+  logger "off" since 2.1 was only the probe's own variable list; Vortex's mods.txt kept `ImmLootProbe : 1`), and during
+  the load hitch (our actor ticked 11 times in 2 s) its 50 ms LoopAsync queued dozens of ExecuteInGameThread reads that
+  ran in one burst on the world actor; the crash followed (the probe's known save-load crash family, 2026-10-11 / 12).
+  Probe set to 0 in mods.txt.
+- x tested (probe off; tester): backpack "still too high, crouched or standing"; crouched pickup "garbage, make it look
+  the same as standing" (screenshots: standing = the arm straight in from the lower left, back of the hand up, the can
+  in the palm: "perfect"; crouched = the hand in from the left, turned on its side, the bread pinched in the fingers).
+- v1.3.2 y (table only): crouched, the game's look turns the spine with the view and counter-turns the arms (they stay in
+  the body frame, f), so the LOCAL-space table's shoulder delta was turned by the spine's pitch (reach and hand rotated
+  with the view: the sideways hand). `GrabBHViewCrouch` is now a MESH-space rotation additive (as the pitch fix; all
+  110 crouch-rest tracks keyed so the cook's mesh space is the crouch body's): the arm's mesh rotations go from the rest
+  to the solved ones whatever the spine does. Offsets and roll as standing (-10 / -6 deg, no roll). Bag: no change;
+  ImmLootProbe back on, hardened (no reads for 20 s after the actor is found, a queued callback < 40 ms after the last
+  is dropped) and reading BagServo / BagLowerS / BagLowerC / BagServoSign, to see whether the servo runs and where L goes.
+- y cooked and installed.
+- y tested (probe on, loaded fine; tester): backpack "still goes above the screen: I see nothing until I close it, then
+  the arms come down from above"; crouched pickup "still wrong" (screenshot: the arm in from the far left, level, the
+  hand round the bottle from the side). Probe (one body loot, BodyMode 2, camera below 130 cm, window open 1.1 s):
+  the servo never ran (the In never reached the Idle: BagIdleOn never true; the window closed during the In). During
+  the In both hands went UP and BACK: left hand (-25, -24, -12) cm in view axes (at the shoulder), right hand (-16, -8,
+  +7), while AS_ImmLoot_BagIn has the left hand at (47, -18, -8) from the camera from 0.3 s on; then the Out started
+  from there ("arms come down from above"). The pose table was at frame 12 (row 0, L 0 = no change in the data).
+  Crouched pickups: resting left hand (32, -27.6, -20.8) in view at every pitch -32..-51 = fp_bh_idle_lowcrouch's
+  (30.0, -27.0, -21.4) from the camera: the tester's crouch is the LOW crouch and its look turns the arms rigidly with
+  the view. The reach (segment 12: body elevation -50) sent the hand 20 cm forward and 17 cm UP.
+- Reading: every pose table referenced on an extra LAST frame (j, k, w, x) put the arms up and back in game (k: "up and
+  behind the camera", w "too high off screen", x: hands at the shoulders on a no-change frame); the ones referenced on
+  frame 0 (the plain pitch fix, the pickup tables) behave. The table's own data was checked (the last frame = the rest).
+- v1.3.2 z: (1) `AS_ImmLoot_BagServo` with the reference on frame 0, the data from frame 1 (Blueprint frame + 1); the
+  servo also runs from 0.4 s into the In (its hand is at the Idle's place from 0.3 s); BagServoSign -1 (the math's sign:
+  a positive L lowers a forward arm), standing L starts at +25. (2) Crouched pickup = the standing recipe in the VIEW
+  frame on fp_bh_idle_lowcrouch (25 segments, view bins `_vel` / `_vaz`, the low-crouch fingers), local-space
+  additive in FullBody (y's mesh space and x's standing fingers dropped).
+- z pasted, cooked and installed (probe on).
+
+- 2026-10-31: Noah plays build z for fun, no test run: ImmLootProbe set to 0 in the game's ue4ss mods.txt (set back to 1 before the next logged run).
+- Open Nexus reports (from 2026-10-30, not yet worked on): GutsFromBerserk: the Limited Edition NON STOP turns into the
+  normal blue can in the hand (the copy takes the item's mesh but not its materials); GutsFromBerserk / wrigi /
+  SavageAdy: knife equipped, the arms distort and the hands spin, "washing machine" hands after sprinting; Ls5555: the
+  bag should be the player's own (pre-order) backpack; SavageAdy: "disable item fly" still flies (b's "Hide items in
+  the hand" answered it and was removed at the tester's call); wrigi: doors feel odd (has the toggle, nothing to fix).
+- 2026-11-03 Nexus (thetrueShubNiggurathFFS): spoiled canned food turns into regular canned food at the pickup, Spark
+  armor into Duty armor (screenshot). Tester: the unarmed backpack still too high; "fix every single issue in one go",
+  with an adversarial review by a fresh agent.
+- v1.3.2 aa: (1) the bag simulator (`zonekit/research/bag/sim`, the bh WeaponLayer order from the strafe research:
+  slots RightHand / LeftHand (local) -> look additive (mesh space) -> CopyBone jnt_camera := VB jnt_camera -> FullBody)
+  reproduces the h probe (standing -32: sim (29, -27, 11) / probe (29, -27, 9); crouched -25: (40, -16, -25) / (41,
+  -16, -26)). Why every table missed: the bag sequences key the shoulders from a body leaning far forward (shoulders
+  4.5 cm ahead of the camera, 29 cm below), the slots put those locals on the upright bare-hands chest (shoulders 28 cm
+  behind the camera), and the standing look additive turns the arms and moves the forearm's local translation (31 cm
+  at -60: the "stretched sleeve"). Standing at -45 the bag sat 32 cm above the view centre. `AS_ImmLoot_BagFix`
+  (58 frames, `gen_bagfix.py`): every arm bone to the anim's orientation relative to the camera, arm translations back,
+  shoulders moved to the anim's (21 cm standing, 0.5 cm low crouch): sim = the vanilla framing (39, -17, -26) at every
+  pitch; one correction for every bag time (Out to frame 16 within 4.5 cm; the table stays full while the Out's slot
+  blends out, both hands leave downward). The servo and its update removed. (2) The copy takes the item's materials
+  (`ItemMats` from `MeshComponent.GetMaterials` at tracking, `SetMaterial` per slot on the copy): MeshPrototypes.cfg
+  variants share a mesh (`Energetic_Limited` = SM_cns_energy_drink + MI_egg_energy_drink_limited, scale 1.2;
+  `SpoiledCannedFood` = MI_cns_canned_food_02). (3) Knife / grenade / bolt in hand (MainHandEquipmentType 4-6): skip
+  "handitem" = vanilla (Nexus: arms distort, hands spin with the knife). (4) The player's own backpack: while his own
+  inventory is open, the pawn's skeletal meshes are searched for `SK_bpa_pla*` (`BagMeshPC`), used for our bag (a
+  non-default one wins; materials stay the mesh's own first-person ones).
+- v1.3.2 aa adversarial review (fresh agent, 3 rounds): no blockers. Applied: the stance block latched at the bag
+  start (`BagBlock`), then kept with a 10 cm hysteresis (switches 10 cm past 145 / 115 cm); the backpack scan only in
+  the first 1.5 s of each opening; `PitchFixPos` logs the position really set. Accepted risks (test list): the
+  shoulders moved 21 cm (standing) / 28 cm (crouch) could stretch skin near the view looking straight down; the
+  standing correction rests on probe points within 2 and 8.6 cm; the own-backpack scan is unverified (no pre-order
+  mesh in the kit); knife / grenade / bolt now vanilla for touches, pat, bag and doors too.
+
+- 2026-11-04 aa pasted by Noah, compiled and saved; `AS_ImmLoot_BagServo` deleted (kit + mirror, no referencers);
+  mirrored, cooked (BagFix in the cook) and installed. Probe on. Waiting on Noah's test run.
+- aa tested (tester): backpack with empty hands "the closest we've ever been": right most of the time; at a pile of
+  bodies "sometimes too high, but not as high as before, I can still see the bottom of the backpack"; bodies in the
+  pile flicker in and out of view near it (physics stays; "only this build"); knife / bolt "now don't have any
+  animation, they should: the left hand is totally free, the same as unarmed, just for the left hand"; doors good with
+  empty hands and a pistol, rifle "looks the same as before, as if nothing changed"; everything else good; no
+  pre-order backpack to test. Probe (10 bags): standing / low crouch blocks 0 / 38 put the bag at (39.0, -17.5, -26.0)
+  = the simulator exactly; bags 3, 4, 7 ran block 19 (crouch) while standing: bag (31..36, -20..-23, +21..+24) = the
+  simulator's standing pose with the crouch correction (30.5, -23.2, 25.2). The stance test (camera height in the mesh
+  frame, 145 / 115 cm + 10 cm hysteresis) read a crouch on the pile (the legs' IK lowers the body on uneven ground).
+  Knife / bolt (simulator, `research/bag/sim/dump_hand.py`, `handsim*.py`): their layer = fp_ar_idle_stand + the
+  item's mesh-space idle additive (AS_fp_knife_idle_add / AS_fp_bolt_idle_add) + the rifle look; the free left hand
+  rests at (40, -24, -18..-20) cm from the eye in view axes at every pitch, standing / crouched / low crouched (probe
+  (40.2, -23.7, -21.0)); knife and bolt within 1.3 cm. Rifle vs pistol doors (released vs current paths): both moved
+  by the same <= 7 cm in d; the rifle stance's door point is 5 cm further out, at the arm's full reach.
+- v1.3.2 ab: (1) the stance from the game's anim state (`StateData.bLowCrouching` / `bCrouching` -> `StanceBlk` 38 /
+  19 / 0, every tick), the bag table's block = StanceBlk (camera-height test and hysteresis gone). (2) Knife (4) and
+  bolt (6) back in, one "kn" family built on the knife layer's pose (make_grab_seq PART=knife; the pose baked in
+  `AS_ImmLoot_KnStance` for the build, deleted after): pickups = `AS_ImmLoot_GrabKnView` (the empty-hands view-frame
+  recipe, FullBody local-space additive, 25 segments from the view bins, the item into the palm), body / stash
+  touches `AS_ImmLoot_TouchKn0..24`, doors `AS_ImmLoot_DoorPush/PullKn`; no HandIK-on notify in any kn asset (no grip:
+  IK on would pull the free hand to the held item's socket); the both-hands pat with the pistol family (the pat
+  montage's slot tracks are hand-set, its table stays 75 segments). Grenade (5) stays vanilla. (3) Rifle doors aim at
+  the pistol's door point from the eye (`DOOR_POINT_FROM`): the arm no longer locks straight at the door, the
+  follow-through shows. (4) Probe: BagCamZ, StanceBlk, BagBlock, EquipType, GrabPos. Flicker: nothing in the graph
+  touches other actors' visibility (every SetVisibility / SetHiddenInGame / SetMaterial target checked: our copy,
+  our bag, the held weapon, the hold-to-use item); not reproduced.
+- v1.3.2 ab adversarial review round 1 (fresh agent): no wiring / pin defect; applied: AimStand and the plain pitch
+  fix's crouch test from StanceBlk too (the pile fooled them like the bag); no "hand back on the grip" montage
+  (`bgr`, `br4b`: it switches the left-hand IK on) with the knife / bolt; kn touches / doors start and end on the free
+  hand (no TOUCH_END_OFF: no IK takes it home); the armed branches (pickup, doors, pat) also take kn_q (the bolt's
+  HasItemInMainHand unverified); the kn pat = the rifle family (the knife layer is the rifle body). Kn assets rebuilt.
+- ab review round 2 (fresh agent): the remaining HasItemInMainHand-only tests made consistent for the knife / bolt
+  (in case the bolt reports false): the empty-hands door pitch fix (`_bdbh`) and the bag's armed test (`_bbw`) take
+  kn_q, no bare-hands hands-up after a kn bag (`_bnat`), no equip replay after a kn bag / pat (`_beq2`, `_peq`: the
+  remembered equip may be another weapon's, with both hands' IK on; the item is shown again by `_bwd`). Probe
+  `HasItemMH`. Round 3 started.
+- ab review round 3 (fresh agent): paste integrity clean (6 known dead execs, no exec linked twice). Applied: round 2's
+  "no equip replay for the knife / bolt" made the item pop in at its idle place before the hands came back; now the
+  equip's item type is remembered with it (`LastEquipType`) and a knife / bolt bag or pat replays the equip when it
+  was made with the same item type (the knife's own draw), else the item is just shown again. Accepted risks (test
+  list): the bag Out's left-hand IK-on notify and the pat's lack of an IK-on are left as for weapons (whether the knife
+  layer applies left-hand IK is unverified); stop after 3 rounds.
+- ab pasted (second paste: the first lost the 28 kn asset references, not loaded at paste time), cooked (the 28 kn assets in the cook) and installed 2026-11-05 09:04; probe on.
+- ab tested (tester): empty-hands bag "mostly works, sort of janky when standing: when first invoked it kinda jumps,
+  almost as if for a single frame it is in the top left"; bodies still flicker near the screen edge, single bodies too.
+  Cause of the jump: AM_ImmLoot_BagIn blends in at once (0.0 s), the BagFix table over 0.15 s: frames 1-3 of the In
+  ran 22-67 % corrected, the bag 15-23 cm above where the anim holds it (sim `research/bag/sim/inblend.py`; full table
+  from frame 0: within 6 cm all through the In). Flicker: since 2026-11-01 PiPScopes (UE4SS, a second scene view
+  rendered every frame, "second view ... render target 1040" in its log) is installed; edge-of-screen popping of
+  skinned meshes is a culling / visibility-history symptom of an extra view; our graph touches no other actor's
+  rendering.
+- v1.3.2 ac: the bag table (`_mpf` / `_mpfc`) blends in at once (0.0 s, was 0.15), as the In.
+- ac first paste: the table's BlendInTime 0.0 came back as the C++ default 0.25 (the known pasted-0.0 trap); 0.001 instead.
+- ac second paste: the editor crashed again deleting the whole graph (the second delete in a session). Tester: "let's
+  build the split up version right now".
+- v1.3.2 ad: the actor graph is split over 7 event graph pages (`bp_graph.paginate`, harness): EventGraph (tick head,
+  the menu gate, steps 0 / 1 / 4 / 5, the old dead nodes) 667 nodes, Doors 539, Touch 518, LootWindow 201, Reach 793,
+  EndAndBag 641, HoldToUse 501 (the bound montage event with its bind). Exec links between pages = calls to custom
+  events `IL_<page>_<n>` (10 events, 13 calls; synchronous, order unchanged); 87 shared pure nodes cloned per page; no
+  data link crosses pages. `gen_actor_looting.py <dir>` writes `zonekit/paste/BP_ImmLootActor/<n>_<page>.txt` +
+  `pages.json` (digests without names / ids); `harness/tools/paste_pages.ps1` = the tester's copy window (changed pages
+  only, `pasted.json` = the last confirmed state). The single-file paste is retired. Content = ac (bag table blend-in
+  0.001).
+- ad pasted page by page (all 7 pages complete, 10/10 cross-page events resolved, kn links, blend-in 0.001), cooked (28 kn assets) and installed 2026-11-05 09:52; probe on.
+- ad tested (tester): the backpack "looks totally fixed"; bodies still flicker with PiPScopes uninstalled; the rifle
+  door "still doesn't look as good as pistol or unarmed"; nothing else tested. Probe (one door, a long gun in the
+  secondary slot): its left hand rests at (38.3, 4.4, -24.2) cm from the eye (view axes); the Ar door asset starts / ends
+  at the rifle stand idle's grip (47.3, 3.9, -14.0): the blend-in threw the hand 5 cm forward first (42.6, 2.4, -20.2),
+  then back (30, -13, -14), out to the door (52, -26, -24) and home to (44.7, 2.3, -18.8), the IK finishing the last
+  10 cm. Flicker: our test pak parked (`_parked_mods/2026-11-05_1000`), the tester loads once without the mod.
+- v1.3.2 ae: `AS_ImmLoot_DoorPush/PullArNear` (make_grab_seq PART=doorarn: the Ar door with its ends at the measured
+  grip + TOUCH_END_OFF, the pistol's door point): picked when LHandVX < 43 cm (the Doors page only). page_digest now
+  ignores positions / box sizes (the Touch page differed by one comment box's height).
+- Flicker: the tester loaded without Immersive Looting: the bodies still flicker = not this mod (closed).
+- ae: Doors page pasted (verified), cooked (ArNear in the cook), installed 2026-11-05 10:06 (the mod back on); probe on.
+- ae tested (tester, screenshot: a door hinged on the left, closing with a pistol: the hand at the lower left): "door
+  open looks good. close looks bad no matter if armed or not ... the hinge is on the left, you can't pull it there to
+  close it". Kit: a door leaf's mesh pivot is its hinge (SM_cit_out_door_a_04 0..104 cm, SM_cit_in_door_bb_01 -3..103,
+  cupboards -51..0; 35 of 70 sampled door meshes edge-pivoted, the centred ones are frames / door boxes).
+- v1.3.2 af: a pull reaches for the leaf's free edge: `_door_right` = (2 x the leaf's bounds centre - its origin) right
+  of the view centre -> `AS_ImmLoot_DoorPull{Ar,ArNear,Pt,Kn,BH}R` (make_grab_seq PART=doorpullr: the pulls mirrored,
+  +22 deg / bare hands +30; the knife takes the pistol's point, its own solve to the right failed). Pages: Doors and
+  EventGraph (bp_graph.paginate now drops pure nodes nobody reads: 64 unused ones left the main page).
+- af pasted (Doors + EventGraph, verified: 7 pages complete, 10/10 events, 5 PullR links), cooked, installed 2026-11-05 10:29; probe on.
+- af tested (tester): the close "acknowledges the direction now, but on the right of the screen it is kinda janky: under
+  the rifle and not far enough forward away from the camera, and the hand could use a bit of work". Also found: af's
+  `DoorPullKnR` was built without the knife stance (deleted after ab's build): a frozen arm.
+- v1.3.2 ag (assets only, no paste): the right-hand pulls with a weapon go to (46, 12, -3) cm from the eye (right of
+  and above the weapon; the arm reaches ~44), cross OVER the grip both ways (`DOOR_OVER` (4, 6, 17) from the path's
+  end), the shoulder turns forward up to 25 deg with the reach (`DOOR_PROTRACT`), the draw back 0.55 x the stroke and
+  half the drop, the palm faces left (mirrored); PART=doorpullr builds the knife stance first.
+- ag tested (tester, screenshot: the left forearm across the screen over the rifle, the back of the hand to the
+  camera): "this looks way worse. big regression". Rolled back.
+- v1.3.2 ah (assets only): the right-hand pulls = af's (mirrored pistol point, under the weapon) with the knife's now
+  built on its stance (af's was frozen). The ag code stays in make_grab_seq behind DOOR_RIGHT (off).
+- ah installed (10:50). Tester's choice for the armed right-edge close (asked: keep af / none / short touch left of the
+  gun / same as the left close): "short touch left of the gun".
+- v1.3.2 ai (assets only): `DoorPull{Ar,ArNear,Pt}R` = a short tug on the leaf left of the gun (`DOOR_TUG`: elevation
+  -16, azimuth -10 deg from the eye, draw 10 cm, drop 5; hand to (49, -12, -16) cm, back to ~(40, -10, -18)); the
+  knife / bolt and bare hands keep the mirrored reach. Installed 2026-11-05.
+- ai tested (tester): "better. but rotate the hand during door close so the thumb is pointing down, clockwise 180 deg,
+  so the hand looks like it is clasping the edge of the door and pulling it in".
+- v1.3.2 aj (assets only, PART=pulls: every close): weapon families' close hand turned -180 deg about the reach
+  (`DOOR_PULL_ROLL`: thumb 4-6 cm below the hand at the grip, was +5 above), the turn over frames 5-13 (it whipped round
+  in 5: 38-53 deg a frame; now <= 35) and back over 22-33 (before the IK); bare hands -90 (`DOOR_PULL_ROLL_BH`: their
+  close already had the thumb low; scan of 0 / +-90 / +-135 / -180: -90 lowest, -5.8 / -6.8 cm).
+- aj tested (tester): "you rotated the hand counter clockwise when i specifically said clockwise". Cause: the 180 deg
+  roll was baked into the target orientation and the slerp chose the way round (counter-clockwise).
+- v1.3.2 ak (assets only): the close roll applied on top of the turn by its weight (`hl` = roll(reach, DOOR_PULL_ROLL x
+  wv) x the turn; bare hands roll(vf, DOOR_PULL_ROLL_BH x the leg weight)): the thumb now goes up -> right -> down on
+  screen (scan: +160..+241 deg clockwise for the weapon closes, +60 for bare hands). In UE axes a negative angle about
+  the forward reach is clockwise seen from behind.
+- ak tested (tester): "the hand looks correct in terms of its rotation, but it's still not following the door's arc ...
+  make it look like the hand is following the edge of the door as it closes". Knife / bolt pickups work like the
+  crouched one, "but the left hand is always in view: it grabs, comes back, and the item just disappears out of the
+  hand. It needs to go off screen for a second and come back, as if putting the thing away" (crouched too).
+- v1.3.2 al (assets only, PART=al): every close's draw (frames 9-22, bare hands 9-24) follows the circle of a leaf's
+  free edge about its hinge (`door_edge`: radius 30 cm, 50 -> 10 deg open, drop 4; bare hands 0.75 of it; the armed
+  right-edge tug 0.55 with 0.3 of the sideways part, it must not cross the gun): back and outward (away from the hinge)
+  curving to straight back, e.g. rifle left edge (49, -24, -22) -> (32, -33, -25) cm from the eye; the hand turns with
+  the leaf (0.6 of its 40 deg about the vertical), unwound with the roll. Crouched / knife / bolt pickups
+  (`GrabBHViewCrouch`, `GrabKnView`): after the grab the hand goes down to (18..20, -15..-17, -51..-57) cm from the eye
+  (elevation -65 deg, below the screen) by frame 26, stays to 34, comes back up to rest 34-44; the item is removed at
+  1.2 s (frame 36, hand at -63 deg), the fingers open after it. Standing bare hands unchanged.
+- al tested (tester): "i think it's good! we did it! let's cut a new release finally." Released as v1.3.2: the al paks
+  unchanged (`zonekit/builds/v1.3.2/`). Shipped leftovers (harmless, all in every tested build): the unreferenced DEV
+  assets (`Dev/W_ImmLootDev` via the actor's `DevPanel` variable, `Dev/ABP_ImmLootDevPose`,
+  `AS_ImmLoot_DevArmRot` / `DevHandRot`), probe variables, `DOOR_RIGHT` / `DOOR_PROTRACT` code paths (off).

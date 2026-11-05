@@ -1,0 +1,372 @@
+Begin Object Class=/Script/UMG.CanvasPanel Name="Root"
+   Begin Object Class=/Script/UMG.CanvasPanelSlot Name="CanvasPanelSlot_0"
+   End Object
+   Begin Object Name="CanvasPanelSlot_0"
+      LayoutData=(Offsets=(Left=24.000000,Top=24.000000))
+      bAutoSize=True
+      Parent="/Script/UMG.CanvasPanel'Root'"
+      Content="/Script/UMG.Border'Panel'"
+   End Object
+   Slots(0)="/Script/UMG.CanvasPanelSlot'CanvasPanelSlot_0'"
+End Object
+Begin Object Class=/Script/UMG.Border Name="Panel"
+   Begin Object Class=/Script/UMG.BorderSlot Name="BorderSlot_0"
+   End Object
+   Begin Object Name="BorderSlot_0"
+      Padding=(Left=12.000000,Top=10.000000,Right=12.000000,Bottom=10.000000)
+      Parent="/Script/UMG.Border'Panel'"
+      Content="/Script/UMG.SizeBox'PanelWidth'"
+   End Object
+   Padding=(Left=12.000000,Top=10.000000,Right=12.000000,Bottom=10.000000)
+   BrushColor=(R=0.000000,G=0.000000,B=0.000000,A=0.720000)
+   Slots(0)="/Script/UMG.BorderSlot'BorderSlot_0'"
+   Slot="/Script/UMG.CanvasPanelSlot'Root:CanvasPanelSlot_0'"
+End Object
+Begin Object Class=/Script/UMG.SizeBox Name="PanelWidth"
+   Begin Object Class=/Script/UMG.SizeBoxSlot Name="SizeBoxSlot_0"
+   End Object
+   Begin Object Name="SizeBoxSlot_0"
+      Parent="/Script/UMG.SizeBox'PanelWidth'"
+      Content="/Script/UMG.VerticalBox'Rows'"
+   End Object
+   WidthOverride=560.000000
+   bOverride_WidthOverride=True
+   Slots(0)="/Script/UMG.SizeBoxSlot'SizeBoxSlot_0'"
+   Slot="/Script/UMG.BorderSlot'Panel:BorderSlot_0'"
+End Object
+Begin Object Class=/Script/UMG.VerticalBox Name="Rows"
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_13"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_12"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_11"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_10"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_9"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_8"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_7"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_6"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_5"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_4"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_3"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_2"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_22"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_21"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_20"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_19"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_18"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_17"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_16"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_15"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_14"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_1"
+   End Object
+   Begin Object Class=/Script/UMG.VerticalBoxSlot Name="VerticalBoxSlot_0"
+   End Object
+   Begin Object Name="VerticalBoxSlot_13"
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.TextBlock'T_6'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_12"
+      Padding=(Bottom=4.000000)
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.Slider'S_5'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_11"
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.TextBlock'T_5'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_10"
+      Padding=(Bottom=4.000000)
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.Slider'S_4'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_9"
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.TextBlock'T_4'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_8"
+      Padding=(Bottom=4.000000)
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.Slider'S_3'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_7"
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.TextBlock'T_3'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_6"
+      Padding=(Bottom=4.000000)
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.Slider'S_2'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_5"
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.TextBlock'T_2'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_4"
+      Padding=(Bottom=4.000000)
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.Slider'S_1'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_3"
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.TextBlock'T_1'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_2"
+      Padding=(Bottom=4.000000)
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.Slider'S_0'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_22"
+      Padding=(Bottom=4.000000)
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.Slider'S_10'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_21"
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.TextBlock'T_10'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_20"
+      Padding=(Bottom=4.000000)
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.Slider'S_9'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_19"
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.TextBlock'T_9'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_18"
+      Padding=(Bottom=4.000000)
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.Slider'S_8'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_17"
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.TextBlock'T_8'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_16"
+      Padding=(Bottom=4.000000)
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.Slider'S_7'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_15"
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.TextBlock'T_7'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_14"
+      Padding=(Bottom=4.000000)
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.Slider'S_6'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_1"
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.TextBlock'T_0'"
+   End Object
+   Begin Object Name="VerticalBoxSlot_0"
+      Padding=(Bottom=8.000000)
+      Parent="/Script/UMG.VerticalBox'Rows'"
+      Content="/Script/UMG.TextBlock'T_Help'"
+   End Object
+   Slots(0)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_0'"
+   Slots(1)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_1'"
+   Slots(2)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_2'"
+   Slots(3)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_3'"
+   Slots(4)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_4'"
+   Slots(5)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_5'"
+   Slots(6)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_6'"
+   Slots(7)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_7'"
+   Slots(8)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_8'"
+   Slots(9)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_9'"
+   Slots(10)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_10'"
+   Slots(11)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_11'"
+   Slots(12)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_12'"
+   Slots(13)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_13'"
+   Slots(14)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_14'"
+   Slots(15)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_15'"
+   Slots(16)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_16'"
+   Slots(17)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_17'"
+   Slots(18)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_18'"
+   Slots(19)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_19'"
+   Slots(20)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_20'"
+   Slots(21)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_21'"
+   Slots(22)="/Script/UMG.VerticalBoxSlot'VerticalBoxSlot_22'"
+   Slot="/Script/UMG.SizeBoxSlot'PanelWidth:SizeBoxSlot_0'"
+End Object
+Begin Object Class=/Script/UMG.TextBlock Name="T_Help"
+   Text=INVTEXT("IMMERSIVE LOOTING DEV    F7 show / hide    F8 reset all    F9 backpack preview on / off (empty hands)    values apply live while the backpack is out / during a crouched pickup")
+   Font=(Size=10.000000)
+   AutoWrapText=True
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_0'"
+End Object
+Begin Object Class=/Script/UMG.TextBlock Name="T_0"
+   Text=INVTEXT("Backpack standing: arms turn - pitch (both arms about the shoulders)   [-180 .. 180 deg, default 0]")
+   Font=(Size=9.000000)
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_1'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.Slider Name="S_0"
+   MinValue=-180.000000
+   MaxValue=180.000000
+   MouseUsesStep=True
+   StepSize=1.000000
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_2'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.TextBlock Name="T_1"
+   Text=INVTEXT("Backpack standing: arms turn - yaw   [-180 .. 180 deg, default 0]")
+   Font=(Size=9.000000)
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_3'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.Slider Name="S_1"
+   MinValue=-180.000000
+   MaxValue=180.000000
+   MouseUsesStep=True
+   StepSize=1.000000
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_4'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.TextBlock Name="T_2"
+   Text=INVTEXT("Backpack standing: arms turn - roll   [-180 .. 180 deg, default 0]")
+   Font=(Size=9.000000)
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_5'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.Slider Name="S_2"
+   MinValue=-180.000000
+   MaxValue=180.000000
+   MouseUsesStep=True
+   StepSize=1.000000
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_6'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.TextBlock Name="T_3"
+   Text=INVTEXT("Backpack crouched: arms turn - pitch (both arms about the shoulders)   [-180 .. 180 deg, default 0]")
+   Font=(Size=9.000000)
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_7'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.Slider Name="S_3"
+   MinValue=-180.000000
+   MaxValue=180.000000
+   MouseUsesStep=True
+   StepSize=1.000000
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_8'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.TextBlock Name="T_4"
+   Text=INVTEXT("Backpack crouched: arms turn - yaw   [-180 .. 180 deg, default 0]")
+   Font=(Size=9.000000)
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_9'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.Slider Name="S_4"
+   MinValue=-180.000000
+   MaxValue=180.000000
+   MouseUsesStep=True
+   StepSize=1.000000
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_10'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.TextBlock Name="T_5"
+   Text=INVTEXT("Backpack crouched: arms turn - roll   [-180 .. 180 deg, default 0]")
+   Font=(Size=9.000000)
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_11'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.Slider Name="S_5"
+   MinValue=-180.000000
+   MaxValue=180.000000
+   MouseUsesStep=True
+   StepSize=1.000000
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_12'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.TextBlock Name="T_6"
+   Text=INVTEXT("Crouched pickup: hand turn - roll (about the hand\'s length)   [-180 .. 180 deg, default 0]")
+   Font=(Size=9.000000)
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_13'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.Slider Name="S_6"
+   MinValue=-180.000000
+   MaxValue=180.000000
+   MouseUsesStep=True
+   StepSize=1.000000
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_14'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.TextBlock Name="T_7"
+   Text=INVTEXT("Crouched pickup: hand turn - pitch (wrist up / down)   [-180 .. 180 deg, default 0]")
+   Font=(Size=9.000000)
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_15'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.Slider Name="S_7"
+   MinValue=-180.000000
+   MaxValue=180.000000
+   MouseUsesStep=True
+   StepSize=1.000000
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_16'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.TextBlock Name="T_8"
+   Text=INVTEXT("Crouched pickup: hand turn - yaw (wrist side to side)   [-180 .. 180 deg, default 0]")
+   Font=(Size=9.000000)
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_17'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.Slider Name="S_8"
+   MinValue=-180.000000
+   MaxValue=180.000000
+   MouseUsesStep=True
+   StepSize=1.000000
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_18'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.TextBlock Name="T_9"
+   Text=INVTEXT("Crouched pickup: reach height (+ aims higher)   [-45 .. 45 deg, default 0]")
+   Font=(Size=9.000000)
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_19'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.Slider Name="S_9"
+   MinValue=-45.000000
+   MaxValue=45.000000
+   MouseUsesStep=True
+   StepSize=1.000000
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_20'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.TextBlock Name="T_10"
+   Text=INVTEXT("Time scale (slow motion to watch an animation)   [0.05 .. 1 x, default 1]")
+   Font=(Size=9.000000)
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_21'"
+   bIsVariable=True
+End Object
+Begin Object Class=/Script/UMG.Slider Name="S_10"
+   Value=1.000000
+   MinValue=0.050000
+   MouseUsesStep=True
+   StepSize=0.050000
+   Slot="/Script/UMG.VerticalBoxSlot'Rows:VerticalBoxSlot_22'"
+   bIsVariable=True
+End Object

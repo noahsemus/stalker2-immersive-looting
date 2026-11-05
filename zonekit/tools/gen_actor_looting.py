@@ -28,6 +28,7 @@ Montage times are in montage seconds (GrabTime, PocketTime, IKOnTime); real time
 Variables: see VARS in setup_assets.py (added from Python before the paste).
 Usage: python gen_actor_looting.py <out.txt>
 """
+import math
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "harness", "tools", "t3d"))
@@ -48,6 +49,8 @@ SMC = cls("/Script/Engine.StaticMeshComponent")
 SKC = cls("/Script/Engine.SkeletalMeshComponent")
 SM = cls("/Script/Engine.StaticMesh")
 SKMESH = cls("/Script/Engine.SkeletalMesh")
+MATI = cls("/Script/Engine.MaterialInterface")
+MESHC = cls("/Script/Engine.MeshComponent")
 SMA = cls("/Script/Engine.StaticMeshActor")
 SKA = cls("/Script/Engine.SkeletalMeshActor")
 ANIMI = cls("/Script/Engine.AnimInstance")
@@ -339,6 +342,39 @@ def for_each(x, y, comment, elem_cls):
     return n
 
 
+def arr_set(var, x, y, src, comment, elem_cls):
+    """VariableSet of an object-array variable from an array pin"""
+    s_ = self_set(var, "object", x, y, comment, sub=elem_cls)
+    s_.pins[var].container = "Array"
+    s_.pins["Output_Get"].container = "Array"
+    g.link(src, s_[var])
+    return s_
+
+
+def arr_get(var, x, y, elem_cls):
+    p_ = self_get(var, "object", x, y, sub=elem_cls)
+    p_.container = "Array"
+    return p_
+
+
+def mats_of(x, y, comp_pin):
+    """MeshComponent.GetMaterials (every slot, overrides included)"""
+    n_ = member_pure(MESHC, "GetMaterials", x, y, comp_pin, [("ReturnValue", "object", dict(sub=MATI, out=True))])
+    n_.pins["ReturnValue"].container = "Array"
+    return n_["ReturnValue"]
+
+
+def apply_mats(x, y, comp_pin, mats_pin, comment):
+    """v1.3.2 aa: each material of `mats_pin` onto `comp_pin` (SetMaterial per slot); returns (exec in, exec out)"""
+    fe_ = for_each(x, y, comment, MATI)
+    g.link(mats_pin, fe_["Array"])
+    sm_ = member_call(PRIM, "SetMaterial", x + 300, y - 150, comp_pin, "that slot", [("ElementIndex", "int"), ("Material", "object", dict(sub=MATI))])
+    g.link(fe_["Array Index"], sm_["ElementIndex"])
+    g.link(fe_["Array Element"], sm_["Material"])
+    g.link(fe_["LoopBody"], sm_["execute"])
+    return fe_["Exec"], fe_["Completed"]
+
+
 def kml_int_gt(x, y, a, b_const):
     n = kml("Greater_IntInt", x, y, [("A", "int", dict(extra='DefaultValue="0",')),
                                      ("B", "int", dict(extra=f'DefaultValue="{b_const}",')), RB])
@@ -625,6 +661,7 @@ sp1 = self_set("PendingReach", "bool", X1 + 900, Y1 - 300, "reach pending", defa
 # n2j (tester: "the item disappears right as I tap F, before the hand gets there; it should disappear and appear in
 # the hand instantly once the reach is done"): the copy always waits where the item lay; HideItem only makes the
 # hand take it at once at the grab frame (no pull into the hand, step 5)
+# (v1.3.2 b's "Hide items in the hand" option: removed, tester: "we don't need that")
 sc1 = self_set("PendingCopy", "bool", X1 + 1200, Y1 - 300, "with a copy (HideItem: taken at once, step 5)", default="true")
 chain(np1, sp1, sc1)
 
@@ -668,6 +705,29 @@ for k_, w_ in enumerate(("_pda", "_notes_", "_notepad_", "_folders_")):
     _nhits.append(n_["ReturnValue"])
 _note = b_and(SX + 100, SY + 1800, b_or(SX, SY + 1850, *_nhits), is_valid(SX - 200, SY + 2100, self_get("ItemMesh", "object", SX - 400, SY + 2100, sub=SM)),
               b_not(SX, SY + 2170, self_get("LootReach", "bool", SX - 200, SY + 2170)), b_not(SX, SY + 2240, self_get("DoorTouch", "bool", SX - 200, SY + 2240)))
+_heq = kml("Conv_ByteToInt", SX - 100, SY + 1500, [("InByte", "byte", dict(extra='DefaultValue="0",')), ("ReturnValue", "int", dict(out=True))])
+g.link(member_pure(OBJC, "GetMainHandEquipType", SX - 300, SY + 1500, as_pc,
+                   [("ReturnValue", "byte", dict(sub=EN("/Script/Stalker2.EMainHandEquipmentType"), out=True))])["ReturnValue"], _heq["InByte"])
+#   v1.3.2 ab (tester: "a knife and a bolt now don't have any animation; they should, the left hand is totally free"):
+#   only a grenade (5) stays vanilla; the knife (4) and the bolt (6) get the "kn" family (kn_q)
+_hge = kml("EqualEqual_IntInt", SX + 100, SY + 1500, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="5",')), RB])
+g.link(_heq["ReturnValue"], _hge["A"])
+_handitem = _hge["ReturnValue"]   # 5 grenade (4 knife / 6 bolt: kn_q; 7 binoculars above; 8 item: our use reach)
+
+
+def kn_q(x, y):
+    """v1.3.2 ab: the knife (MainHandEquipmentType 4) or the bolt (6) in hand? Their layer is the rifle body with a free
+    left hand at (40, -24, -18) cm from the eye (view axes, any pitch / stance): the "kn" family assets (make_grab_seq
+    PART=knife), the left hand like empty hands' (an aimed pickup, a touch, a door), no IK back on (no grip)."""
+    e_ = kml("Conv_ByteToInt", x, y, [("InByte", "byte", dict(extra='DefaultValue="0",')), ("ReturnValue", "int", dict(out=True))])
+    g.link(member_pure(OBJC, "GetMainHandEquipType", x - 250, y, as_pc,
+                       [("ReturnValue", "byte", dict(sub=EN("/Script/Stalker2.EMainHandEquipmentType"), out=True))])["ReturnValue"], e_["InByte"])
+    eqs_ = []
+    for k_, v_ in enumerate((4, 6)):
+        q_ = kml("EqualEqual_IntInt", x + 150, y + 70 * k_, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra=f'DefaultValue="{v_}",')), RB])
+        g.link(e_["ReturnValue"], q_["A"])
+        eqs_.append(q_["ReturnValue"])
+    return b_or(x + 300, y, *eqs_)
 conds = [
     ("sprint", obj_q("IsSprinting", SX, SY, as_pc)),
     ("aim", obj_q("IsAiming", SX, SY + 80, as_pc)),
@@ -688,6 +748,10 @@ conds = [
     ("detector", obj_q("IsDetectorInHands", SX, SY + 560, as_pc)),
     ("binoculars", obj_q("IsBinocularsInHands", SX, SY + 640, as_pc)),
     ("disabled", b_not(SX + 200, SY + 720, self_get("Enabled", "bool", SX, SY + 720))),
+    # v1.3.2 aa (Nexus, GutsFromBerserk / wrigi / SavageAdy: with the knife out "the arms distort, the hands spin"): our
+    # left-hand tables are built on the rifle / pistol / bare-hands stances; over the knife, a grenade or the
+    # bolt (MainHandEquipmentType 4-6) they flip in the LeftHand blend: those stay vanilla (ab: a grenade only)
+    ("handitem", _handitem),
     ("use", b_and(SX + 240, SY + 880, self_get("KeyHeld", "bool", SX, SY + 860),
                   b_not(SX + 100, SY + 900, self_get("PreReach", "bool", SX - 100, SY + 900)),
                   b_not(SX + 100, SY + 960, self_get("UseMode", "bool", SX - 100, SY + 960)),
@@ -714,7 +778,7 @@ for k, (_, c) in enumerate(conds + [("lefthandbusy", obj_q("IsLeftHandBusy", SX,
         g.link(sel["ReturnValue"], add["B"])
         bits = add["ReturnValue"]
 sbits = set_from("SkipBits", "int", X1 + 900, Y1, bits, "why (probe): 1 sprint 2 aim 4 action 8 left-hand montage "
-                 "16 dialog 32 cutscene 64 detector 128 binoculars 256 disabled 512 use 1024 IsLeftHandBusy (info)")
+                 "16 dialog 32 cutscene 64 detector 128 binoculars 256 disabled 512 handitem 1024 use 2048 IsLeftHandBusy (info)")
 _snt = set_from("NoteItem", "bool", X1 + 600, Y1 - 150, _note, "n3b: a note / PDA? (the PDA opens after our reach, T12)")
 chain(spr, _snt, set_from("NoteAt", "real", X1 + 750, Y1 - 150, now(X1 + 650, Y1 - 50), "", subcat="double"), sbits)
 brs = branch(X1 + 1250, Y1, "skip? (vanilla pickup, no reach)", skip)
@@ -722,7 +786,7 @@ g.link(sbits["then"], brs["execute"])
 ns = inc("NSkips", X1 + 1550, Y1 - 300, "count skips")
 g.link(brs["then"], ns["execute"])
 # build 17: skipped as a hold to use (F still held 0.3 s after the press): wait for the game's use animation
-_buw = branch(X1 + 1850, Y1 - 700, "a hold to use? wait for the game's use animation (our reach then plays over it)", conds[-1][1])
+_buw = branch(X1 + 1850, Y1 - 700, "a hold to use? wait for the game's use animation (our reach then plays over it)", dict(conds)["use"])
 g.link(ns["then"], _buw["execute"])
 _suw = self_set("UseWait", "bool", X1 + 2150, Y1 - 700, "waiting for the use animation", default="true")
 g.link(_buw["then"], _suw["execute"])
@@ -769,7 +833,8 @@ def play_grab(x, y, asset, comment):
     return n
 
 
-armed = obj_q("HasItemInMainHand", X1 + 2250, Y1 + 100, as_pc)
+# v1.3.2 ab review: the knife / bolt take the armed branches whatever HasItemInMainHand says (unverified for the bolt)
+armed = b_or(X1 + 2350, Y1 + 100, obj_q("HasItemInMainHand", X1 + 2250, Y1 + 100, as_pc), kn_q(X1 + 2050, Y1 + 200))
 bst = branch(X1 + 2450, Y1 + 150, "something in the main hand? (rifle-stance grab) else empty hands", armed)
 bdt3 = branch(X1 + 2300, Y1 - 600, "a door touch? its own asset (also with empty hands)", self_get("DoorTouch", "bool", X1 + 2100, Y1 - 500))
 _bu3 = branch(X1 + 2150, Y1 - 1300, "build 17: the game's use animation paused for us? our use reach over it (FullBody, additive)",
@@ -932,7 +997,9 @@ _sv("AimC", _to_mesh(AX - 100, Y2_, cam_basis(AX - 300, Y2_ + 200)[0]), 0, "buil
 _acz = kml("BreakVector", AX + 50, Y2_ + 500, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
                                               ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
 g.link(av("AimC", AX - 100, Y2_ + 500), _acz["InVec"])
-_sst = set_from("AimStand", "bool", AX + 150, AY, d_op("Greater_DoubleDouble", AX + 200, Y2_ + 500, _acz["Z"], b_const="130.0", ret=RB), "standing? (else crouched)")
+# v1.3.2 ab review: standing = the game's stance (StanceBlk 0), not the camera height (a body pile underfoot read as a
+# crouch); crouched (19 / 38) stays the crouch table as before (the regular crouch's camera sat below 130 cm)
+_sst = set_from("AimStand", "bool", AX + 150, AY, d_op("Less_DoubleDouble", AX + 200, Y2_ + 500, self_get("StanceBlk", "real", AX, Y2_ + 500, subcat="double"), b_const="1.0", ret=RB), "standing? (else crouched)")
 _steps.append(_sst)
 A_CR, EYE_CR = (-31.99, -17.41, 111.02), (0.0, 0.0, 130.21)
 W_CR = tuple(a_ - e_ for a_, e_ in zip(A_CR, EYE_CR))
@@ -1160,7 +1227,11 @@ for _m in (mp, mpt):
     _m.pins["BlendOutTime"].extra = 'DefaultValue="0.350000",'
 g.link(self_get("TouchAsset", "object", X1 + 2550, Y1 - 300, sub=ANIMSEQB), mpt["Asset"])
 g.link(blr["then"], mpt["execute"])
-g.link(bdt3["then"], mpt["execute"])
+_bdbh = branch(X1 + 2450, Y1 - 800, "v1.3.2: a door with empty hands, standing? the arms turn with the view (pitch fix)",
+               b_and(X1 + 2350, Y1 - 650, b_not(X1 + 2250, Y1 - 650, b_or(X1 + 2200, Y1 - 700, obj_q("HasItemInMainHand", X1 + 2050, Y1 - 650, as_pc), kn_q(X1 + 1850, Y1 - 700))),   # ab review 2
+                     self_get("AimStand", "bool", X1 + 2250, Y1 - 580)))
+g.link(bdt3["then"], _bdbh["execute"])
+g.link(_bdbh["else"], mpt["execute"])
 sgm_t = set_from("GrabMontage", "object", X1 + 3100, Y1 - 450, mpt["ReturnValue"], "our montage", sub=MONT)
 ses_t = self_set("GrabBH", "bool", X1 + 3400, Y1 - 450, "", default="false")
 ses_t2 = self_set("SegStart", "real", X1 + 3700, Y1 - 450, "", default="0.0", subcat="double")
@@ -1178,8 +1249,8 @@ _mpk = member_call(ANIMI, "PlaySlotAnimationAsDynamicMontage", X1 + 2750, Y1 + 7
 # (not paused: a paused montage may not blend in; the pose is constant for 3 s and is stopped at the end)
 _bstc = branch(X1 + 2600, Y1 + 500, "build 41: standing? (else the crouch table)", self_get("AimStand", "bool", X1 + 2400, Y1 + 600))
 g.link(bst["else"], _bstc["execute"])
-g.link(_bstc["then"], mpb["execute"])
-g.link(_bstc["else"], mpbc["execute"])   # build 32 (tester: "forget it, this approach isn't working"): back to build 26's pickup
+# g.link(_bstc["then"], mpb["execute"])   # v1.3.2: standing = the view-frame table + the pitch fix (below)
+# g.link(_bstc["else"], mpbc["execute"])   # v1.3.2 e: crouched = the view-frame crouch table (below)
 _spm = set_from("UseMont", "object", X1 + 3350, Y1 + 750, _mpk["ReturnValue"], "the held pose", sub=MONT)
 chain(_mpk, _spm, self_set("UseMode", "bool", X1 + 3650, Y1 + 750, "", default="true"), self_set("PickUse", "bool", X1 + 3950, Y1 + 750, "a pickup in the use pose", default="true"),
       self_set("UseGrabbed", "bool", X1 + 4250, Y1 + 750, "", default="false"),
@@ -1363,7 +1434,8 @@ def stop_mont(x, y, asset, blend, comment):
     return n
 
 
-_bbw = branch(BX + 150, BY - 300, "a weapon in hand? hidden for the bag (build m: it stays in the hands, so Skif keeps the weapon posture, which turns the arms with the view)", obj_q("HasItemInMainHand", BX, BY - 150, as_pc))
+_bbw = branch(BX + 150, BY - 300, "a weapon in hand? hidden for the bag (build m: it stays in the hands, so Skif keeps the weapon posture, which turns the arms with the view)",
+              b_or(BX + 100, BY - 150, obj_q("HasItemInMainHand", BX, BY - 150, as_pc), kn_q(BX - 200, BY - 100)))   # ab review 2: the knife / bolt too
 g.link(bbag["then"], _bbw["execute"])
 _sbw1 = self_set("BagWeapon", "bool", BX + 450, BY - 300, "show it after the bag", default="true")
 #   (build l probe: RemoveWeaponFromHands put Skif in the bare-hands posture: the arms did not follow the view, the right
@@ -1399,12 +1471,125 @@ g.link(_sbw1["then"], mbi["execute"])
 BAG_PITCH = "/ImmersiveLooting/Runtime/AS_ImmLoot_BagPitchFix.AS_ImmLoot_BagPitchFix"
 #   build m, empty hands: make_bag_seq build_pitch_fix (the arms turn with the view, as the game's bag posture does),
 #   FullBody, paused, its frame set every tick from the view pitch (6c)
-_mpf = play_bag(BX + 600, BY - 150, BAG_PITCH, "empty hands: the arms turn with the view (pose table, FullBody)", 0.15, 0.25)
+# v1.3.2 ac (tester: standing, the empty-hands bag "kinda jumps when first invoked, as if for a single frame it is in the
+# top left"): AM_ImmLoot_BagIn blends in at once (0.0 s) while this table blended in over 0.15 s, so the first frames
+# showed the bag uncorrected (standing: 32 cm above the view centre); the table now comes in at once too
+_mpf = play_bag(BX + 600, BY - 150, BAG_PITCH, "empty hands: the arms turn with the view (pose table, FullBody)", 0.001, 0.25)   # 0.001: a pasted 0.0 comes back as the C++ default 0.25 (harness blueprints.md)
 _mpf.pins["SlotNodeName"].extra = 'DefaultValue="FullBody",'
 _ppf = member_call(ANIMI, "Montage_Pause", BX + 900, BY - 150, anim, "held; its frame set from the view", [("Montage", "object", dict(sub=MONT))])
 g.link(_mpf["ReturnValue"], _ppf["Montage"])
 chain(_sbw2, _mpf, set_from("PitchFixMont", "object", BX + 1200, BY - 150, _mpf["ReturnValue"], "the pose table", sub=MONT), _ppf)
+#   v1.3.2 (tester, standing, empty hands: "reach too low", then "janky: the arm stretches, the item too high in the palm,
+#   the hand way off to the side"; choice: "proper fix: the arms turn with the view while standing"): the standing
+#   pickup = the bag's pitch fix (FullBody, its frame from the view pitch every tick while PickFix) + AS_ImmLoot_GrabBHView
+#   in the LeftHand slot, built in the view frame (make_grab_seq PART=bhview): its segment from the item's direction
+#   from the eye in view axes (5 x 5: elevation -45..+15, azimuth -30..+30, 15 deg); no measured aim corrections
+
+
+VX, VY = BX, BY + 1600
+_mpfv = play_bag(VX + 300, VY, BAG_PITCH, "v1.3.2: the arms turn with the view (the pitch fix)", 0.15, 0.25)
+_mpfv.pins["SlotNodeName"].extra = 'DefaultValue="FullBody",'
+_ppfv = member_call(ANIMI, "Montage_Pause", VX + 600, VY, anim, "held; its frame set from the view", [("Montage", "object", dict(sub=MONT))])
+g.link(_mpfv["ReturnValue"], _ppfv["Montage"])
+_segv = _imad(VX + 300, VY + 400, _bin(VX, VY + 400, _vel["ReturnValue"], "45.0", "15.0", 4), 5, _bin(VX, VY + 500, _vaz["ReturnValue"], "30.0", "15.0", 4))
+_segvd = kml("Conv_IntToDouble", VX + 500, VY + 400, [("InInt", "int"), RD])
+g.link(_segv, _segvd["InInt"])
+_segvs = d_op("Multiply_DoubleDouble", VX + 650, VY + 400, _segvd["ReturnValue"], b_const="1.5")
+_mpv = play_grab(VX + 900, VY, "/ImmersiveLooting/Runtime/AS_ImmLoot_GrabBHView.AS_ImmLoot_GrabBHView", "v1.3.2: the view-frame pickup (LeftHand)")
+_mpv.pins["BlendInTime"].extra = 'DefaultValue="0.100000",'
+_mpv.pins["BlendOutTime"].extra = 'DefaultValue="0.250000",'
+g.link(_segvs, _mpv["InTimeToStartMontageAt"])
+chain(_mpfv, set_from("PitchFixMont", "object", VX + 600, VY - 200, _mpfv["ReturnValue"], "the pose table", sub=MONT), _ppfv,
+      self_set("PickFix", "bool", VX + 750, VY - 200, "the pitch fix for this pickup", default="true"), _mpv,
+      set_from("GrabMontage", "object", VX + 1200, VY, _mpv["ReturnValue"], "our montage", sub=MONT),
+      self_set("GrabBH", "bool", VX + 1500, VY, "", default="true"),
+      set_from("SegStart", "real", VX + 1800, VY, _segvs, "segment start (montage s)", subcat="double"),
+      inc("NPickView", VX + 2100, VY, "count (probe)"))
+g.link(_bstc["then"], _mpfv["execute"])
+#   v1.3.2 e (tester, crouched empty hands: "still not truly in the palm, I can see the full hand in front of it"):
+#   crouched = AS_ImmLoot_GrabBHViewCrouch (FullBody local-space additive, view frame, the same 25 segments as standing;
+#   the crouched look turns the arms with the view already: no pitch fix)
+_mpvc = play_grab(VX + 900, VY + 1600, "/ImmersiveLooting/Runtime/AS_ImmLoot_GrabBHViewCrouch.AS_ImmLoot_GrabBHViewCrouch",
+                  "v1.3.2 e: crouched, the view-frame pickup (FullBody additive)")
+_mpvc.pins["SlotNodeName"].extra = 'DefaultValue="FullBody",'
+_mpvc.pins["BlendInTime"].extra = 'DefaultValue="0.050000",'
+_mpvc.pins["BlendOutTime"].extra = 'DefaultValue="0.250000",'
+# v1.3.2 f (tester: crouched "the hand is too high off the screen"): crouched, the arms stay in the body frame: the
+# crouched table is binned by the item's elevation / azimuth from the camera bone in mesh space (_el / _az): 8 x 5
+#   v1.3.2 l (MCM DEV "Crouched pickup: reach height", deg): a bias on the item's elevation before the row binning
+#   v1.3.2 z: the crouch is the LOW crouch, whose look turns the arms rigidly with the view (x's probe): the crouched
+#   table is in the view frame like the standing one (make_grab_seq: 25 segments), picked from the same view bins
+_segc = _imad(VX + 300, VY + 2100, _bin(VX, VY + 2100, _vel["ReturnValue"], "45.0", "15.0", 4), 5, _bin(VX, VY + 2200, _vaz["ReturnValue"], "30.0", "15.0", 4))
+_segcd = kml("Conv_IntToDouble", VX + 500, VY + 2100, [("InInt", "int"), RD])
+g.link(_segc, _segcd["InInt"])
+_segcs = d_op("Multiply_DoubleDouble", VX + 650, VY + 2100, _segcd["ReturnValue"], b_const="1.5")
+g.link(_segcs, _mpvc["InTimeToStartMontageAt"])
+chain(_mpvc, set_from("GrabMontage", "object", VX + 1200, VY + 1600, _mpvc["ReturnValue"], "our montage", sub=MONT),
+      self_set("GrabBH", "bool", VX + 1500, VY + 1600, "", default="true"),
+      set_from("SegStart", "real", VX + 1800, VY + 1600, _segcs, "segment start (montage s)", subcat="double"),
+      inc("NPickViewCr", VX + 2100, VY + 1600, "count (probe)"))
+g.link(_bstc["else"], _mpvc["execute"])
+g.link([n_ for n_ in g.nodes if n_.klass.endswith("K2Node_VariableSet") and n_.pins.get("NPickViewCr") is not None][-1]["then"], srs["execute"])
+#   v1.3.2 ab (tester: the knife / bolt "should still have an animation, the same as unarmed, just for the left hand"):
+#   with the knife or the bolt, a loose-item pickup = AS_ImmLoot_GrabKnView (make_grab_seq PART=knife: the crouched
+#   view-frame table's recipe on the knife layer's pose, FullBody local-space additive, the same 25 segments from the
+#   same view bins; that layer turns the arms with the view at any pitch / stance: no pitch fix)
+_mpvk = play_grab(VX + 900, VY + 2600, "/ImmersiveLooting/Runtime/AS_ImmLoot_GrabKnView.AS_ImmLoot_GrabKnView",
+                  "v1.3.2 ab: the knife / bolt, the view-frame pickup (FullBody additive)")
+_mpvk.pins["SlotNodeName"].extra = 'DefaultValue="FullBody",'
+_mpvk.pins["BlendInTime"].extra = 'DefaultValue="0.050000",'
+_mpvk.pins["BlendOutTime"].extra = 'DefaultValue="0.250000",'
+g.link(_segcs, _mpvk["InTimeToStartMontageAt"])
+chain(_mpvk, set_from("GrabMontage", "object", VX + 1200, VY + 2600, _mpvk["ReturnValue"], "our montage", sub=MONT),
+      self_set("GrabBH", "bool", VX + 1500, VY + 2600, "", default="true"),
+      set_from("SegStart", "real", VX + 1800, VY + 2600, _segcs, "segment start (montage s)", subcat="double"),
+      inc("NPickKn", VX + 2100, VY + 2600, "count (probe)"))
+g.link([n_ for n_ in g.nodes if n_.klass.endswith("K2Node_VariableSet") and n_.pins.get("NPickKn") is not None][-1]["then"], srs["execute"])
+_bpkn = branch(X1 + 2450, Y1 - 50, "v1.3.2 ab: the knife / bolt? the empty-hands style pickup on its own pose (else the weapon family grab)", kn_q(X1 + 2150, Y1 - 150))
+for _q in list(blr["else"].links):
+    blr["else"].links.remove(_q); _q.links.remove(blr["else"])
+g.link(blr["else"], _bpkn["execute"])
+g.link(_bpkn["then"], _mpvk["execute"])
+g.link(_bpkn["else"], _bgp["execute"])
+#   (the empty-hands door touch: the same pitch fix, then its own asset in the LeftHand slot)
+_mpfd = play_bag(VX + 300, VY + 800, BAG_PITCH, "v1.3.2: a door with empty hands: the arms turn with the view", 0.15, 0.25)
+_mpfd.pins["SlotNodeName"].extra = 'DefaultValue="FullBody",'
+_ppfd = member_call(ANIMI, "Montage_Pause", VX + 600, VY + 800, anim, "held; its frame set from the view", [("Montage", "object", dict(sub=MONT))])
+g.link(_mpfd["ReturnValue"], _ppfd["Montage"])
+chain(_mpfd, set_from("PitchFixMont", "object", VX + 600, VY + 600, _mpfd["ReturnValue"], "the pose table", sub=MONT), _ppfd,
+      self_set("PickFix", "bool", VX + 750, VY + 600, "", default="true"))
+g.link([n_ for n_ in g.nodes if n_.klass.endswith("K2Node_VariableSet") and n_.pins.get("PickFix") is not None][-1]["then"], mpt["execute"])
+g.link(_bdbh["then"], _mpfd["execute"])
+g.link([n_ for n_ in g.nodes if n_.klass.endswith("K2Node_VariableSet") and n_.pins.get("NPickView") is not None][-1]["then"], srs["execute"])
+
+#   v1.3.2 w (tester: the bag looks right with a weapon out, wrong with empty hands; v's spine fix in UpperBody moved
+#   the whole body and the camera): empty hands play their own pose tables (make_bag_seq PART=posture): the pitch fix
+#   plus hips / spine turned to the rifle idle's (the bag's arm keys hang from spine_03) and the arms turned with it.
+#   Standing AS_ImmLoot_BagPitchFixBH (frame = view pitch), crouched ...BHCrouch (frame 0: the frame step's crouch test)
+BAG_PITCH_BH = "/ImmersiveLooting/Runtime/AS_ImmLoot_BagPitchFixBH.AS_ImmLoot_BagPitchFixBH"
+BAG_PITCH_BHC = "/ImmersiveLooting/Runtime/AS_ImmLoot_BagPitchFixBHCrouch.AS_ImmLoot_BagPitchFixBHCrouch"
+_bsz = kml("BreakVector", BX + 100, BY - 1300, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
+                                               ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
+g.link(_to_mesh(BX - 100, BY - 1300, member_pure(PCM, "GetCameraLocation", BX - 300, BY - 1300,
+       lib_pure(GS, "GameplayStatics", "GetPlayerCameraManager", BX - 500, BY - 1300,
+                [("WorldContextObject", "object", dict(sub=OBJ, hidden=True)), ("PlayerIndex", "int", dict(extra='DefaultValue="0",')),
+                 ("ReturnValue", "object", dict(sub=PCM, out=True))])["ReturnValue"],
+       [("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]), _bsz["InVec"])
+_bstw = branch(BX + 450, BY - 1100, "v1.3.2 w: standing? the standing table (else the crouched one)",
+               d_op("GreaterEqual_DoubleDouble", BX + 300, BY - 1000, _bsz["Z"], b_const="130.0", ret=RB))
+_mpfc = play_bag(BX + 600, BY - 900, BAG_PITCH_BHC, "v1.3.2 w: empty hands, crouched: the bag table", 0.001, 0.25)   # ac: at once, as the In (0.001: see _mpf)
+_mpfc.pins["SlotNodeName"].extra = 'DefaultValue="FullBody",'
+_ppfc = member_call(ANIMI, "Montage_Pause", BX + 900, BY - 900, anim, "held; its frame set from the view", [("Montage", "object", dict(sub=MONT))])
+g.link(_mpfc["ReturnValue"], _ppfc["Montage"])
+chain(_mpfc, set_from("PitchFixMont", "object", BX + 1200, BY - 900, _mpfc["ReturnValue"], "the pose table", sub=MONT), _ppfc)
+_mpf.pins["Asset"].extra = f'DefaultObject="{BAG_PITCH_BH}",'
+for _q in list(_sbw2["then"].links):
+    _sbw2["then"].links.remove(_q); _q.links.remove(_sbw2["then"])
+g.link(_sbw2["then"], _bstw["execute"])
+g.link(_bstw["then"], _mpf["execute"])
+g.link(_bstw["else"], _mpfc["execute"])
 g.link(_ppf["then"], mbi["execute"])
+g.link(_ppfc["then"], mbi["execute"])
 _bsp = exec_pins(Node(g, BG + "K2Node_SpawnActorFromClass", nm("K2Node_SpawnActorFromClass"), BX + 1500, BY, "the backpack"))
 _bsp.pin("Class", "class", sub=ACTOR, extra=f'DefaultObject="{SKA.split(chr(39))[1]}",')
 _bsp.pin("ReturnValue", "object", sub=SKA, out=True)
@@ -1421,6 +1606,16 @@ _bmsh = member_call(SKC, "SetSkeletalMeshAsset", BX + 2400, BY, bag_comp(BX + 22
                     [("NewMesh", "object", dict(sub=SKMESH, extra=f'DefaultObject="{BAG_MESH}",'))])
 _bcol = member_call(PRIM, "SetCollisionEnabled", BX + 2700, BY, bag_comp(BX + 2500, BY + 200), "no collision",
                     [("NewType", "byte", dict(sub=EN("/Script/Engine.ECollisionEnabled"), extra='DefaultValue="NoCollision",'))])
+#   v1.3.2 aa (Nexus, Ls5555: "use the pre-order backpack"): the backpack the game itself shows in Skif's hands while
+#   his own inventory is open (BagMeshPC, found by the scan in the loot-window steps), else the default
+_bpcv = branch(BX + 2250, BY - 250, "aa: the player's own backpack seen (his inventory)? that one",
+               is_valid(BX + 2100, BY - 100, self_get("BagMeshPC", "object", BX + 1900, BY - 100, sub=SKMESH)))
+_bmsh2 = member_call(SKC, "SetSkeletalMeshAsset", BX + 2550, BY - 250, bag_comp(BX + 2350, BY - 50), "the player's own backpack",
+                     [("NewMesh", "object", dict(sub=SKMESH))])
+g.link(self_get("BagMeshPC", "object", BX + 2350, BY - 120, sub=SKMESH), _bmsh2["NewMesh"])
+g.link(_bpcv["then"], _bmsh2["execute"])
+#   (its own materials, not the component's: the player's backpack meshes carry the first-person "_fov" kind, which the
+#   bag in the hand needs; a component's override could be a world material, drawn off the hand)
 # build b ("still no bag"; probe: the backpack sat still 61 cm ahead, 81 cm below the view): the bag animations lock
 # their root to the reference pose (bForceRootLock), so the keyed root motion never applies. Their root follows the
 # player's jnt_l_weapon exactly (rotated -90 deg about X = the root's own reference rotation, every frame of In / Out):
@@ -1472,7 +1667,12 @@ g.link(_bold["then"], _boldd["execute"])
 g.link(_boldd["then"], _bsp["execute"])
 g.link(_bold["else"], _bsp["execute"])
 chain(_bsp, set_from("BagActor", "object", BX + 1800, BY, _bsp["ReturnValue"], "the backpack", sub=SKA),
-      _bmob, _bmsh, _bcol, _batt, _bvb, _bab, _bhid, _bshs, bag_anim(BX + 3300, BY, BAG_ANIM_IN, "the bag's half"),
+      _bmob)
+g.link(_bmob["then"], _bpcv["execute"])
+g.link(_bpcv["else"], _bmsh["execute"])
+g.link(_bmsh["then"], _bcol["execute"])
+g.link(_bmsh2["then"], _bcol["execute"])
+chain(_bcol, _batt, _bvb, _bab, _bhid, _bshs, bag_anim(BX + 3300, BY, BAG_ANIM_IN, "the bag's half"),
       self_set("BagMode", "bool", BX + 3600, BY, "bag looting", default="true"),
       set_from("BagAt", "real", BX + 3900, BY, now(BX + 3750, BY + 200), "", subcat="double"),
       set_from("ReachStart", "real", BX + 4200, BY, now(BX + 4050, BY + 200), "", subcat="double"),
@@ -1498,13 +1698,15 @@ _pwq = member_pure(OBJC, "GetMainHandEquipType", PX - 300, PY_ + 500, as_pc,
                    [("ReturnValue", "byte", dict(sub=EN("/Script/Stalker2.EMainHandEquipmentType"), out=True))])["ReturnValue"]
 _pwi = kml("Conv_ByteToInt", PX - 100, PY_ + 500, [("InByte", "byte", dict(extra='DefaultValue="0",')), ("ReturnValue", "int", dict(out=True))])
 g.link(_pwq, _pwi["InByte"])
-_parm = obj_q("HasItemInMainHand", PX - 100, PY_ + 600, as_pc)
+_parm = b_or(PX + 50, PY_ + 600, obj_q("HasItemInMainHand", PX - 100, PY_ + 600, as_pc), kn_q(PX - 300, PY_ + 650))   # ab review: the knife / bolt hidden too
 #   family: 0 rifle stance, 1 pistol, 2 empty hands
 _pfam1 = kml("SelectInt", PX + 100, PY_ + 500, [("A", "int", dict(extra='DefaultValue="1",')), ("B", "int", dict(extra='DefaultValue="0",')), B("bPickA"),
                                                 ("ReturnValue", "int", dict(out=True))])
 _peqi = kml("EqualEqual_IntInt", PX - 100, PY_ + 700, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="1",')), RB])
 g.link(_pwi["ReturnValue"], _peqi["A"])
-g.link(_peqi["ReturnValue"], _pfam1["bPickA"])
+#   v1.3.2 ab: the knife / bolt pat with the rifle family 0 (their layer is the rifle body; the item hidden; AM_ImmLoot_Pat's
+#   slot tracks are set by hand in the montage editor, so the table keeps its 75 segments)
+g.link(_peqi["ReturnValue"], _pfam1["bPickA"])   # ab review: the knife / bolt = family 0 (their layer is the rifle body)
 _pfam = kml("SelectInt", PX + 300, PY_ + 500, [("A", "int"), ("B", "int", dict(extra='DefaultValue="2",')), B("bPickA"), ("ReturnValue", "int", dict(out=True))])
 g.link(_pfam1["ReturnValue"], _pfam["A"])
 g.link(_parm, _pfam["bPickA"])
@@ -1600,7 +1802,11 @@ def spawn_copy(x, y, actor_cls, comp_var, comment, var="Fly", count="NFly"):
                       [("NewType", "byte", dict(sub=EN("/Script/Engine.ECollisionEnabled"), extra='DefaultValue="NoCollision",'))])
     sf = set_from(var, "object", x + 1250, y, sp["ReturnValue"], "the flying copy" if var == "Fly" else "the stand-in copy", sub=ACTOR)
     nf = inc(count, x + 1550, y, "count copies")
-    chain(sp, mob, setm, col, sf, nf)
+    chain(sp, mob, setm)
+    mi_, mo_ = apply_mats(x + 650, y + 500, comp, arr_get("ItemMats", x + 450, y + 600, MATI), "aa: the item's own materials (its variant)")
+    g.link(setm["then"], mi_)
+    g.link(mo_, col["execute"])
+    chain(col, sf, nf)
     return sp
 
 
@@ -1635,8 +1841,45 @@ g.link(self_get("InvIMC", "object", X5 - 600, Y5 + 420, sub=IMC_CLS), hmc["Mappi
 inv = b_and(X5 - 150, Y5 + 300, is_valid(X5 - 400, Y5 + 450, self_get("InvIMC", "object", X5 - 600, Y5 + 500, sub=IMC_CLS)),
             hmc["ReturnValue"])
 inv_open = lambda x, y: self_get("InvOpen", "bool", x, y)
-sq5 = sequence(X5, Y5, "loot window steps", 5)
+sq5 = sequence(X5, Y5, "loot window steps", 6)
 g.link(sq["then_2"], sq5["execute"])
+
+#   L5 (v1.3.2 aa; Nexus, Ls5555: the bag should be the player's own, e.g. the pre-order backpack): while the player's
+#   own inventory is open (LootKind 0), the game shows his backpack in Skif's hands: the pawn's skeletal meshes are
+#   searched for a player backpack (SK_bpa_pla*), remembered for our bag (BagMeshPC); searched again while only the
+#   default one is known (a pre-order one wins once seen), in the first 1.5 s of each opening (review: not every tick)
+_lk0s = kml("EqualEqual_IntInt", X5 + 100, Y5 + 4500, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="0",')), RB])
+g.link(self_get("LootKind", "int", X5 - 100, Y5 + 4500), _lk0s["A"])
+_bmpc = lambda x, y: self_get("BagMeshPC", "object", x, y, sub=SKMESH)
+_bmdf = kml("EqualEqual_ObjectObject", X5 + 100, Y5 + 4650, [("A", "object", dict(sub=OBJ)), ("B", "object", dict(sub=OBJ, extra=f'DefaultObject="{BAG_MESH}",')), RB])
+g.link(_bmpc(X5 - 100, Y5 + 4650), _bmdf["A"])
+_bps = branch(X5 + 300, Y5 + 4300, "aa: his own inventory open, no backpack of his own known yet (or only the default)? search the pawn",
+              b_and(X5 + 250, Y5 + 4450, inv_open(X5 - 100, Y5 + 4400), _lk0s["ReturnValue"],
+                    d_op("Less_DoubleDouble", X5 + 100, Y5 + 4380, d_op("Subtract_DoubleDouble", X5 - 100, Y5 + 4380, now(X5 - 300, Y5 + 4380),
+                                                                       self_get("OpenAt", "real", X5 - 300, Y5 + 4450, subcat="double")), b_const="1.5", ret=RB),
+                    b_or(X5 + 250, Y5 + 4600, b_not(X5 + 200, Y5 + 4600, is_valid(X5 + 100, Y5 + 4600, _bmpc(X5 - 100, Y5 + 4600))), _bmdf["ReturnValue"])))
+g.link(sq5["then_5"], _bps["execute"])
+_gcb = member_pure(ACTOR, "K2_GetComponentsByClass", X5 + 300, Y5 + 4800, as_pc, [
+    ("ComponentClass", "class", dict(sub=ACOMP, extra=f'DefaultObject="{SKC.split(chr(39))[1]}",')),
+    ("ReturnValue", "object", dict(sub=SKC, out=True))])
+_gcb.pins["ReturnValue"].container = "Array"
+_fbp = for_each(X5 + 600, Y5 + 4300, "each skeletal mesh on the pawn", SKC)
+g.link(_gcb["ReturnValue"], _fbp["Array"])
+g.link(_bps["then"], _fbp["Exec"])
+_bpm = member_pure(SKC, "GetSkeletalMeshAsset", X5 + 800, Y5 + 4600, _fbp["Array Element"], [("ReturnValue", "object", dict(sub=SKMESH, out=True))])["ReturnValue"]
+_bpn = lib_pure(KSL, "KismetSystemLibrary", "GetObjectName", X5 + 1000, Y5 + 4600, [("Object", "object", dict(sub=OBJ)), ("ReturnValue", "string", dict(out=True))])
+g.link(_bpm, _bpn["Object"])
+_bpsw = lib_pure(cls("/Script/Engine.KismetStringLibrary"), "KismetStringLibrary", "StartsWith", X5 + 1200, Y5 + 4600,
+                 [("SourceString", "string"), ("InPrefix", "string", dict(extra='DefaultValue="SK_bpa_pla",')),
+                  ("SearchCase", "byte", dict(sub=EN("/Script/CoreUObject.ESearchCase"), extra='DefaultValue="IgnoreCase",')), RB])
+g.link(_bpn["ReturnValue"], _bpsw["SourceString"])
+_bmdf2 = kml("EqualEqual_ObjectObject", X5 + 1200, Y5 + 4800, [("A", "object", dict(sub=OBJ)), ("B", "object", dict(sub=OBJ, extra=f'DefaultObject="{BAG_MESH}",')), RB])
+g.link(_bmpc(X5 + 1000, Y5 + 4800), _bmdf2["A"])
+_bpb = branch(X5 + 1400, Y5 + 4300, "a player backpack mesh, and none but the default known? (a pre-order one is never overwritten by the default)",
+              b_and(X5 + 1350, Y5 + 4500, _bpsw["ReturnValue"],
+                    b_or(X5 + 1350, Y5 + 4700, b_not(X5 + 1300, Y5 + 4700, is_valid(X5 + 1200, Y5 + 4700, _bmpc(X5 + 1000, Y5 + 4700))), _bmdf2["ReturnValue"])))
+g.link(_fbp["LoopBody"], _bpb["execute"])
+g.link(_bpb["then"], set_from("BagMeshPC", "object", X5 + 1700, Y5 + 4300, _bpm, "aa: his backpack (our bag uses it)", sub=SKMESH)["execute"])
 
 #   L0: while closed, remember what we look at (the corpse / stash the window will open for)
 b50 = branch(X5 + 300, Y5 - 200, "window closed (and not opening this tick)?", b_and(X5 + 200, Y5 - 50, b_not(X5 + 50, Y5 - 50, inv_open(X5 - 100, Y5 - 50)), b_not(X5 + 50, Y5 + 50, inv)))
@@ -2460,22 +2703,74 @@ for k in range(25):
     sp_.pins["TouchAsset"].extra = f'DefaultObject="{TOUCH_PT[k]}",'
     g.link(bk["then"], sp_["execute"])
     _prev = bk
-barm = branch(XT + 3950, YT + 3000, "weapon in hand? (else the empty-hands door assets)", obj_q("HasItemInMainHand", XT + 3800, YT + 3150, as_pc))
+# v1.3.2 ab: the knife / bolt: AS_ImmLoot_TouchKn<bin> (make_grab_seq PART=knife: the touch recipe on the knife layer's
+# pose, from and back to its free left hand, no IK back on)
+TOUCH_KN = [f"/ImmersiveLooting/Runtime/AS_ImmLoot_TouchKn{i}.AS_ImmLoot_TouchKn{i}" for i in range(25)]
+bknt = branch(XT + 4100, YT + 6600, "v1.3.2 ab: the knife / bolt in hand? the knife-family touch for this bin", kn_q(XT + 3800, YT + 6800))
+g.link(bpt["else"], bknt["execute"])
+_prev = bknt
+for k in range(25):
+    bk = branch(XT + 4400 + 600 * k, YT + 6600, f"knife / bolt, bin {k}?", int_eq(XT + 4300 + 600 * k, YT + 6800, self_get("TouchBin", "int", XT + 4100 + 600 * k, YT + 6800), k))
+    g.link(_prev["then" if k == 0 else "else"], bk["execute"])
+    sp_ = self_set("TouchAsset", "object", XT + 4700 + 600 * k, YT + 6600, "the knife-family touch toward it", sub=ANIMSEQB)
+    sp_.pins["TouchAsset"].extra = f'DefaultObject="{TOUCH_KN[k]}",'
+    g.link(bk["then"], sp_["execute"])
+    _prev = bk
+barm = branch(XT + 3950, YT + 3000, "weapon in hand? (else the empty-hands door assets)",
+              b_or(XT + 3900, YT + 3150, obj_q("HasItemInMainHand", XT + 3800, YT + 3150, as_pc), kn_q(XT + 3600, YT + 3200)))
 g.link(bdov["then"], barm["execute"])
 DOOR_PUSH_BH = "/ImmersiveLooting/Runtime/AS_ImmLoot_DoorPushBH.AS_ImmLoot_DoorPushBH"
 DOOR_PULL_BH = "/ImmersiveLooting/Runtime/AS_ImmLoot_DoorPullBH.AS_ImmLoot_DoorPullBH"
 # door build B (tester: "the hand clips through the gun, the fingers look weird as they settle; the return should go in a
 # downward arc under the pistol or rifle"): with a weapon, the family door assets (make_grab_seq build_door_family):
 # a pistol (MainHandEquipmentType 1) -> ...Pt, any other weapon -> ...Ar
-DOOR_FAM = {k_: f"/ImmersiveLooting/Runtime/AS_ImmLoot_Door{k_}.AS_ImmLoot_Door{k_}" for k_ in ("PushAr", "PullAr", "PushPt", "PullPt")}
+def _door_right(x, y):
+    """v1.3.2 af: the pressed leaf's free edge (2 x its bounds centre - its origin = the hinge) right of the view centre?"""
+    dc_ = self_get("DoorComp", "object", x - 600, y, sub=PRIM)
+    h_ = member_pure(SC_, "K2_GetComponentLocation", x - 400, y, dc_, [("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+    gb_ = lib_pure(KSL, "KismetSystemLibrary", "GetComponentBounds", x - 400, y + 100,
+                   [("Component", "object", dict(sub=SC_)), ("Origin", "struct", dict(sub=VEC, out=True)),
+                    ("BoxExtent", "struct", dict(sub=VEC, out=True)), ("SphereRadius", "real", dict(subcat="float", out=True))])
+    gb_.pins["Component"].const = True
+    g.link(self_get("DoorComp", "object", x - 600, y + 100, sub=PRIM), gb_["Component"])
+    m2_ = kml("Multiply_VectorFloat", x - 250, y + 100, [("A", "struct", dict(sub=VEC)), D("B", "2.0"), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+    g.link(gb_["Origin"], m2_["A"])
+    e_ = vop("Subtract_VectorVector", x - 100, y, m2_["ReturnValue"], h_)
+    cl_, _cf, cr_, _cu, _ = cam_basis(x - 600, y + 250)
+    d_ = vop("Dot_VectorVector", x + 100, y, vop("Subtract_VectorVector", x - 50, y + 150, e_, cl_), cr_, ret_sub="real")
+    return d_op("Greater_DoubleDouble", x + 250, y, d_, b_const="0.0", ret=RB)
+
+
+DOOR_FAM = {k_: f"/ImmersiveLooting/Runtime/AS_ImmLoot_Door{k_}.AS_ImmLoot_Door{k_}" for k_ in ("PushAr", "PullAr", "PushPt", "PullPt", "PushKn", "PullKn", "PushArNear", "PullArNear")}
 bdpt = branch(XT + 4050, YT + 2700, "door build B: a pistol in hand? the pistol door assets",
               int_eq(XT + 3950, YT + 2850, _pti["ReturnValue"], 1))
 g.link(barm["then"], bdpt["execute"])
-for _ex0, _pull, _push, _yy in ((bdpt["then"], DOOR_FAM["PullPt"], DOOR_FAM["PushPt"], 2700), (bdpt["else"], DOOR_FAM["PullAr"], DOOR_FAM["PushAr"], 3300),
+#   v1.3.2 ab: the knife / bolt: the knife-family door assets (from and back to the free left hand)
+bdkn = branch(XT + 4050, YT + 2400, "v1.3.2 ab: the knife / bolt in hand? the knife-family door assets", kn_q(XT + 3750, YT + 2550))
+g.link(bdpt["else"], bdkn["execute"])
+#   v1.3.2 ae (tester: the rifle door "still doesn't look as good as pistol or unarmed"; ad probe: that long gun's left
+#   hand sat at (38, 4, -24) cm from the eye, 9 cm behind / 10 cm below the rifle stance grip the Ar doors start and end
+#   on): a long gun whose live left hand is less than 43 cm ahead of the eye (LHandVX, view axes, every tick) gets the
+#   near-grip door assets (make_grab_seq PART=doorarn: the same door, its ends at that grip)
+bdnr = branch(XT + 4050, YT + 3150, "v1.3.2 ae: a long gun held with the left hand near (< 43 cm ahead of the eye)? the near-grip door assets",
+              d_op("Less_DoubleDouble", XT + 3900, YT + 3250, self_get("LHandVX", "real", XT + 3700, YT + 3250, subcat="double"), b_const="43.0", ret=RB))
+g.link(bdkn["else"], bdnr["execute"])
+for _ex0, _pull, _push, _yy in ((bdpt["then"], DOOR_FAM["PullPt"], DOOR_FAM["PushPt"], 2700), (bdnr["else"], DOOR_FAM["PullAr"], DOOR_FAM["PushAr"], 3300),
+                                (bdnr["then"], DOOR_FAM["PullArNear"], DOOR_FAM["PushArNear"], 3450),
+                                (bdkn["then"], DOOR_FAM["PullKn"], DOOR_FAM["PushKn"], 2400),
                                 (barm["else"], DOOR_PULL_BH, DOOR_PUSH_BH, 3600)):
     _bp = branch(XT + 4100, YT + _yy, "closing (a pull)?", self_get("DoorPulling", "bool", XT + 3900, YT + _yy + 150))
     g.link(_ex0, _bp["execute"])
-    for _ex, _asset, _xx in ((_bp["then"], _pull, 4400), (_bp["else"], _push, 4700)):
+    #   v1.3.2 af (tester, screenshot: a door hinged on the left closed with the hand at the lower left, "it should be
+    #   toward the right: you can't pull it there to close it"): a pull reaches for the leaf's free edge. A leaf's mesh
+    #   pivot is its hinge (kit: SM_cit_out_door_a_04 0..104 cm, SM_cit_in_door_bb_01 -3..103, the cupboards' -51..0),
+    #   so the free edge = 2 x the bounds centre - the leaf's origin; on the right of the view -> the pull mirrored to
+    #   the right (make_grab_seq PART=doorpullr: ...PullR assets, the same door at +22 deg / bare hands +30)
+    _bpr = branch(XT + 4250, YT + _yy + 50, "v1.3.2 af: the leaf's free edge on the right of the view? the pull reaches right", _door_right(XT + 3700, YT + _yy + 300))
+    g.link(_bp["then"], _bpr["execute"])
+    _pullr = _pull.replace(".AS_ImmLoot_DoorPull", ".AS_ImmLoot_DoorPull").rsplit(".", 1)
+    _pullr = f"{_pullr[0]}R.{_pullr[1]}R"
+    for _ex, _asset, _xx in ((_bpr["else"], _pull, 4400), (_bpr["then"], _pullr, 4550), (_bp["else"], _push, 4700)):
         _sd = self_set("TouchAsset", "object", XT + _xx, YT + _yy - 100, _asset.rsplit(".", 1)[1], sub=ANIMSEQB)
         _sd.pins["TouchAsset"].extra = f'DefaultObject="{_asset}",'
         g.link(_ex, _sd["execute"])
@@ -2841,8 +3136,15 @@ chain(si, sim, sis)
 g.link(bn["then"], si["execute"])
 bc = branch(X2 + 2150, Y2 - 100, "static mesh component?", is_valid(X2 + 2000, Y2 + 200, smc))
 g.link(sis["then"], bc["execute"])
-g.link(bc["then"], set_from("ItemComp", "object", X2 + 2450, Y2 - 200, smc, "its mesh component", sub=SC_)["execute"])
-g.link(bc["else"], set_from("ItemComp", "object", X2 + 2450, Y2 + 100, skc, "its mesh component", sub=SC_)["execute"])
+#   v1.3.2 aa (Nexus: the Limited Edition NON STOP turned into the normal blue can in the hand, spoiled canned food into
+#   canned food, Spark armor into Duty armor): MeshPrototypes.cfg variants share one mesh and differ by a material
+#   override on the item's component: the copy takes the item's materials too (ItemMats, set on the copy at its spawn)
+_sic1 = set_from("ItemComp", "object", X2 + 2450, Y2 - 200, smc, "its mesh component", sub=SC_)
+_sic2 = set_from("ItemComp", "object", X2 + 2450, Y2 + 100, skc, "its mesh component", sub=SC_)
+g.link(bc["then"], _sic1["execute"])
+g.link(bc["else"], _sic2["execute"])
+chain(_sic1, arr_set("ItemMats", X2 + 2750, Y2 - 200, mats_of(X2 + 2550, Y2 - 50, smc), "aa: its materials", MATI))
+chain(_sic2, arr_set("ItemMats", X2 + 2750, Y2 + 100, mats_of(X2 + 2550, Y2 + 250, skc), "aa: its materials", MATI))
 sseen = set_from("ItemSeen", "real", X2 + 950, Y2 + 600, now(X2 + 800, Y2 + 800), "seen now", subcat="double")
 g.link(sq2["then_1"], sseen["execute"])
 sarm = self_set("ItemArmed", "bool", X2 + 1250, Y2 + 600, "", default="true")
@@ -2905,7 +3207,34 @@ _fdir = kml("Normal", X3 - 800, Y3 + 1150, [("A", "struct", dict(sub=VEC)), ("To
 g.link(vop("Subtract_VectorVector", X3 - 950, Y3 + 1150, _kn, _wr), _fdir["A"])
 _mvf = kml("Multiply_VectorFloat", X3 - 650, Y3 + 1150, [("A", "struct", dict(sub=VEC)), D("B", "2.0"), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
 g.link(_fdir["ReturnValue"], _mvf["A"])
-bone = vop("Add_VectorVector", X3 - 650, Y3 + 1000, _bsel["ReturnValue"], _mvf["ReturnValue"])
+_bone0 = vop("Add_VectorVector", X3 - 650, Y3 + 1000, _bsel["ReturnValue"], _mvf["ReturnValue"])
+_ki = member_pure(SKC, "GetSocketLocation", X3 - 1300, Y3 + 1500, mesh, [("InSocketName", "name", dict(extra='DefaultValue="jnt_l_hand_index_01",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+_kp = member_pure(SKC, "GetSocketLocation", X3 - 1300, Y3 + 1600, mesh, [("InSocketName", "name", dict(extra='DefaultValue="jnt_l_hand_pinky_01",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]
+_pn0 = kml("Normal", X3 - 900, Y3 + 1500, [("A", "struct", dict(sub=VEC)), ("Tolerance", "real", dict(subcat="float", extra='DefaultValue="0.000100",')),
+                                          ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(vop("Cross_VectorVector", X3 - 1050, Y3 + 1500, _fdir["ReturnValue"], vop("Subtract_VectorVector", X3 - 1150, Y3 + 1550, _ki, _kp)), _pn0["A"])
+# v1.3.2 d (tester, crouched: "after the item is in the hand it then pops even higher above the hand"): the side was
+# picked by facing away from the camera, which flips as the hand comes back up (the item jumped through the hand).
+# The palm side is fixed: the thumb sits 4.8-4.9 cm on the -n side in the vanilla grab, the view table and the crouch
+# table alike (n = wrist -> middle knuckle x pinky -> index knuckle), so the palm normal is -n
+_pneg = kml("NegateVector", X3 - 800, Y3 + 1550, [("A", "struct", dict(sub=VEC)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+g.link(_pn0["ReturnValue"], _pneg["A"])
+_pns = {"ReturnValue": _pneg["ReturnValue"]}
+_hbs = kml("GetBoxSize", X3 - 900, Y3 + 1850, [("InBox", "struct", dict(sub="\"/Script/CoreUObject.ScriptStruct'/Script/CoreUObject.Box'\"")), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
+_hbs.pins["InBox"].ref = True
+_hbs.pins["InBox"].const = True
+g.link(member_pure(SM, "GetBoundingBox", X3 - 1100, Y3 + 1850, self_get("FlyMesh", "object", X3 - 1300, Y3 + 1850, sub=SM),
+                   [("ReturnValue", "struct", dict(sub="\"/Script/CoreUObject.ScriptStruct'/Script/CoreUObject.Box'\"", out=True))])["ReturnValue"], _hbs["InBox"])
+_hbb = kml("BreakVector", X3 - 700, Y3 + 1850, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
+                                               ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
+g.link(_hbs["ReturnValue"], _hbb["InVec"])
+_hmin = kml("FMin", X3 - 550, Y3 + 1850, [D("A"), D("B"), RD]); g.link(_hbb["X"], _hmin["A"]); g.link(_hbb["Y"], _hmin["B"])
+_hmin2 = kml("FMin", X3 - 400, Y3 + 1850, [D("A"), D("B"), RD]); g.link(_hmin["ReturnValue"], _hmin2["A"]); g.link(_hbb["Z"], _hmin2["B"])
+_hoff = kml("SelectFloat", X3 - 250, Y3 + 1800, [D("A"), D("B", "0.0"), B("bPickA"), RD])
+g.link(d_op("Add_DoubleDouble", X3 - 300, Y3 + 1900, d_op("Multiply_DoubleDouble", X3 - 350, Y3 + 1950, _hmin2["ReturnValue"], b_const="0.5"), b_const="0.5"), _hoff["A"])
+g.link(b_and(X3 - 350, Y3 + 2000, pick_bh(X3 - 550, Y3 + 2000), is_valid(X3 - 550, Y3 + 2070, self_get("FlyMesh", "object", X3 - 750, Y3 + 2070, sub=SM))), _hoff["bPickA"])
+bone = vop("Add_VectorVector", X3 - 500, Y3 + 1000, _bone0, vop("Multiply_VectorFloat", X3 - 500, Y3 + 1500, _pns["ReturnValue"], _hoff["ReturnValue"],
+                                                               b_cat="real", b_sub="None", b_subcat="double"))
 cl_, cf_, cr_, cu_, cfov = cam_basis(X3 - 1500, Y3 + 1100)
 tan_v = kml("DegTan", X3 - 700, Y3 + 1300, [D("A"), RD])
 g.link(d_op("Multiply_DoubleDouble", X3 - 900, Y3 + 1300, cfov, b_const="0.5"), tan_v["A"])
@@ -3058,7 +3387,9 @@ g.link(_ixb["Scale"], _mt["Scale"])
 _off = kml("TransformLocation", X3 + 700, Y3 + 2800, [("T", "struct", dict(sub=XFORM)), ("Location", "struct", dict(sub=VEC)), ("ReturnValue", "struct", dict(sub=VEC, out=True))])
 g.link(_mt["ReturnValue"], _off["T"])
 g.link(_cz["ReturnValue"], _off["Location"])
-_crr = kml("SelectFloat", X3 + 700, Y3 + 2900, [D("A", "0.0"), D("B", "5.0"), ("bPickA", "bool", dict(extra='DefaultValue="false",')), RD])
+# v1.3.2 h (tester, crouched empty hands: "still doesn't really look like it is in the hand", the can right of and
+# below the fingers): build 48's crouched +5 cm to the right was a correction for the old crouch table; 0 now
+_crr = kml("SelectFloat", X3 + 700, Y3 + 2900, [D("A", "0.0"), D("B", "0.0"), ("bPickA", "bool", dict(extra='DefaultValue="false",')), RD])
 g.link(self_get("AimStand", "bool", X3 + 500, Y3 + 2950), _crr["bPickA"])
 _crv = vop("Multiply_VectorFloat", X3 + 850, Y3 + 2850, cr_, _crr["ReturnValue"], b_cat="real", b_sub="None", b_subcat="double")
 held_pos = vop("Add_VectorVector", X3 + 1000, Y3 + 2750, vop("Subtract_VectorVector", X3 + 900, Y3 + 2700, hand, _off["ReturnValue"]), _crv)   # build 48: crouched +5 cm right
@@ -3254,8 +3585,11 @@ g.link(self_get("PatMode", "bool", X4 + 700, Y4 - 2050), _spt["bPickA"])
 _touch_at = _spt["ReturnValue"]
 at_touch = d_op("GreaterEqual_DoubleDouble", X4 + 900, Y4 - 1700, _pos2["ReturnValue"],
                 d_op("Add_DoubleDouble", X4 + 700, Y4 - 1600, seg0(X4 + 500, Y4 - 1600), _touch_at), ret=RB)
+# v1.3.2 (tester: the door hand "shouldn't stop, it should be continuous"): a door touch is not held (its asset plays
+# out to rest in one go)
 bhold = branch(X4 + 1100, Y4 - 1500, "touching the corpse / stash? hold there",
                b_and(X4 + 1000, Y4 - 1300, self_get("LootReach", "bool", X4 + 800, Y4 - 1300),
+                     b_not(X4 + 800, Y4 - 1370, self_get("DoorTouch", "bool", X4 + 600, Y4 - 1370)),
                      b_not(X4 + 800, Y4 - 1200, self_get("LootPaused", "bool", X4 + 600, Y4 - 1200)),
                      b_not(X4 + 800, Y4 - 1100, self_get("LootReverse", "bool", X4 + 600, Y4 - 1100)),
                      grab_active(X4 + 600, Y4 - 1000), at_touch))
@@ -3292,7 +3626,9 @@ bk2 = self_set("LootReach", "bool", X4 + 2000, Y4 - 900, "", default="false")
 bk3 = self_set("TouchState", "int", X4 + 2300, Y4 - 900, "idle", default="0")
 chain(mst2, bk1, bk2, bk3)
 # armed: the game's own "left hand back on the item" (its notify switches the left-hand IK back on: the hand re-grips)
-bgr = branch(X4 + 2600, Y4 - 900, "weapon in hand? put the left hand back on it", obj_q("HasItemInMainHand", X4 + 2400, Y4 - 700, as_pc))
+# v1.3.2 ab review: never with the knife / bolt (the montage switches the left-hand IK on: the free hand to the item's socket)
+bgr = branch(X4 + 2600, Y4 - 900, "weapon in hand? put the left hand back on it",
+             b_and(X4 + 2500, Y4 - 700, obj_q("HasItemInMainHand", X4 + 2400, Y4 - 700, as_pc), b_not(X4 + 2400, Y4 - 600, kn_q(X4 + 2100, Y4 - 600))))
 g.link(bk3["then"], bgr["execute"])
 mrg = montage_play(X4 + 2900, Y4 - 900, anim, RETURN, None, "hand back on the grip")
 g.link(bgr["then"], mrg["execute"])
@@ -3312,7 +3648,7 @@ _gm_new = d_op("Less_DoubleDouble", X4 + 300, Y4 + 850,
                d_op("Subtract_DoubleDouble", X4 + 100, Y4 + 850, now(X4 - 100, Y4 + 850),
                     self_get("GameMontageAt", "real", X4 - 100, Y4 + 920, subcat="double")), b_const="0.1", ret=RB)
 br4b = branch(X4 + 600, Y4, "cut before the hand-on-grip notify, weapon held, no other left-hand montage, not by a game montage?",
-              b_and(X4 + 500, Y4 + 300, cut, obj_q("HasItemInMainHand", X4 + 300, Y4 + 650, as_pc),
+              b_and(X4 + 500, Y4 + 300, cut, obj_q("HasItemInMainHand", X4 + 300, Y4 + 650, as_pc), b_not(X4 + 300, Y4 + 950, kn_q(X4, Y4 + 950)),   # ab review: not the knife / bolt
                     b_not(X4 + 300, Y4 + 750, slot_active(X4 + 100, Y4 + 750, anim, "LeftHand")),
                     b_not(X4 + 400, Y4 + 850, _gm_new)))
 g.link(sr4["then"], br4b["execute"])
@@ -3454,6 +3790,7 @@ BH_EQUIP = "/Game/_STALKER2/Animations/Player/AnimSequences/bh/showhide/Montages
 _bnat = branch(X4 + 1200, Y4 + 4400, "build f: played out with empty hands? the game's hands-up after its bag",
                b_and(X4 + 1100, Y4 + 4600, b_not(X4 + 900, Y4 + 4600, self_get("BagWeapon", "bool", X4 + 700, Y4 + 4600)),
                      b_not(X4 + 900, Y4 + 4530, obj_q("HasItemInMainHand", X4 + 700, Y4 + 4530, as_pc)),   # build p: BagWeapon is cleared at the equip
+                     b_not(X4 + 900, Y4 + 4800, kn_q(X4 + 600, Y4 + 4800)),   # ab review 2: no bare-hands hands-up over the knife / bolt
                      b_not(X4 + 900, Y4 + 4700, d_op("Greater_DoubleDouble", X4 + 700, Y4 + 4700, self_get("GameMontageAt", "real", X4 + 500, Y4 + 4700, subcat="double"),
                                                      self_get("BagAt", "real", X4 + 500, Y4 + 4770, subcat="double"), ret=RB))))
 g.link(_sbm0["then"], _bnat["execute"])
@@ -3473,11 +3810,40 @@ chain(_bwd, member_call(SC_, "SetHiddenInGame", X4 + 600, Y4 + 6300, _wmc, "show
 #   build m, empty hands: the pitch-fix pose table at the view pitch while the bag is out (0 crouched: the low-crouch
 #   look turns the arms rigidly already), stopped when the bag is gone
 _pfm = lambda x, y: self_get("PitchFixMont", "object", x, y, sub=MONT)
-_sqpf = sequence(X4 - 400, Y4 + 8600, "pitch fix, bag shown, Out ended, weapon shown, pat end", 6)
-g.link(_sqb2["then_2"], _sqpf["execute"])
+_sqpf = sequence(X4 - 400, Y4 + 8600, "pitch fix, bag shown, Out ended, weapon shown, pat end, pickup over, bag servo", 8)
+#   v1.3.2 ab (tester: at a pile of bodies the empty-hands backpack "sometimes appears too high, I can still see the
+#   bottom of it", the other times right; aa probe: those bags ran the crouch block while standing, the bag at (31..36,
+#   -20..-23, +21..+24) cm from the eye = the simulator's standing pose with the crouch correction: the camera's height
+#   in the mesh frame, the stance test, drops on uneven ground (the legs' IK lowers the body)): the stance from the game's
+#   own anim state instead, every tick (AnimInstancePlayer.StateData bLowCrouching / bCrouching, as bInCombat is read
+#   for Instant Intel): StanceBlk = 38 low crouch, 19 crouch, 0 standing (the bag table's blocks)
+_cst = exec_pins(Node(g, BG + "K2Node_DynamicCast", nm("K2Node_DynamicCast"), X4 - 1300, Y4 + 8100, "v1.3.2 ab: the player's anim instance (its stance)",
+                      ["TargetType=" + APLAY]))
+_cst.pin("CastFailed", "exec", out=True)
+_cst.pin("Object", "object", sub=OBJ)
+_cst.pin("AsAnim Instance Player", "object", sub=APLAY, out=True)
+_cst.pin("bSuccess", "bool", out=True)
+g.link(anim, _cst["Object"])
+_csd = other_get(APLAY, "StateData", "struct", X4 - 1000, Y4 + 8250, _cst["AsAnim Instance Player"], sub=STD)
+_csb = Node(g, BG + "K2Node_BreakStruct", nm("K2Node_BreakStruct"), X4 - 800, Y4 + 8250, "", ["StructType=" + STD])
+_csb.pin("AnimPlayerStateData", "struct", sub=STD)
+_csb.pin("bCrouching", "bool", out=True)
+_csb.pin("bLowCrouching", "bool", out=True)
+g.link(_csd, _csb["AnimPlayerStateData"])
+_csc = kml("SelectFloat", X4 - 600, Y4 + 8350, [D("A", "19.0"), D("B", "0.0"), B("bPickA"), RD])
+g.link(_csb["bCrouching"], _csc["bPickA"])
+_csl = kml("SelectFloat", X4 - 450, Y4 + 8250, [D("A", "38.0"), D("B"), B("bPickA"), RD])
+g.link(_csc["ReturnValue"], _csl["B"])
+g.link(_csb["bLowCrouching"], _csl["bPickA"])
+_sstb = set_from("StanceBlk", "real", X4 - 1000, Y4 + 8100, _csl["ReturnValue"], "v1.3.2 ab: 0 standing, 19 crouch, 38 low crouch (the game's state)", subcat="double")
+g.link(_sqb2["then_2"], _cst["execute"])
+g.link(_cst["then"], _sstb["execute"])
+g.link(_sstb["then"], _sqpf["execute"])
+g.link(_cst["CastFailed"], _sqpf["execute"])
 _bpfx = branch(X4 + 300, Y4 + 8600, "build m: the pitch fix running and the bag out? its frame from the view pitch",
               b_and(X4 + 200, Y4 + 8800, is_valid(X4, Y4 + 8800, _pfm(X4 - 200, Y4 + 8800)),
-                    b_or(X4 + 100, Y4 + 8900, is_valid(X4, Y4 + 8870, bag_actor(X4 - 200, Y4 + 8870)), self_get("PatMode", "bool", X4 - 200, Y4 + 8940))))
+                    b_or(X4 + 100, Y4 + 8900, is_valid(X4, Y4 + 8870, bag_actor(X4 - 200, Y4 + 8870)), self_get("PatMode", "bool", X4 - 200, Y4 + 8940),
+                         self_get("PickFix", "bool", X4 - 200, Y4 + 9010))))
 g.link(_sqpf["then_0"], _bpfx["execute"])
 _pfr = member_pure(PCM, "GetCameraRotation", X4 - 300, Y4 + 9000, _bcm, [("ReturnValue", "struct", dict(sub=ROT, out=True))])["ReturnValue"]
 _pfb = kml("BreakRotator", X4 - 100, Y4 + 9000, [("InRot", "struct", dict(sub=ROT)), ("Roll", "real", dict(subcat="float", out=True)),
@@ -3493,15 +3859,20 @@ g.link(d_op("Divide_DoubleDouble", X4 + 200, Y4 + 9100, _pfc["ReturnValue"], b_c
 _pfz = kml("BreakVector", X4 - 100, Y4 + 9300, [("InVec", "struct", dict(sub=VEC)), ("X", "real", dict(subcat="double", out=True)),
                                                ("Y", "real", dict(subcat="double", out=True)), ("Z", "real", dict(subcat="double", out=True))])
 g.link(_to_mesh(X4 - 300, Y4 + 9300, member_pure(PCM, "GetCameraLocation", X4 - 500, Y4 + 9400, _bcm, [("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"]), _pfz["InVec"])
-g.link(d_op("Less_DoubleDouble", X4 + 100, Y4 + 9300, _pfz["Z"], b_const="130.0", ret=RB), _pfs["bPickA"])
+g.link(d_op("Greater_DoubleDouble", X4 + 100, Y4 + 9300, self_get("StanceBlk", "real", X4 - 100, Y4 + 9370, subcat="double"), b_const="1.0", ret=RB), _pfs["bPickA"])   # ab review: crouched = the game's stance
 _pfp = member_call(ANIMI, "Montage_SetPosition", X4 + 600, Y4 + 8600, anim, "frame = view pitch down (deg) / 30 fps", [
     ("Montage", "object", dict(sub=MONT)), ("NewPosition", "real", dict(subcat="float"))])
 g.link(_pfm(X4 + 400, Y4 + 8800), _pfp["Montage"])
 g.link(_pfs["ReturnValue"], _pfp["NewPosition"])
 g.link(_bpfx["then"], _pfp["execute"])
+#   v1.3.2 e probe (tester: empty hands, the backpack "way up on the left the whole time" on a stash): the frame set,
+#   and whether the pose table is alive / the bag is out, every tick
+_pfpos_set = set_from("PitchFixPos", "real", X4 + 900, Y4 + 8500, _pfs["ReturnValue"], "probe", subcat="double")
+g.link(_pfp["then"], _pfpos_set["execute"])
 _bpe = branch(X4 + 300, Y4 + 9400, "build m: the pitch fix running and the bag gone? it goes",
               b_and(X4 + 200, Y4 + 9600, is_valid(X4, Y4 + 9600, _pfm(X4 - 200, Y4 + 9600)), b_not(X4 + 100, Y4 + 9670, is_valid(X4 - 100, Y4 + 9670, bag_actor(X4 - 300, Y4 + 9670))),
-                    b_not(X4 + 100, Y4 + 9740, self_get("PatMode", "bool", X4 - 100, Y4 + 9740))))
+                    b_not(X4 + 100, Y4 + 9740, self_get("PatMode", "bool", X4 - 100, Y4 + 9740)),
+                    b_not(X4 + 100, Y4 + 9810, self_get("PickFix", "bool", X4 - 100, Y4 + 9810))))
 g.link(_sqpf["then_1"], _bpe["execute"])
 _pfst = member_call(ANIMI, "Montage_Stop", X4 + 600, Y4 + 9400, anim, "out with the bag", [
     ("InBlendOutTime", "real", dict(subcat="float", extra='DefaultValue="0.300000",')), ("Montage", "object", dict(sub=MONT))])
@@ -3541,8 +3912,21 @@ chain(_boe, _pbo, stop_mont(X4 + 900, Y4 + 10600, AM_BAG_OUT, 0.25, "the arms ba
 #   (MainActionSlot; its notifies: both hands' IK on, left-hand idle unlock, "equip ended"), the weapon shown with it.
 #   None remembered (no equip since the load): shown when the bag is gone, as before (6d)
 _leq = lambda x, y: self_get("LastEquipMont", "object", x, y, sub=MONT)
+
+
+def _kn_replay_ok(x, y):
+    """ab review 2/3: not the knife / bolt, or the remembered equip was made with this same item type (the knife's own
+    draw: it sets the item's IK and brings the hand up to it; another weapon's would pull the free hand to its grip)"""
+    c_ = kml("Conv_ByteToInt", x - 100, y + 70, [("InByte", "byte", dict(extra='DefaultValue="0",')), ("ReturnValue", "int", dict(out=True))])
+    g.link(member_pure(OBJC, "GetMainHandEquipType", x - 350, y + 70, as_pc,
+                       [("ReturnValue", "byte", dict(sub=EN("/Script/Stalker2.EMainHandEquipmentType"), out=True))])["ReturnValue"], c_["InByte"])
+    e_ = kml("EqualEqual_IntInt", x + 100, y + 70, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="0",')), RB])
+    g.link(c_["ReturnValue"], e_["A"])
+    g.link(self_get("LastEquipType", "int", x - 100, y + 140), e_["B"])
+    return b_or(x + 200, y, b_not(x + 100, y, kn_q(x - 200, y - 70)), e_["ReturnValue"])
 _beq2 = branch(X4 + 1500, Y4 + 10600, "build p: our hidden weapon, an equip remembered? the game's equip brings it up",
-               b_and(X4 + 1400, Y4 + 10800, self_get("BagWeapon", "bool", X4 + 1200, Y4 + 10800), is_valid(X4 + 1200, Y4 + 10870, _leq(X4 + 1000, Y4 + 10870))))
+               b_and(X4 + 1400, Y4 + 10800, self_get("BagWeapon", "bool", X4 + 1200, Y4 + 10800), is_valid(X4 + 1200, Y4 + 10870, _leq(X4 + 1000, Y4 + 10870)),
+                     _kn_replay_ok(X4 + 900, Y4 + 10940)))   # ab review 2/3: the knife / bolt: only their own remembered equip (else shown again by _bwd)
 g.link(_bstp["then"], _beq2["execute"])
 _mpe = montage_play(X4 + 1800, Y4 + 10600, anim, "None", None, "the weapon's equip (the game's)")
 g.link(_leq(X4 + 1600, Y4 + 10800), _mpe["MontageToPlay"])
@@ -3560,6 +3944,51 @@ _bws = branch(X4 + 300, Y4 + 11200, "build q: the equip under way 2 ticks? the w
               b_and(X4 + 200, Y4 + 11300, kml_int_gt(X4 - 100, Y4 + 11270, self_get("WeaponShowTick", "int", X4 - 300, Y4 + 11270), "0"),
                     b_not(X4 + 100, Y4 + 11340, _wgt["ReturnValue"])))
 g.link(_sqpf["then_4"], _bws["execute"])
+#   v1.3.2: the standing pickup over (our montage gone)? its pitch fix goes (the stop above, next tick)
+_bpk = branch(X4 + 300, Y4 + 14200, "v1.3.2: a standing pickup's pitch fix, and our montage over?",
+              b_and(X4 + 200, Y4 + 14400, self_get("PickFix", "bool", X4, Y4 + 14400), b_not(X4, Y4 + 14470, grab_active(X4 - 200, Y4 + 14470))))
+#   (v1.3.2 g's pose-table heal removed in j: it never fired)
+_pfa = member_pure(ANIMI, "Montage_IsActive", X4 - 300, Y4 + 15000, anim, [("Montage", "object", dict(sub=MONT)), RB])
+_pfa.pins["Montage"].const = True
+g.link(_pfm(X4 - 500, Y4 + 15000), _pfa["Montage"])
+_pfok = b_and(X4 - 100, Y4 + 15000, is_valid(X4 - 300, Y4 + 15100, _pfm(X4 - 500, Y4 + 15100)), _pfa["ReturnValue"])
+_spfv = set_from("PitchFixAlive", "bool", X4 - 100, Y4 + 14000, _pfok, "probe (v1.3.2 g: playing, not just valid)")
+_sbav = set_from("BagAlive", "bool", X4 + 100, Y4 + 14000, is_valid(X4 - 100, Y4 + 14100, bag_actor(X4 - 300, Y4 + 14100)), "")
+#   v1.3.2 h probe (tester: the backpack "goes top left, the right arm clips into the view"; PitchFixAlive was true
+#   at the frame of the view pitch throughout): the bag, both hands and jnt_camera in view axes (cm), the pose table's
+#   real position, which bag montage plays
+_qvl, _qvf, _qvr, _qvu, _ = cam_basis(X4 - 900, Y4 + 15600)
+_qset = []
+def _qview(nm_, loc_, x_, y_):
+    rel_ = vop("Subtract_VectorVector", x_, y_, loc_, _qvl)
+    for k_, (sfx_, ax_) in enumerate((("X", _qvf), ("Y", _qvr), ("Z", _qvu))):
+        _qset.append(set_from(nm_ + sfx_, "real", x_ + 300 + 300 * len(_qset), y_ - 200,
+                              vop("Dot_VectorVector", x_ + 150, y_ + 80 * k_, rel_, ax_, ret_sub="real"), "probe" if k_ == 0 else "", subcat="double"))
+_qview("BagV", member_pure(ACTOR, "K2_GetActorLocation", X4 - 300, Y4 + 15600, bag_actor(X4 - 500, Y4 + 15600), [("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"], X4 - 100, Y4 + 15600)
+for nm_, sock_, yy_ in (("RHandV", "jnt_r_hand", 15900), ("LHandV", "jnt_l_hand", 16200), ("CamBoneV", "jnt_camera", 16500)):
+    _qview(nm_, member_pure(SKC, "GetSocketLocation", X4 - 300, Y4 + yy_, mesh, [("InSocketName", "name", dict(extra=f'DefaultValue="{sock_}",')), ("ReturnValue", "struct", dict(sub=VEC, out=True))])["ReturnValue"], X4 - 100, Y4 + yy_)
+_qpp = member_pure(ANIMI, "Montage_GetPosition", X4 - 300, Y4 + 16800, anim, [("Montage", "object", dict(sub=MONT)), ("ReturnValue", "real", dict(subcat="float", out=True))])
+_qpp.pins["Montage"].const = True
+g.link(_pfm(X4 - 500, Y4 + 16800), _qpp["Montage"])
+_qset.append(set_from("PitchFixReal", "real", X4 + 300 + 300 * len(_qset), Y4 + 15400, _qpp["ReturnValue"], "", subcat="double"))
+_qset.append(set_from("BagIdleOn", "bool", X4 + 300 + 300 * len(_qset), Y4 + 15400, montage_active(X4 - 300, Y4 + 16900, anim, AM_BAG_IDLE), ""))
+_qset.append(set_from("BagOutOn", "bool", X4 + 300 + 300 * len(_qset), Y4 + 15400, montage_active(X4 - 300, Y4 + 17000, anim, AM_BAG_OUT), ""))
+_qset.append(set_from("BagInOn", "bool", X4 + 300 + 300 * len(_qset), Y4 + 15400, montage_active(X4 - 300, Y4 + 17100, anim, AM_BAG_IN), ""))
+#   v1.3.2 ab probe: the camera height (the old stance test), what is in the hand, our montage's position (the rifle doors)
+_qset.append(set_from("BagCamZ", "real", X4 + 300 + 300 * len(_qset), Y4 + 15400, _pfz["Z"], "", subcat="double"))
+_qeq = kml("Conv_ByteToInt", X4 - 100, Y4 + 17200, [("InByte", "byte", dict(extra='DefaultValue="0",')), ("ReturnValue", "int", dict(out=True))])
+g.link(member_pure(OBJC, "GetMainHandEquipType", X4 - 350, Y4 + 17200, as_pc,
+                   [("ReturnValue", "byte", dict(sub=EN("/Script/Stalker2.EMainHandEquipmentType"), out=True))])["ReturnValue"], _qeq["InByte"])
+_qset.append(set_from("EquipType", "int", X4 + 300 + 300 * len(_qset), Y4 + 15400, _qeq["ReturnValue"], ""))
+_qset.append(set_from("HasItemMH", "bool", X4 + 300 + 300 * len(_qset), Y4 + 15400, obj_q("HasItemInMainHand", X4 - 100, Y4 + 17400, as_pc), "ab review 2: the bolt's HasItemInMainHand"))
+_qgp = member_pure(ANIMI, "Montage_GetPosition", X4 - 300, Y4 + 17300, anim, [("Montage", "object", dict(sub=MONT)), ("ReturnValue", "real", dict(subcat="float", out=True))])
+_qgp.pins["Montage"].const = True
+g.link(self_get("GrabMontage", "object", X4 - 500, Y4 + 17300, sub=MONT), _qgp["Montage"])
+_qset.append(set_from("GrabPos", "real", X4 + 300 + 300 * len(_qset), Y4 + 15400, _qgp["ReturnValue"], "", subcat="double"))
+chain(_spfv, _sbav, *_qset)
+g.link(_sqpf["then_6"], _spfv["execute"])
+g.link(_qset[-1]["then"], _bpk["execute"])
+g.link(_bpk["then"], self_set("PickFix", "bool", X4 + 600, Y4 + 14200, "done", default="false")["execute"])
 #   n2: the pat at its segment's end (frame 48)? it goes, the hidden weapon comes back with the game's equip
 _ppos = member_pure(ANIMI, "Montage_GetPosition", X4 - 100, Y4 + 12300, anim, [("Montage", "object", dict(sub=MONT, extra=f'DefaultObject="{AM_PAT}",')),
                                                                              ("ReturnValue", "real", dict(subcat="float", out=True))])
@@ -3576,7 +4005,8 @@ _pcl = [stop_mont(X4 + 900, Y4 + 12200, AM_PAT, 0.3, "out (0.3 s)"),
         self_set("Reaching", "bool", X4 + 1500, Y4 + 12200, "no hand-back recovery", default="false")]
 chain(_pend, _ppa, *_pcl)
 _peq = branch(X4 + 1800, Y4 + 12200, "n2: our hidden weapon, an equip remembered? the game's equip brings it up",
-              b_and(X4 + 1700, Y4 + 12400, self_get("BagWeapon", "bool", X4 + 1500, Y4 + 12400), is_valid(X4 + 1500, Y4 + 12470, self_get("LastEquipMont", "object", X4 + 1300, Y4 + 12470, sub=MONT))))
+              b_and(X4 + 1700, Y4 + 12400, self_get("BagWeapon", "bool", X4 + 1500, Y4 + 12400), is_valid(X4 + 1500, Y4 + 12470, self_get("LastEquipMont", "object", X4 + 1300, Y4 + 12470, sub=MONT)),
+                    _kn_replay_ok(X4 + 1200, Y4 + 12540)))   # ab review 2/3: as _beq2
 g.link(_pcl[-1]["then"], _peq["execute"])
 _mpe2 = montage_play(X4 + 2100, Y4 + 12200, anim, "None", None, "the weapon's equip (the game's)")
 g.link(self_get("LastEquipMont", "object", X4 + 1900, Y4 + 12400, sub=MONT), _mpe2["MontageToPlay"])
@@ -3731,8 +4161,13 @@ chain(_btc, _stc, set_from("TapCarryAt", "real", X7 + 3000, Y7 + 1000, now(X7 + 
 g.link([n_ for n_ in g.nodes if n_.comment == "count (probe)"][-1]["then"], _beq["execute"])
 g.link(_btc["else"], _beq["execute"])
 _sle = set_from("LastEquipMont", "object", X7 + 2700, Y7 + 300, ev7["Montage"], "the weapon's equip", sub=MONT)
-chain(_beq, _sle)
-g.link(_sle["then"], _bun["execute"])
+#   ab review 3: with the equip, what is in the hand then (a replay for the knife / bolt only of their own equip)
+_leqt = kml("Conv_ByteToInt", X7 + 2800, Y7 + 450, [("InByte", "byte", dict(extra='DefaultValue="0",')), ("ReturnValue", "int", dict(out=True))])
+g.link(member_pure(OBJC, "GetMainHandEquipType", X7 + 2550, Y7 + 450, as_pc,
+                   [("ReturnValue", "byte", dict(sub=EN("/Script/Stalker2.EMainHandEquipmentType"), out=True))])["ReturnValue"], _leqt["InByte"])
+_slet = set_from("LastEquipType", "int", X7 + 3000, Y7 + 300, _leqt["ReturnValue"], "ab review 3: its item type")
+chain(_beq, _sle, _slet)
+g.link(_slet["then"], _bun["execute"])
 g.link(_beq["else"], _bun["execute"])
 _spr = member_call(ANIMI, "Montage_SetPlayRate", X7 + 2700, Y7 + 550, self_get("BoundAnim", "object", X7 + 2500, Y7 + 700, sub=ANIMI), "8x", [
     ("Montage", "object", dict(sub=MONT)), ("NewPlayRate", "real", dict(subcat="float", extra='DefaultValue="8.000000",'))])
@@ -4295,5 +4730,115 @@ for _q in list(_brs_else.links):
     g.link(AIM_LAST["then"], _q)
 g.link(_brs_else, AIM_FIRST["execute"])
 
-write(sys.argv[1], g.text())
-print("ok", len(g.nodes), "nodes")
+# v1.3.2 x (tester on w: empty hands, standing "the backpack is too high, off screen", crouched "in your face"; every
+# fixed correction so far (j / k lowering, v / w rifle spine) landed somewhere else than predicted): the empty-hands
+# bag's arms are servoed. AS_ImmLoot_BagServo (make_bag_seq PART=servo) = the pitch fix x the arms turned about the
+# shoulders by L = -60..+60 deg in 5s (frame = pitch row x 25 + (L + 60) / 5; adjacent frames = adjacent L, so a
+# fractional position blends them). While the bag's Idle plays (behind the loot window, and after it until the Out),
+# every tick: the bag's elevation in view axes (BagVX / BagVZ, measured this tick) against the game's own bag
+# (39, -17, -26) cm = -34 deg; L -= 0.15 x BagServoSign x error. The sign: the table's math says a positive L lowers
+# the bag, the game showed the opposite twice (k's lowering and w's forward spine both lifted it), so it starts at +1
+# (a positive L lifts) and flips if L runs into either end with the bag still off (L back to 0). (z: both "opposite"
+# results came from tables referenced on their last frame, broken in game; with the reference on frame 0 the math's
+# sign is trusted: BagServoSign -1, standing L starts at +25.) One L per stance
+# (BagLowerS / BagLowerC) kept across bags, so the next bag starts where the last one settled. Frozen in the In / Out.
+# v1.3.2 aa (tester on z: "the unarmed backpack anim is still broken and too high"): the servo is gone. The bag
+# simulator (zonekit/research/bag/sim: the bh WeaponLayer order, validated on the h probe to 0-2 cm) shows why every
+# table missed: the bag sequences key the shoulders from a body leaning far forward (its shoulders 4.5 cm AHEAD of its
+# camera), the LeftHand / RightHand slots put those locals on the upright bare-hands chest (shoulders 28 cm BEHIND
+# the camera), and the standing look additive turns the arms back and moves the forearm (up to 31 cm). Standing at
+# -45 the bag sat 32 cm ABOVE the view centre ("above the screen"). AS_ImmLoot_BagFix (gen_bagfix.py + set_bagfix.py)
+# turns every arm bone to the anim's own orientation relative to the camera, puts the arm translations back and moves
+# the shoulders where the anim has them: the vanilla bag framing (39, -17, -26) cm at every pitch. Frame 0 = the
+# reference; frame 1 + block x 19 + pitch / 5, block 0 standing (camera >= 145 cm), 1 crouch (>= 115), 2 low crouch.
+BAG_SERVO = "/ImmersiveLooting/Runtime/AS_ImmLoot_BagFix.AS_ImmLoot_BagFix"
+SVX, SVY = X4 + 3000, Y4 + 8600
+_mpf.pins["Asset"].extra = f'DefaultObject="{BAG_SERVO}",'
+_mpfc.pins["Asset"].extra = f'DefaultObject="{BAG_SERVO}",'
+#   BagServo (= "the bag table"): true after the two bag starts' PitchFixMont set, false after every other one
+_pfm_sets = [n_ for n_ in g.nodes if n_.klass.endswith("K2Node_VariableSet") and n_.pins.get("PitchFixMont") is not None]
+#   the stance block, the game's stance (StanceBlk, v1.3.2 ab; aa used the camera height: >= 145 cm standing 0,
+#   >= 115 crouch 19, else low crouch 38, which a body pile underfoot fooled), noted at the bag's start (probe)
+_svblk = {"ReturnValue": self_get("StanceBlk", "real", SVX - 100, SVY - 300, subcat="double")}
+for k_, n_ in enumerate(_pfm_sets):
+    ours_ = any(q_ is _mpf["ReturnValue"] or q_ is _mpfc["ReturnValue"] for q_ in n_.pins["PitchFixMont"].links)
+    s_ = self_set("BagServo", "bool", n_.x + 150, n_.y + 250, "the bag table?" if ours_ else "not the bag table", default="true" if ours_ else "false")
+    for q_ in list(n_["then"].links):
+        n_["then"].links.remove(q_); q_.links.remove(n_["then"]); g.link(s_["then"], q_)
+    g.link(n_["then"], s_["execute"])
+    if ours_:
+        b_ = set_from("BagBlock", "real", n_.x + 450, n_.y + 250, _svblk["ReturnValue"], "aa: its stance block, kept for this bag", subcat="double")
+        for q_ in list(s_["then"].links):
+            s_["then"].links.remove(q_); q_.links.remove(s_["then"]); g.link(b_["then"], q_)
+        g.link(s_["then"], b_["execute"])
+#   (aa review round 2's 10 cm camera-height hysteresis gone with the camera test, v1.3.2 ab): the block follows the
+#   game's stance every tick (a discrete state: it changes once, when the player stands up or crouches)
+_svhy = self_get("StanceBlk", "real", SVX - 150, SVY - 700, subcat="double")
+#   the frame: the bag table = (1 + block x 19 + pitch down / 5) / 30; the plain pitch fix as before
+_svrow = kml("FClamp", SVX + 100, SVY - 450, [D("Value"), D("Min", "0.0"), D("Max", "18.0"), RD])
+g.link(d_op("Divide_DoubleDouble", SVX - 100, SVY - 450, _pfc["ReturnValue"], b_const="5.0"), _svrow["Value"])
+_svpos = d_op("Divide_DoubleDouble", SVX + 600, SVY - 450,
+              d_op("Add_DoubleDouble", SVX + 450, SVY - 450, d_op("Add_DoubleDouble", SVX + 300, SVY - 450, _svrow["ReturnValue"], _svhy),
+                   b_const="1.0"),   # frame 0 = the reference
+              b_const="30.0")
+_svsel = kml("SelectFloat", SVX + 800, SVY - 450, [D("A"), D("B"), B("bPickA"), RD])
+g.link(_svpos, _svsel["A"])
+g.link(self_get("BagServo", "bool", SVX + 600, SVY - 300), _svsel["bPickA"])
+for q_ in list(_pfp["NewPosition"].links):
+    _pfp["NewPosition"].links.remove(q_); q_.links.remove(_pfp["NewPosition"]); g.link(q_, _svsel["B"])
+g.link(_svsel["ReturnValue"], _pfp["NewPosition"])
+for q_ in list(_pfpos_set.pins["PitchFixPos"].links):   # review: the probe logs the position really set
+    _pfpos_set.pins["PitchFixPos"].links.remove(q_); q_.links.remove(_pfpos_set.pins["PitchFixPos"])
+g.link(_svsel["ReturnValue"], _pfpos_set.pins["PitchFixPos"])
+g.link(_pfpos_set["then"], set_from("BagBlock", "real", X4 + 1200, Y4 + 8500, _svhy, "the block kept (hysteresis)", subcat="double")["execute"])
+#   (sequence output then_7, the servo's update, is unused since aa)
+
+# v1.3.2 (Nexus, WieSlav1280: cursor latency in the backpack / PDA): the menu gate (see the note at the tick start)
+for _q in list(slp["then"].links):
+    slp["then"].links.remove(_q); _q.links.remove(slp["then"])
+MGX, MGY = 2700, -1200
+_lk0 = kml("EqualEqual_IntInt", MGX - 200, MGY + 300, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="0",')), RB])
+g.link(self_get("LootKind", "int", MGX - 400, MGY + 300), _lk0["A"])
+_ts0 = kml("NotEqual_IntInt", MGX - 200, MGY + 500, [("A", "int", dict(extra='DefaultValue="0",')), ("B", "int", dict(extra='DefaultValue="0",')), RB])
+g.link(self_get("TouchState", "int", MGX - 400, MGY + 500), _ts0["A"])
+_menu = b_or(MGX, MGY + 200, obj_q("IsUsingPDA", MGX - 200, MGY + 200, as_pc, owner=PC),
+             b_and(MGX - 100, MGY + 300, self_get("InvOpen", "bool", MGX - 300, MGY + 250), _lk0["ReturnValue"]))
+_oursb = b_or(MGX, MGY + 600, _ts0["ReturnValue"], *[self_get(v_, "bool", MGX - 300, MGY + 560 + 60 * k_) for k_, v_ in enumerate(
+    ("LootReach", "Reaching", "UseMode", "BagMode", "PatMode", "LootUse", "LootWait", "PickFix", "DoorTouch", "NoteItem", "PendingReach"))],
+             is_valid(MGX - 200, MGY + 1300, self_get("Fly", "object", MGX - 400, MGY + 1300, sub=ACTOR)))
+_bmg = branch(MGX + 300, MGY, "v1.3.2: a menu open (PDA / own inventory) and nothing of ours under way? only the loot-window steps",
+              b_and(MGX + 200, MGY + 200, _menu, b_not(MGX + 100, MGY + 700, _oursb)))
+g.link(slp["then"], _bmg["execute"])
+g.link(_bmg["else"], sq["execute"])
+g.link(_bmg["then"], sq5["execute"])
+
+
+# v1.3.2 n: the DEV tools (panel, live pose layer, backpack preview); off for a release (IMMLOOT_DEV=0)
+if os.environ.get("IMMLOOT_DEV", "0") == "1":   # v1.3.2 u: off (CutsceneSlot broke the arms)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    exec(compile(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "gen_actor_dev.py"), encoding="utf-8").read(), "gen_actor_dev.py", "exec"))
+# v1.3.2 ad (tester: the editor crashes deleting the 3,700-node graph a second time in a session; "break it into
+# multiple graphs"): the graph is split over event graph pages (bp_graph.paginate): every exec link between pages is
+# a call to a custom event on the target page, so each page is its own small paste and delete. Out: one .txt per page
+# in <out dir>/ plus pages.json (each page's digest: a build re-pastes only the pages whose digest changed).
+#   python gen_actor_looting.py <out dir>      (a path ending in .txt: the old single graph)
+from bp_graph import page_digest
+import json
+_t = lambda pin: sq[pin].links[0].node
+PAGES = [("Doors", [sq7d]), ("Touch", [sqt]), ("LootWindow", [sq5]), ("Reach", [_t("then_3")]),
+         ("EndAndBag", [_t("then_6")]), ("HoldToUse", [_t("then_7"), ev7])]
+if sys.argv[1].lower().endswith(".txt"):
+    write(sys.argv[1], g.text())
+    print("ok", len(g.nodes), "nodes")
+else:
+    os.makedirs(sys.argv[1], exist_ok=True)
+    _pages = g.paginate(PAGES, "EventGraph", "IL_", SELF)
+    _man = {}
+    for _k, (_pg, _gp) in enumerate(_pages.items()):
+        _lines = _gp.text()
+        _fn = f"{_k}_{_pg}.txt"
+        write(os.path.join(sys.argv[1], _fn), _lines)
+        _man[_pg] = {"file": _fn, "nodes": len(_gp.nodes), "digest": page_digest(_lines)}
+    json.dump(_man, open(os.path.join(sys.argv[1], "pages.json"), "w"), indent=1)
+    print("ok", sum(v["nodes"] for v in _man.values()), "nodes on", len(_man), "pages:",
+          ", ".join(f"{k} {v['nodes']}" for k, v in _man.items()))

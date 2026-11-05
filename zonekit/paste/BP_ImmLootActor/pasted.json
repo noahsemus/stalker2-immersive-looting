@@ -1,0 +1,37 @@
+{
+ "EventGraph": {
+  "file": "0_EventGraph.txt",
+  "nodes": 633,
+  "digest": "b9667cbf5ef0"
+ },
+ "Doors": {
+  "file": "1_Doors.txt",
+  "nodes": 626,
+  "digest": "e4f2d96a2825"
+ },
+ "Touch": {
+  "file": "2_Touch.txt",
+  "nodes": 518,
+  "digest": "0242e23d659d"
+ },
+ "LootWindow": {
+  "file": "3_LootWindow.txt",
+  "nodes": 201,
+  "digest": "5f4e108d555c"
+ },
+ "Reach": {
+  "file": "4_Reach.txt",
+  "nodes": 793,
+  "digest": "a654e4ff16fd"
+ },
+ "EndAndBag": {
+  "file": "5_EndAndBag.txt",
+  "nodes": 641,
+  "digest": "6c152938dabe"
+ },
+ "HoldToUse": {
+  "file": "6_HoldToUse.txt",
+  "nodes": 501,
+  "digest": "d4ace6187b1b"
+ }
+}

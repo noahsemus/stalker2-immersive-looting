@@ -1,4 +1,4 @@
-Immersive Looting v1.3.1 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
+Immersive Looting v1.3.2 for S.T.A.L.K.E.R. 2: Heart of Chornobyl
 When you pick something up, Skif reaches out with his left hand, takes it and pockets it,
 instead of the item just vanishing. Looting a body or a stash, he reaches out and touches
 it first. No UE4SS required.
@@ -37,7 +37,9 @@ WHAT IT DOES
     first takes it with his hand, then plays the game's own use animation. Using an item
     from a body's or stash's loot window works the same way.
   - Doors: Skif pushes a door with his open hand or pulls it toward him, whichever way the door
-    actually moves (open or close, from either side). Lockers, closets and cabinets too.
+    actually moves (open or close, from either side). Pulling a door shut, his hand takes the
+    door's free edge (left or right), thumb down, and follows it as it swings in. Lockers,
+    closets and cabinets too.
   - Bodies, both hands (MCM, off by default): Skif pats the body down with both hands,
     three pats in different places, while the loot window is open. A weapon in hand is
     put out of sight and drawn again after.
@@ -48,8 +50,9 @@ WHAT IT DOES
       Door animation: on (default) or off.
       Disable item fly animation (off by default): the item stays where it lies until
         the hand reaches it, then it is in the hand at once instead of flying into it.
+  - With the knife or a bolt in hand, the free left hand does the same as with empty hands.
   - No reach (vanilla pickup) while sprinting, aiming, reloading, in dialogue or cutscenes,
-    or with a detector or binoculars in hand.
+    or with a grenade, detector or binoculars in hand.
   - Artifacts and mutant parts keep their own vanilla animations.
   - Uses whatever key or gamepad button you have bound to interact.
 
@@ -62,6 +65,24 @@ COMPATIBILITY
 Source and build instructions: https://github.com/noahsemus/stalker2-immersive-looting
 
 CHANGES
+  1.3.2  Made and tested on game version 2.1.
+         Empty-handed pickups reworked, standing and crouched: the arm turns with your view
+         (no more reaching too low, stretched sleeve or hand off to the side), and the item
+         sits in the palm. Crouched, the hand then puts the item away below the screen
+         instead of the item vanishing from the hand.
+         Backpack looting with empty hands fixed: the backpack is where the game's own
+         inventory animation holds it, standing and crouched, also on uneven ground, with
+         no jump when it comes out.
+         Knife and bolt in hand: pickups, body / stash touches and doors now animate the free
+         left hand (no more twisted arms or spinning hands); a grenade in hand stays vanilla.
+         The item in the hand keeps its real look (the Limited Edition energy drink, spoiled
+         canned food and other variants no longer turn into the plain version), and the
+         backpack should be your own if you have a different one (the pre-order backpack; not
+         tested).
+         Doors: closing a door, the hand reaches for its free edge, on the left or the right,
+         grips it thumb down and follows it as it swings shut; with a gun on a right-hand
+         edge it is a short tug left of the gun. Rifle doors look like the pistol ones now
+         (the arm no longer locks straight), also for long guns held close to the body.
   1.3.1  The hand on bodies and stashes reaches for where you are looking, lower on the
          screen (no more hand raised up in the air), also for the both-hands pat, which is
          now centred and stops at once when you close the loot window. Stashes open at once
